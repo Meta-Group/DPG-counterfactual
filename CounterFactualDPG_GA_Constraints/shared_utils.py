@@ -371,6 +371,61 @@ def plot_pairwise_with_counterfactual(model, dataset, target, sample, counterfac
     plt.show()
 
 
+def plot_pairwise_with_counterfactual_df(model, dataset, target, sample, counterfactual_df):
+    """
+    Plot pairwise plots of the dataset, highlighting the original sample and multiple counterfactuals using matplotlib.
+
+    Args:
+        model: Trained scikit-learn model used for predicting the class of the counterfactuals.
+        dataset: The original dataset (features) used for the plot.
+        target: The target labels for the dataset.
+        sample: The original sample as a dictionary of feature values.
+        counterfactual_df: DataFrame containing several counterfactual samples.
+    """
+    # Convert the dataset into a DataFrame
+    data_df = pd.DataFrame(dataset, columns=list(sample.keys()))
+
+    # Convert the original sample to DataFrame
+    sample_df = pd.DataFrame([sample], index=['Original'])
+
+    # Combine the dataset with marked samples
+    combined_df = pd.concat([data_df, sample_df, counterfactual_df])
+
+    # Get feature names
+    features = list(sample.keys())
+    num_features = len(features)
+
+    # Create a grid of plots
+    fig, axes = plt.subplots(nrows=num_features, ncols=num_features, figsize=(15, 15))
+
+    # Plot each pair of features
+    for i, feature_i in enumerate(features):
+        for j, feature_j in enumerate(features):
+            ax = axes[i, j]
+            if i != j:
+                # Scatter plot for different features
+                ax.scatter(data_df[feature_i], data_df[feature_j], c='gray', label='Dataset', alpha=0.5)
+                ax.scatter(sample_df[feature_i], sample_df[feature_j], c='red', label='Original Sample', edgecolors='k', s=100)
+                ax.scatter(counterfactual_df[feature_i], counterfactual_df[feature_j], c='blue', label='Counterfactuals', alpha=0.6, edgecolors='k', s=50)
+            else:
+                # Histogram on the diagonal
+                ax.hist(data_df[feature_i], color='gray', bins=30, alpha=0.5)
+                ax.hist(sample_df[feature_i], color='red', bins=1)
+                ax.hist(counterfactual_df[feature_i], color='blue', bins=30, alpha=0.6)
+
+            # Label axes if on the perimeter
+            if i == num_features - 1:
+                ax.set_xlabel(feature_j)
+            if j == 0:
+                ax.set_ylabel(feature_i)
+
+    # Add legends and adjust layout
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper right')
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual, class_counterfactual, restrictions):
     """
     Plot the original sample, the differences, and the counterfactual as a heatmap,
