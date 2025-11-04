@@ -18,6 +18,8 @@ from typing import Any, Dict, List, Tuple, Optional
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 from scipy.spatial.distance import euclidean, cityblock, cosine
 from scipy.spatial.distance import cdist
 
@@ -279,3 +281,91 @@ def read_constraints_from_file(filename):
                 print(f"Error parsing JSON for {class_label}: {e}")
 
     return constraints_dict
+
+
+# ============================================================================
+# Visualization Functions
+# ============================================================================
+
+def plot_pca_with_counterfactual(model, dataset, target, sample, counterfactual):
+    """
+    Plot a PCA visualization of the dataset with the original sample and counterfactual.
+
+    Args:
+        model: Trained scikit-learn model used for predicting the class of the counterfactual.
+        dataset: The original dataset (features) used for PCA.
+        target: The target labels for the dataset.
+        sample: The original sample as a dictionary of feature values.
+        counterfactual: The counterfactual sample as a dictionary of feature values.
+    """
+
+    # Perform PCA on the scaled dataset
+    pca = PCA(n_components=2)
+    iris_pca = pca.fit_transform(dataset)
+
+    # Transform the original sample and counterfactual using the same PCA
+    original_sample_pca = pca.transform(pd.DataFrame([sample]))
+    counterfactual_pca = pca.transform(pd.DataFrame([counterfactual]))
+
+    # Predict the class of the counterfactual
+    counterfactual_class = model.predict(pd.DataFrame([counterfactual]))[0]
+
+    # Plot the PCA results with class colors and 'x' marker for the counterfactual
+    plt.figure(figsize=(10, 6))
+    colors = ['purple', 'green', 'orange']  # Colors for the classes
+
+    for class_value in np.unique(target):
+        plt.scatter(
+            iris_pca[target == class_value, 0],
+            iris_pca[target == class_value, 1],
+            label=f"Class {class_value}",
+            color=colors[class_value],
+            alpha=0.6
+        )
+
+    plt.scatter(
+        original_sample_pca[:, 0], original_sample_pca[:, 1],
+        color='red', label='Original Sample', edgecolor='black'
+    )
+    plt.scatter(
+        counterfactual_pca[:, 0], counterfactual_pca[:, 1],
+        color=colors[counterfactual_class], marker='x', s=100, label='Counterfactual', edgecolor='black'
+    )
+
+    plt.xlabel('PCA Component 1')
+    plt.ylabel('PCA Component 2')
+    plt.title('PCA Plot with Original Sample and Counterfactual')
+    plt.legend()
+    plt.show()
+
+
+def plot_pairwise_with_counterfactual(model, dataset, target, sample, counterfactual):
+    """
+    Plot a Seaborn pairplot of the dataset, highlighting the original sample and counterfactual.
+
+    Args:
+        model: Trained scikit-learn model used for predicting the class of the counterfactual.
+        dataset: The original dataset (features) used for the plot.
+        target: The target labels for the dataset.
+        sample: The original sample as a dictionary of feature values.
+        counterfactual: The counterfactual sample as a dictionary of feature values.
+    """
+    # Convert the dataset into a DataFrame and add the target labels
+    data_df = pd.DataFrame(dataset, columns=pd.DataFrame([sample]).columns)
+    data_df['label'] = 'Dataset'
+
+    # Convert the original sample and counterfactual to DataFrames
+    original_sample_df = pd.DataFrame([sample])
+    counterfactual_df = pd.DataFrame([counterfactual])
+
+    # Add labels to distinguish the original sample and counterfactual in the plot
+    original_sample_df['label'] = 'Original Sample'
+    counterfactual_df['label'] = 'Counterfactual'
+
+    # Combine the original sample and counterfactual with the dataset for plotting
+    combined_df = pd.concat([data_df, original_sample_df, counterfactual_df], ignore_index=True)
+
+    # Plot the pairplot with Seaborn
+    sns.pairplot(combined_df, hue='label', palette={'Dataset': 'gray', 'Original Sample': 'red', 'Counterfactual': 'blue'})
+    plt.suptitle('Pairwise Plot with Original Sample and Counterfactual', y=1.02)
+    plt.show()
