@@ -14,6 +14,152 @@ plt.rcParams['xtick.labelsize'] = 12  # Font size for x-axis tick labels
 plt.rcParams['ytick.labelsize'] = 12  # Font size for y-axis tick labels
 
 
+def plot_constraints(constraints, overlapping=False, class_colors=None, class_colors_list=None):
+    """
+    Visualize feature constraints for each class using horizontal bar ranges.
+    
+    Parameters:
+    -----------
+    constraints : dict
+        Dictionary of constraints per class
+    overlapping : bool
+        If True, show all classes overlapping on one plot.
+        If False, show classes side-by-side (default).
+    class_colors : dict, optional
+        Dictionary mapping class names to colors
+    class_colors_list : list, optional
+        List of colors for classes by index
+    """
+    # Default colors if not provided
+    if class_colors is None:
+        class_colors = {}
+    if class_colors_list is None:
+        class_colors_list = ['purple', 'green', 'orange']
+    
+    # Extract unique features
+    features = []
+    for class_name in constraints:
+        for constraint in constraints[class_name]:
+            feature = constraint['feature'].replace('_', ' ')
+            if feature not in features:
+                features.append(feature)
+    
+    # Use provided class colors
+    class_names = list(constraints.keys())
+    colors = [class_colors.get(cn, class_colors_list[i % len(class_colors_list)]) for i, cn in enumerate(class_names)]
+    
+    if overlapping:
+        # Single plot with overlapping bars
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        n_features = len(features)
+        n_classes = len(constraints)
+        
+        # Calculate bar positions with offset for overlapping
+        bar_height = 0.25
+        y_positions = np.arange(n_features)
+        
+        for idx, class_name in enumerate(class_names):
+            class_constraints = constraints[class_name]
+            constraint_dict = {c['feature'].replace('_', ' '): c for c in class_constraints}
+            
+            # Offset each class slightly
+            y_offset = (idx - n_classes/2 + 0.5) * bar_height
+            
+            for i, feature in enumerate(features):
+                if feature in constraint_dict:
+                    c = constraint_dict[feature]
+                    min_val = c['min'] if c['min'] is not None else 0
+                    max_val = c['max'] if c['max'] is not None else 10
+                    
+                    # Determine the range
+                    if c['min'] is None:
+                        # Only max constraint
+                        ax.barh(i + y_offset, max_val, left=0, height=bar_height, 
+                               color=colors[idx], alpha=0.6, edgecolor='black', 
+                               linewidth=1.2, label=class_name if i == 0 else "")
+                    elif c['max'] is None:
+                        # Only min constraint
+                        range_width = 10 - min_val
+                        ax.barh(i + y_offset, range_width, left=min_val, height=bar_height, 
+                               color=colors[idx], alpha=0.6, edgecolor='black', 
+                               linewidth=1.2, label=class_name if i == 0 else "")
+                    else:
+                        # Both min and max
+                        range_width = max_val - min_val
+                        ax.barh(i + y_offset, range_width, left=min_val, height=bar_height, 
+                               color=colors[idx], alpha=0.6, edgecolor='black', 
+                               linewidth=1.2, label=class_name if i == 0 else "")
+        
+        ax.set_yticks(y_positions)
+        ax.set_yticklabels(features, fontsize=11)
+        ax.set_xlabel('Value Range', fontsize=12, fontweight='bold')
+        ax.set_title('Feature Constraints per Class (Overlapping View)', 
+                    fontsize=14, fontweight='bold', pad=15)
+        ax.grid(axis='x', alpha=0.3, linestyle='--')
+        ax.set_xlim(0, 8)
+        ax.legend(loc='upper right', fontsize=11, framealpha=0.9)
+        
+        plt.tight_layout()
+        plt.show()
+        
+    else:
+        # Side-by-side plots (original view)
+        n_classes = len(constraints)
+        n_features = len(features)
+        
+        fig, axes = plt.subplots(1, n_classes, figsize=(16, 6), sharey=True)
+        if n_classes == 1:
+            axes = [axes]
+        
+        for idx, (class_name, ax) in enumerate(zip(constraints.keys(), axes)):
+            class_constraints = constraints[class_name]
+            
+            # Create a dictionary for easy lookup
+            constraint_dict = {c['feature'].replace('_', ' '): c for c in class_constraints}
+            
+            y_positions = np.arange(n_features)
+            
+            for i, feature in enumerate(features):
+                if feature in constraint_dict:
+                    c = constraint_dict[feature]
+                    min_val = c['min'] if c['min'] is not None else 0
+                    max_val = c['max'] if c['max'] is not None else 10
+                    
+                    # Determine the range
+                    if c['min'] is None:
+                        # Only max constraint
+                        ax.barh(i, max_val, left=0, height=0.6, 
+                               color=colors[idx], alpha=0.7, edgecolor='black', linewidth=1.5)
+                        ax.text(max_val/2, i, f'≤ {max_val:.2f}', 
+                               ha='center', va='center', fontweight='bold', fontsize=9)
+                    elif c['max'] is None:
+                        # Only min constraint
+                        range_width = 10 - min_val  # Arbitrary max for visualization
+                        ax.barh(i, range_width, left=min_val, height=0.6, 
+                               color=colors[idx], alpha=0.7, edgecolor='black', linewidth=1.5)
+                        ax.text(min_val + range_width/2, i, f'≥ {min_val:.2f}', 
+                               ha='center', va='center', fontweight='bold', fontsize=9)
+                    else:
+                        # Both min and max
+                        range_width = max_val - min_val
+                        ax.barh(i, range_width, left=min_val, height=0.6, 
+                               color=colors[idx], alpha=0.7, edgecolor='black', linewidth=1.5)
+                        ax.text(min_val + range_width/2, i, f'{min_val:.2f} - {max_val:.2f}', 
+                               ha='center', va='center', fontweight='bold', fontsize=9)
+            
+            ax.set_yticks(y_positions)
+            ax.set_yticklabels(features)
+            ax.set_xlabel('Value Range', fontsize=11, fontweight='bold')
+            ax.set_title(f'{class_name}', fontsize=13, fontweight='bold', pad=10)
+            ax.grid(axis='x', alpha=0.3, linestyle='--')
+            ax.set_xlim(0, 8)
+        
+        axes[0].set_ylabel('Features', fontsize=11, fontweight='bold')
+        plt.suptitle('Feature Constraints per Class', fontsize=15, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        plt.show()
+
+
 def plot_pca_loadings(X, feature_names):
     """
     Plot PCA loadings to show feature contributions to principal components.
