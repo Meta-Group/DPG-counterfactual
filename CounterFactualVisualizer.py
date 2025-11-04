@@ -263,6 +263,92 @@ def plot_pca_with_counterfactual(model, dataset, target, sample, counterfactual)
     #plt.show()
     return(plt)
 
+def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterfactual, class_colors_list=None):
+    """
+    Plot a comprehensive comparison between original sample and counterfactual with three visualizations:
+    1. Original sample features as bar chart
+    2. Class probability comparison
+    3. Feature changes
+    
+    Args:
+        model: Trained scikit-learn model
+        sample: Original sample as dictionary
+        sample_df: Original sample as DataFrame
+        counterfactual: Counterfactual sample as dictionary
+        class_colors_list: List of colors for classes (default: ['purple', 'green', 'orange'])
+    """
+    if class_colors_list is None:
+        class_colors_list = ['purple', 'green', 'orange']
+    
+    predicted_class = model.predict(sample_df)
+    counterfactual_class = model.predict(pd.DataFrame([counterfactual]))
+    
+    # Visualization
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    # 1. Original Sample Features
+    feature_list = list(sample.keys())
+    original_values = list(sample.values())
+    colors_bar = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A']
+    axes[0].bar(range(len(feature_list)), original_values, color=colors_bar, alpha=0.7, edgecolor='black', linewidth=2)
+    axes[0].set_xticks(range(len(feature_list)))
+    axes[0].set_xticklabels([f.replace(' (cm)', '').replace('_', ' ') for f in feature_list], rotation=45, ha='right')
+    axes[0].set_ylabel('Value', fontsize=11, fontweight='bold')
+    axes[0].set_title(f'Original Sample\n(Predicted: Class {predicted_class[0]})', 
+                      fontsize=12, fontweight='bold', color=class_colors_list[predicted_class[0]])
+    axes[0].grid(axis='y', alpha=0.3, linestyle='--')
+
+    # 2. Class Probability Comparison
+    class_names = ['Class 0', 'Class 1', 'Class 2']
+    original_probs = model.predict_proba(sample_df)[0]
+    counterfactual_probs = model.predict_proba(pd.DataFrame([counterfactual]))[0]
+
+    x_pos = np.arange(3)
+    width = 0.35
+
+    bars1 = axes[1].bar(x_pos - width/2, original_probs, width, label='Original', 
+                        color=class_colors_list[predicted_class[0]], alpha=0.8, edgecolor='black', linewidth=1.5)
+    bars2 = axes[1].bar(x_pos + width/2, counterfactual_probs, width, label='Counterfactual', 
+                        color=class_colors_list[counterfactual_class[0]], alpha=0.8, edgecolor='black', linewidth=1.5)
+
+    axes[1].set_xticks(x_pos)
+    axes[1].set_xticklabels(class_names)
+    axes[1].set_ylabel('Probability', fontsize=11, fontweight='bold')
+    axes[1].set_title('Prediction Probabilities', fontsize=12, fontweight='bold')
+    axes[1].legend(loc='upper right', fontsize=10)
+    axes[1].set_ylim(0, 1)
+    axes[1].grid(axis='y', alpha=0.3, linestyle='--')
+
+    # Add value labels on bars
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            axes[1].text(bar.get_x() + bar.get_width()/2., height,
+                        f'{height:.2f}', ha='center', va='bottom', fontsize=9)
+
+    # 3. Feature Changes
+    counterfactual_values = list(counterfactual.values())
+    changes = [cf - orig for cf, orig in zip(counterfactual_values, original_values)]
+    change_colors = ['green' if c < 0 else 'red' if c > 0 else 'gray' for c in changes]
+
+    axes[2].bar(range(len(feature_list)), changes, color=change_colors, alpha=0.7, edgecolor='black', linewidth=2)
+    axes[2].set_xticks(range(len(feature_list)))
+    axes[2].set_xticklabels([f.replace(' (cm)', '').replace('_', ' ') for f in feature_list], rotation=45, ha='right')
+    axes[2].set_ylabel('Change Value', fontsize=11, fontweight='bold')
+    axes[2].set_title(f'Feature Changes\n(Original → Class {predicted_class[0]} to Class {counterfactual_class[0]})', 
+                      fontsize=12, fontweight='bold')
+    axes[2].axhline(y=0, color='black', linestyle='-', linewidth=1)
+    axes[2].grid(axis='y', alpha=0.3, linestyle='--')
+
+    # Add value labels
+    for i, (change, feature) in enumerate(zip(changes, feature_list)):
+        axes[2].text(i, change, f'{change:+.2f}', ha='center', 
+                    va='bottom' if change >= 0 else 'top', fontsize=9, fontweight='bold')
+
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_pairwise_with_counterfactual(model, dataset, target, sample, counterfactual):
     """
     Plot a Seaborn pairplot of the dataset, highlighting the original sample and counterfactual.
