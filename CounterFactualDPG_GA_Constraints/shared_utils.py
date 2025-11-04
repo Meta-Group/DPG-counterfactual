@@ -426,6 +426,65 @@ def plot_pairwise_with_counterfactual_df(model, dataset, target, sample, counter
     plt.show()
 
 
+def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactuals_df):
+    """
+    Plot a PCA visualization of the dataset with the original sample and multiple counterfactuals from a DataFrame.
+    """
+    # Standardize the dataset
+    scaler = StandardScaler()
+    dataset_scaled = scaler.fit_transform(dataset.select_dtypes(include=[np.number]))
+
+    # Perform PCA on the scaled dataset
+    pca = PCA(n_components=2)
+    iris_pca = pca.fit_transform(dataset_scaled)
+
+    # Ensure the sample and counterfactuals are formatted as numeric DataFrame
+    sample_df = pd.DataFrame([sample]).select_dtypes(include=[np.number])
+    sample_df_scaled = scaler.transform(sample_df)
+    if not isinstance(counterfactuals_df, pd.DataFrame):
+        raise ValueError("counterfactuals_df must be a pandas DataFrame")
+
+    numeric_cf_df = counterfactuals_df.select_dtypes(include=[np.number])
+    numeric_cf_df_scaled = scaler.transform(numeric_cf_df)
+
+    # Transform using PCA
+    original_sample_pca = pca.transform(sample_df_scaled)
+    counterfactuals_pca = pca.transform(numeric_cf_df_scaled)
+
+    # Predict classes for counterfactuals
+    counterfactual_classes = model.predict(numeric_cf_df)
+
+    # Plot the PCA results
+    plt.figure(figsize=(10, 6))
+    colors = ['purple', 'green', 'orange']
+
+    for class_value in np.unique(target):
+        plt.scatter(
+            iris_pca[target == class_value, 0],
+            iris_pca[target == class_value, 1],
+            label=f"Class {class_value}",
+            color=colors[class_value % len(colors)],
+            alpha=0.5
+        )
+
+    plt.scatter(
+        original_sample_pca[:, 0], original_sample_pca[:, 1],
+        color='red', label='Original Sample', edgecolor='black', s=100
+    )
+
+    for idx, cf_class in enumerate(counterfactual_classes):
+        plt.scatter(
+            counterfactuals_pca[idx, 0], counterfactuals_pca[idx, 1],
+            color=colors[cf_class % len(colors)], marker='x', s=100, label=f'Counterfactual (Class {cf_class})', edgecolor='black'
+        )
+
+    plt.xlabel('PCA Component 1')
+    plt.ylabel('PCA Component 2')
+    plt.title('PCA Plot with Original Sample and Counterfactuals')
+    #plt.legend()
+    plt.show()
+
+
 def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual, class_counterfactual, restrictions):
     """
     Plot the original sample, the differences, and the counterfactual as a heatmap,
