@@ -369,3 +369,71 @@ def plot_pairwise_with_counterfactual(model, dataset, target, sample, counterfac
     sns.pairplot(combined_df, hue='label', palette={'Dataset': 'gray', 'Original Sample': 'red', 'Counterfactual': 'blue'})
     plt.suptitle('Pairwise Plot with Original Sample and Counterfactual', y=1.02)
     plt.show()
+
+
+def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual, class_counterfactual, restrictions):
+    """
+    Plot the original sample, the differences, and the counterfactual as a heatmap,
+    and indicate restrictions using icons.
+
+    Args:
+        sample (dict): Original sample values.
+        class_sample: Class of the original sample.
+        counterfactual (dict): Counterfactual sample values.
+        class_counterfactual: Class of the counterfactual sample.
+        restrictions (dict): Restrictions applied to each feature.
+    """
+    # Set larger font sizes globally
+    plt.rcParams['font.size'] = 12  # Adjusts the default font size
+    plt.rcParams['axes.labelsize'] = 16  # Font size for x and y labels
+    plt.rcParams['axes.titlesize'] = 16  # Font size for the plot title
+    plt.rcParams['xtick.labelsize'] = 12  # Font size for x-axis tick labels
+    plt.rcParams['ytick.labelsize'] = 12  # Font size for y-axis tick labels
+    
+    # Create DataFrame from the samples
+    sample_df = pd.DataFrame([sample], index=['Original'])
+    cf_df = pd.DataFrame([counterfactual], index=['Counterfactual'])
+
+    # Calculate differences
+    differences = (cf_df.loc['Counterfactual'] - sample_df.loc['Original']).to_frame('Difference').T
+
+    # Combine all data
+    full_df = pd.concat([sample_df, differences, cf_df])
+
+    # Map restrictions to symbols
+    symbol_map = {
+        'no_change': '⊝',  # Locked symbol for no change
+        'non_increasing': '⬇️',  # Down arrow for non-increasing
+        'non_decreasing': '⬆️'  # Up arrow for non-decreasing
+    }
+    restrictions_ser = pd.Series(restrictions).replace(symbol_map)
+
+    mask = np.full_like(full_df, False, dtype=bool)  # Start with no masking
+    mask[[0, -1], :] = True  # Only mask the first and last rows
+
+    vmax = np.max(np.abs(full_df.values))
+    vmin = -vmax
+
+    # Plotting the heatmap for numeric data
+    plt.figure(figsize=(10, 5))
+    ax = sns.heatmap(full_df, annot=True, fmt=".2f", cmap='coolwarm', cbar=True, linewidths=1.2, linecolor='k',
+                     vmin=vmin, vmax=vmax, mask=mask)
+
+    # Annotate with restrictions
+    for i, (feat, restr) in enumerate(restrictions_ser.items()):
+        ax.text(i + 0.5, 3.5, restr, ha='center', va='center', color='black', fontweight='bold', fontsize=14)
+
+    annotations = full_df.round(2).copy().astype(str)
+    for col in full_df.columns:
+        annotations.loc['Difference', col] = f"Δ {full_df.loc['Difference', col]:.2f}"
+
+    for (i, j), val in np.ndenumerate(full_df):
+        if i == 1:
+            continue
+        ax.text(j + 0.5, i + 0.5, annotations.iloc[i, j],
+                horizontalalignment='center', verticalalignment='center', color='black')
+
+    plt.title(f'Original (Class {class_sample}), Counterfactual (Class {class_counterfactual}) with Restrictions')
+    plt.xticks(rotation=45, ha="right")
+    plt.yticks(rotation=0, va="center")
+    plt.show()
