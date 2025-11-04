@@ -70,3 +70,25 @@ def load_and_train_model():
     model.fit(X_train, y_train)
     
     return iris, X, y, X_train, X_test, y_train, y_test, model
+
+
+# ============================================================================
+# Constraint Loading
+# ============================================================================
+
+def load_constraints_source(PATH, filename="iris_l3_pv0.001_t2_dpg_metrics.txt"):
+    """
+    Load constraints source from a file.
+    
+    Args:
+        PATH: Path to the constraints directory with trailing slash
+        filename: Name of the constraints file to load
+        
+    Returns:
+        str: The constraints source string (line 1 from the file)
+    """
+    with open(PATH + filename, 'r') as file:
+        lines = file.readlines()
+    
+    constraints_source = lines[1]
+    return constraints_source
