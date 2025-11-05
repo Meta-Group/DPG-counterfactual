@@ -1,3 +1,42 @@
+def plot_explainer_summary(explainer, original_sample, counterfactual):
+    """
+    Display a text summary of the counterfactual explanation inside a matplotlib figure, styled like other plots.
+    Args:
+        explainer: CounterFactualExplainer object with explanation details.
+        original_sample: dict of original sample feature values.
+        counterfactual: dict of counterfactual feature values.
+    """
+    # Compose summary text (customize as needed)
+    summary_lines = []
+    summary_lines.append("Counterfactual Explanation Summary\n")
+    summary_lines.append(f"Target class: {explainer.target_class}")
+    summary_lines.append("")
+    summary_lines.append("Feature changes:")
+    for feature in original_sample:
+        orig = original_sample[feature]
+        cf = counterfactual[feature]
+        if orig != cf:
+            summary_lines.append(f"- {feature}: {orig} → {cf} (Δ {cf - orig:+.2f})")
+        else:
+            summary_lines.append(f"- {feature}: {orig} (no change)")
+    summary_lines.append("")
+    if hasattr(explainer, 'explanation') and explainer.explanation:
+        summary_lines.append("Explanation:")
+        summary_lines.append(str(explainer.explanation))
+    elif hasattr(explainer, 'get_summary'):
+        summary_lines.append("Explanation:")
+        summary_lines.append(str(explainer.get_summary()))
+    summary = "\n".join(summary_lines)
+
+    # Plot the text inside a figure
+    plt.figure(figsize=(8, 5))
+    plt.axis('off')
+    plt.gca().set_frame_on(False)
+    plt.text(0.5, 0.5, summary, fontsize=13, ha='center', va='center', wrap=True,
+             bbox=dict(boxstyle='round,pad=0.6', facecolor='whitesmoke', edgecolor='gray', alpha=0.95))
+    plt.title('Counterfactual Explanation Summary', fontsize=15, fontweight='bold', pad=18)
+    plt.tight_layout()
+    plt.show()
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
