@@ -179,7 +179,7 @@ def plot_pca_loadings(X, feature_names):
     loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
     
     # Create the plot
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(8, 8))
     
     # Plot arrows for each feature
     for i, feature in enumerate(feature_names):
@@ -200,15 +200,21 @@ def plot_pca_loadings(X, feature_names):
     max_val = np.abs(loadings).max() * 1.3
     ax.set_xlim(-max_val, max_val)
     ax.set_ylim(-max_val, max_val)
+    ax.set_aspect('equal')
+    
+    # Add variance information to the plot
+    variance_text = (
+        f"PC1 Variance: {pca.explained_variance_ratio_[0]:.2%}\n"
+        f"PC2 Variance: {pca.explained_variance_ratio_[1]:.2%}\n"
+        f"Total Variance: {sum(pca.explained_variance_ratio_):.2%}"
+    )
+    ax.text(0.02, 0.98, variance_text, transform=ax.transAxes, 
+            fontsize=11, verticalalignment='top', bbox=dict(boxstyle='round', 
+            facecolor='wheat', alpha=0.8))
     
     plt.tight_layout()
     plt.show()
     
-    # Print explained variance
-    print(f"Explained variance by PC1: {pca.explained_variance_ratio_[0]:.2%}")
-    print(f"Explained variance by PC2: {pca.explained_variance_ratio_[1]:.2%}")
-    print(f"Total explained variance: {sum(pca.explained_variance_ratio_):.2%}")
-
 def plot_pca_with_counterfactual(model, dataset, target, sample, counterfactual):
     """
     Plot a PCA visualization of the dataset with the original sample and counterfactual.
