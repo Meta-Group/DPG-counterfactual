@@ -90,21 +90,15 @@ class CounterFactualModel:
             return False
 
     def plot_fitness(self):
-        fig, axs = plt.subplots(2, 1, figsize=(10, 8))  # Create two subplots vertically
+        fig, ax = plt.subplots(figsize=(10, 6))
 
-        # Plot best fitness
-        axs[0].plot(self.best_fitness_list, label='Best Fitness', color='blue')
-        axs[0].set_title('Best Fitness Over Generations')
-        axs[0].set_xlabel('Generation')
-        axs[0].set_ylabel('Best Fitness')
-        axs[0].legend()
-
-        # Plot average fitness
-        axs[1].plot(self.average_fitness_list, label='Average Fitness', color='green')
-        axs[1].set_title('Average Fitness Over Generations')
-        axs[1].set_xlabel('Generation')
-        axs[1].set_ylabel('Average Fitness')
-        axs[1].legend()
+        # Plot best fitness and average fitness on the same graph
+        ax.plot(self.best_fitness_list, label='Best Fitness', color='blue')
+        ax.plot(self.average_fitness_list, label='Average Fitness', color='green')
+        ax.set_title('Fitness Over Generations')
+        ax.set_xlabel('Generation')
+        ax.set_ylabel('Fitness')
+        ax.legend()
 
         plt.tight_layout()
         return(plt)
