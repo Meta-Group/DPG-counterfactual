@@ -50,7 +50,7 @@ def plot_constraints(constraints, overlapping=False, class_colors=None, class_co
     
     if overlapping:
         # Single plot with overlapping bars
-        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        fig, ax = plt.subplots(1, 1, figsize=(16, 6))
         n_features = len(features)
         n_classes = len(constraints)
         
