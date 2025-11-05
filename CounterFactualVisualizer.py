@@ -490,9 +490,17 @@ def plot_pairwise_with_counterfactual_df(model, dataset, target, sample, counter
             ax = axes[i, j]
             if i != j:
                 # Scatter plot for different features
+
+                # Adds a regression line
+                sns.regplot(data=data_df, x=feature_i, y=feature_j, ax=ax, 
+                           scatter_kws={'alpha': 0.5, 'color': 'gray', 's': 30}, 
+                           line_kws={'color': 'darkgray', 'linewidth': 2})
+
                 ax.scatter(data_df[feature_i], data_df[feature_j], c='gray', label='Dataset', alpha=0.5)
                 ax.scatter(sample_df[feature_i], sample_df[feature_j], c='red', label='Original Sample', edgecolors='k', s=100)
                 ax.scatter(counterfactual_df[feature_i], counterfactual_df[feature_j], c='blue', label='Counterfactuals', alpha=0.6, edgecolors='k', s=50)
+                ax.set_ylabel('')
+                ax.set_xlabel('')
             else:
                 # Histogram on the diagonal
                 ax.hist(data_df[feature_i], color='gray', bins=30, alpha=0.5)
