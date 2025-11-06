@@ -100,9 +100,10 @@ def generate_counterfactuals_only():
                     skip_combination = True
                 continue
             
-            # Store counterfactual in replication_viz object
+            # Store counterfactual and model in replication_viz object
             replication_viz = {
                 'counterfactual': counterfactual,
+                'cf_model': cf_dpg,  # Store the model so we can access fitness data later
                 'visualizations': []
             }
             combination_viz['replication'].append(replication_viz)
@@ -128,6 +129,7 @@ def run_visualization_profiling(visualizations):
         # Generate visualizations for each replication
         for replication_idx, replication_viz in enumerate(combination_viz['replication']):
             counterfactual = replication_viz['counterfactual']
+            cf_dpg = replication_viz['cf_model']  # Use the stored model instead of regenerating
             
             print(f"    Replication {replication_idx + 1}/{len(combination_viz['replication'])}...", end=" ")
             
@@ -140,13 +142,8 @@ def run_visualization_profiling(visualizations):
                 plot_sample_and_counterfactual_comparison(
                     MODEL, ORIGINAL_SAMPLE, SAMPLE_DATAFRAME, counterfactual, CLASS_COLORS_LIST
                 ),
+                cf_dpg.plot_fitness()  # Use the stored model's fitness data
             ]
-            
-            # Generate and add fitness plot
-            cf_dpg = CounterFactualModel(MODEL, CONSTRAINTS)
-            cf_dpg.dict_non_actionable = dict_non_actionable
-            cf_dpg.generate_counterfactual(ORIGINAL_SAMPLE, TARGET_CLASS, INITIAL_POPULATION_SIZE, MAX_GENERATIONS)
-            replication_visualizations.append(cf_dpg.plot_fitness())
             
             # Store visualizations in the replication object
             replication_viz['visualizations'] = replication_visualizations
