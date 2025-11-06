@@ -514,7 +514,7 @@ def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual,
     vmin = -vmax
 
     # Plotting the heatmap for numeric data
-    plt.figure(figsize=(10, 5))
+    fig = plt.figure(figsize=(10, 5))
     ax = sns.heatmap(full_df, annot=True, fmt=".2f", cmap='coolwarm', cbar=True, linewidths=1.2, linecolor='k',
                      vmin=vmin, vmax=vmax, mask=mask)
 
@@ -536,9 +536,8 @@ def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual,
     plt.title(f'Original (Class {class_sample}), Counterfactual (Class {class_counterfactual}) with Restrictions')
     plt.xticks(rotation=45, ha="right")
     plt.yticks(rotation=0, va="center")
-    #plt.savefig("experiments/Plot_CF.png")
-    return(plt)
-    #plt.show()
+    plt.close(fig)  # Close the figure to prevent auto-display
+    return fig
 
 # Example usage
 #sample = {'petal width (cm)': 6.1, 'petal length (cm)': 2.8, 'sepal length (cm)': 4.7, 'sepal width (cm)': 1.2}
