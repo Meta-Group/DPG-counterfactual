@@ -29,14 +29,16 @@ def plot_explainer_summary(explainer, original_sample, counterfactual):
     summary = "\n".join(summary_lines)
 
     # Plot the text inside a figure
-    plt.figure(figsize=(8, 5))
-    plt.axis('off')
-    plt.gca().set_frame_on(False)
-    plt.text(0.5, 0.5, summary, fontsize=13, ha='center', va='center', wrap=True,
-             bbox=dict(boxstyle='round,pad=0.6', facecolor='whitesmoke', edgecolor='gray', alpha=0.95))
-    plt.title('Counterfactual Explanation Summary', fontsize=15, fontweight='bold', pad=18)
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.axis('off')
+    ax.set_frame_on(False)
+    ax.text(0.5, 0.5, summary, fontsize=13, ha='center', va='center', wrap=True,
+            bbox=dict(boxstyle='round,pad=0.6', facecolor='whitesmoke', edgecolor='gray', alpha=0.95),
+            transform=ax.transAxes)
+    ax.set_title('Counterfactual Explanation Summary', fontsize=15, fontweight='bold', pad=18)
     plt.tight_layout()
-    plt.show()
+    plt.close(fig)
+    return fig
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -442,7 +444,8 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
     
     plt.suptitle('Counterfactual Explanation Analysis', fontsize=16, fontweight='bold', y=0.98)
     plt.tight_layout()
-    plt.show()
+    plt.close(fig)
+    return fig
 
 
 def plot_pairwise_with_counterfactual(model, dataset, target, sample, counterfactual):
@@ -536,7 +539,7 @@ def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual,
     plt.title(f'Original (Class {class_sample}), Counterfactual (Class {class_counterfactual}) with Restrictions')
     plt.xticks(rotation=45, ha="right")
     plt.yticks(rotation=0, va="center")
-    plt.close(fig)  # Close the figure to prevent auto-display
+    plt.close(fig)
     return fig
 
 # Example usage
@@ -612,7 +615,8 @@ def plot_pairwise_with_counterfactual_df(model, dataset, target, sample, counter
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='upper right')
     plt.tight_layout()
-    plt.show()
+    plt.close(fig)
+    return fig
 
 # Example usage
 # Assuming you have a trained model, a dataset (as a DataFrame or array), target labels, original sample, and counterfactual_df
@@ -653,7 +657,7 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
     counterfactual_classes = model.predict(numeric_cf_df)
 
     # Plot the PCA results
-    plt.figure(figsize=(10, 6))
+    fig = plt.figure(figsize=(10, 6))
     colors = ['purple', 'green', 'orange']
 
     for class_value in np.unique(target):
@@ -680,7 +684,8 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
     plt.ylabel('PCA Component 2')
     plt.title('PCA Plot with Original Sample and Counterfactuals')
     #plt.legend()
-    plt.show()
+    plt.close(fig)
+    return fig
 
 # Example usage:
 # Assuming model, X, y, sample, counterfactuals_df are appropriately defined

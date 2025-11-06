@@ -101,8 +101,8 @@ class CounterFactualModel:
         ax.legend()
 
         plt.tight_layout()
-        return(plt)
-        #plt.show()
+        plt.close(fig)
+        return fig
 
 
 
