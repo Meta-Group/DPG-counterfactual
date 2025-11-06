@@ -138,6 +138,37 @@ class CounterFactualModel:
 
         return distance
 
+    def _normalize_feature_name(self, feature):
+        """
+        Normalize feature name by stripping whitespace, removing units in parentheses,
+        and converting to lowercase. This helps match features that may have slight 
+        variations in naming (e.g., "sepal width" vs "sepal width (cm)").
+        
+        Args:
+            feature (str): The feature name to normalize.
+            
+        Returns:
+            str: Normalized feature name.
+        """
+        import re
+        # Remove anything in parentheses (like units)
+        feature = re.sub(r'\s*\([^)]*\)', '', feature)
+        # Strip whitespace and convert to lowercase
+        return feature.strip().lower()
+    
+    def _features_match(self, feature1, feature2):
+        """
+        Check if two feature names match, using normalized comparison.
+        
+        Args:
+            feature1 (str): First feature name.
+            feature2 (str): Second feature name.
+            
+        Returns:
+            bool: True if features match, False otherwise.
+        """
+        return self._normalize_feature_name(feature1) == self._normalize_feature_name(feature2)
+
     def validate_constraints(self, S_prime, sample, target_class):
         """
         Validate if the modified sample S_prime meets all constraints for the specified target class.
@@ -163,7 +194,7 @@ class CounterFactualModel:
             if new_value != original_value:
                 # Validate numerical constraints specific to the target class
                 for condition in class_constraints:
-                    if condition["feature"] == feature:
+                    if self._features_match(condition["feature"], feature):
                         operator = condition["operator"]
                         constraint_value = condition["value"]
 
@@ -201,7 +232,7 @@ class CounterFactualModel:
             if new_value != original_value:
                 # Validate numerical constraints NOT related to the target class
                 for condition in non_target_class_constraints:
-                    if condition["feature"] == feature:
+                    if self._features_match(condition["feature"], feature):
                         operator = condition["operator"]
                         constraint_value = condition["value"]
 
@@ -248,7 +279,7 @@ class CounterFactualModel:
 
             # Find the constraints for this feature
             for condition in class_constraints:
-                if condition["feature"] == feature:
+                if self._features_match(condition["feature"], feature):
                     operator = condition["operator"]
                     constraint_value = condition["value"]
 
