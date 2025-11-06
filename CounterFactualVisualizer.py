@@ -310,7 +310,7 @@ def plot_pca_with_counterfactual(model, dataset, target, sample, counterfactual)
     #plt.show()
     return(plt)
 
-def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterfactual, class_colors_list=None):
+def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterfactual, constraints=None, class_colors_list=None):
     """
     Enhanced visualization combining original and counterfactual samples with:
     1. Side-by-side feature comparison with arrows showing direction of change
@@ -322,6 +322,7 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
         sample: Original sample as dictionary
         sample_df: Original sample as DataFrame
         counterfactual: Counterfactual sample as dictionary
+        constraints: Dictionary of constraints per class (optional)
         class_colors_list: List of colors for classes (default: ['purple', 'green', 'orange'])
     """
     if class_colors_list is None:
@@ -376,6 +377,66 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
             ax1.text(width_bar, bar.get_y() + bar.get_height()/2,
                     f'{width_bar:.2f}', ha='left', va='center', 
                     fontsize=9, fontweight='bold')
+    
+    # Add constraint indicators if constraints are provided
+    if constraints is not None:
+        # Get the x-axis limits to determine the plotting range
+        xlim = ax1.get_xlim()
+        
+        # Plot constraints for both classes
+        for class_idx in [predicted_class, counterfactual_class]:
+            class_name = f'Class {class_idx}'
+            if class_name in constraints:
+                class_constraints = constraints[class_name]
+                
+                # Create a dictionary for easy lookup by feature name
+                constraint_dict = {c['feature']: c for c in class_constraints}
+                
+                # Determine vertical offset based on class
+                y_offset = -width/2 if class_idx == predicted_class else width/2
+                
+                for i, feature in enumerate(feature_list):
+                    # Try to match feature name (handle with and without spaces/underscores)
+                    feature_key = None
+                    for key in constraint_dict.keys():
+                        if key.replace('_', ' ') == feature.replace(' (cm)', '').replace('_', ' '):
+                            feature_key = key
+                            break
+                    
+                    if feature_key and feature_key in constraint_dict:
+                        c = constraint_dict[feature_key]
+                        min_val = c['min'] if c['min'] is not None else xlim[0]
+                        max_val = c['max'] if c['max'] is not None else xlim[1]
+                        
+                        # Draw constraint range as a horizontal line with markers
+                        constraint_color = class_colors_list[class_idx]
+                        alpha_constraint = 0.5
+                        
+                        # Draw the range line
+                        if c['min'] is not None and c['max'] is not None:
+                            # Both min and max
+                            ax1.plot([min_val, max_val], [i + y_offset, i + y_offset], 
+                                   color=constraint_color, linewidth=4, alpha=alpha_constraint, 
+                                   linestyle='-', zorder=1)
+                            # Add markers at boundaries
+                            ax1.plot([min_val], [i + y_offset], marker='|', markersize=12, 
+                                   color=constraint_color, alpha=0.8, markeredgewidth=3, zorder=2)
+                            ax1.plot([max_val], [i + y_offset], marker='|', markersize=12, 
+                                   color=constraint_color, alpha=0.8, markeredgewidth=3, zorder=2)
+                        elif c['min'] is not None:
+                            # Only min constraint
+                            ax1.plot([min_val, xlim[1]], [i + y_offset, i + y_offset], 
+                                   color=constraint_color, linewidth=4, alpha=alpha_constraint, 
+                                   linestyle='-', zorder=1)
+                            ax1.plot([min_val], [i + y_offset], marker='|', markersize=12, 
+                                   color=constraint_color, alpha=0.8, markeredgewidth=3, zorder=2)
+                        elif c['max'] is not None:
+                            # Only max constraint
+                            ax1.plot([xlim[0], max_val], [i + y_offset, i + y_offset], 
+                                   color=constraint_color, linewidth=4, alpha=alpha_constraint, 
+                                   linestyle='-', zorder=1)
+                            ax1.plot([max_val], [i + y_offset], marker='|', markersize=12, 
+                                   color=constraint_color, alpha=0.8, markeredgewidth=3, zorder=2)
     
     ax1.set_yticks(x_pos)
     ax1.set_yticklabels([f.replace(' (cm)', '').replace('_', ' ') for f in feature_list])
