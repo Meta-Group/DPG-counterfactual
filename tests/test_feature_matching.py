@@ -121,6 +121,33 @@ class TestFeatureNameMatching(unittest.TestCase):
                 'speed'
             )
         )
+    
+    def test_underscore_space_equivalence(self):
+        """Test that underscores and spaces are treated as equivalent."""
+        self.assertTrue(
+            self.cf_model._features_match('sepal_width', 'sepal width')
+        )
+        self.assertTrue(
+            self.cf_model._features_match('sepal width', 'sepal_width')
+        )
+        self.assertTrue(
+            self.cf_model._features_match('petal_length', 'petal length')
+        )
+        # With units
+        self.assertTrue(
+            self.cf_model._features_match('sepal_width (cm)', 'sepal width (cm)')
+        )
+        self.assertTrue(
+            self.cf_model._features_match('sepal_width', 'sepal width (cm)')
+        )
+        # Multiple underscores/spaces
+        self.assertTrue(
+            self.cf_model._features_match('feature_name_test', 'feature name test')
+        )
+        # Mixed case with underscores
+        self.assertTrue(
+            self.cf_model._features_match('Sepal_Width', 'sepal width')
+        )
 
 
 class TestFeatureMatchingIntegration(unittest.TestCase):

@@ -141,8 +141,9 @@ class CounterFactualModel:
     def _normalize_feature_name(self, feature):
         """
         Normalize feature name by stripping whitespace, removing units in parentheses,
-        and converting to lowercase. This helps match features that may have slight 
-        variations in naming (e.g., "sepal width" vs "sepal width (cm)").
+        converting to lowercase, and replacing underscores with spaces. This helps match 
+        features that may have slight variations in naming (e.g., "sepal width" vs 
+        "sepal_width" vs "sepal width (cm)").
         
         Args:
             feature (str): The feature name to normalize.
@@ -153,6 +154,8 @@ class CounterFactualModel:
         import re
         # Remove anything in parentheses (like units)
         feature = re.sub(r'\s*\([^)]*\)', '', feature)
+        # Replace underscores with spaces
+        feature = feature.replace('_', ' ')
         # Normalize multiple spaces to single space
         feature = re.sub(r'\s+', ' ', feature)
         # Strip whitespace and convert to lowercase
