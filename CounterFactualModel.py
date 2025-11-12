@@ -271,13 +271,13 @@ class CounterFactualModel:
                   and respects actionable changes.
         """
         adjusted_sample = sample.copy()  # Start with the original values
+        # Filter the constraints for the specified target class
+        class_constraints = self.constraints.get(f"Class {target_class}", [])
 
         for feature, original_value in sample.items():
             min_value = -np.inf
             max_value = np.inf
 
-            # Filter the constraints for the specified target class
-            class_constraints = self.constraints.get(f"Class {target_class}", [])
 
             # Find the constraints for this feature using direct lookup
             matching_constraint = next(
