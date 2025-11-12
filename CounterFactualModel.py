@@ -290,7 +290,7 @@ class CounterFactualModel:
                 max_value = matching_constraint.get("max") if matching_constraint.get("max") is not None else np.inf
 
             print(f"Feature: {feature}, Original Value: {original_value}, Min: {min_value}, Max: {max_value}")
-            
+
             # Incorporate non-actionable constraints
             if self.dict_non_actionable and feature in self.dict_non_actionable:
                 actionability = self.dict_non_actionable[feature]
@@ -310,6 +310,7 @@ class CounterFactualModel:
 
             adjusted_sample[feature] = np.random.uniform(min_value, max_value)
         print("Adjusted sample:", adjusted_sample)
+        print('---')
         return adjusted_sample
 
     def calculate_sparsity(self, original_sample, counterfactual_sample):
