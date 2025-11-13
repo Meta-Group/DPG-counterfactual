@@ -3,4 +3,4 @@
 	url = https://github.com/rzfzr/DPG
 [submodule "Scamander"]
 	path = Scamander
-	url = https://github.com/riccotti/Scamander.git
+	url = https://github.com/Meta-Group/Scamander.git
