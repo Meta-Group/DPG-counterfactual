@@ -1,3 +1,6 @@
 [submodule "DPG"]
 	path = DPG
 	url = https://github.com/rzfzr/DPG
+[submodule "Scamander"]
+	path = Scamander
+	url = https://github.com/riccotti/Scamander.git
