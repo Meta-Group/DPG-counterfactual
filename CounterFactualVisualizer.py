@@ -55,7 +55,7 @@ plt.rcParams['xtick.labelsize'] = 12  # Font size for x-axis tick labels
 plt.rcParams['ytick.labelsize'] = 12  # Font size for y-axis tick labels
 
 
-def plot_constraints(constraints, overlapping=False, class_colors=None, class_colors_list=None, sample=None):
+def plot_constraints(constraints, overlapping=False, class_colors=None, class_colors_list=None, sample=None, sample_class=None):
     """
     Visualize feature constraints for each class using horizontal bar ranges.
     
@@ -73,6 +73,8 @@ def plot_constraints(constraints, overlapping=False, class_colors=None, class_co
     sample : dict, optional
         Sample data to plot on the constraints graph.
         Keys should match feature names (e.g., 'sepal length (cm)')
+    sample_class : int, optional
+        The class of the sample. Used to color the sample point according to its class.
     """
     # Default colors if not provided
     if class_colors is None:
@@ -137,6 +139,12 @@ def plot_constraints(constraints, overlapping=False, class_colors=None, class_co
         # Plot sample data if provided
         if sample is not None:
             sample_plotted = False
+            # Determine sample color based on sample_class
+            if sample_class is not None and 0 <= sample_class < len(class_colors_list):
+                sample_color = class_colors_list[sample_class]
+            else:
+                sample_color = 'red'
+            
             for i, feature in enumerate(features):
                 # Try to find matching feature in sample (handle variations in naming)
                 sample_value = None
@@ -146,11 +154,11 @@ def plot_constraints(constraints, overlapping=False, class_colors=None, class_co
                         break
                 
                 if sample_value is not None:
-                    # Plot sample as a vertical line or marker
+                    # Plot sample as a vertical line (red) and marker (class color)
                     ax.plot([sample_value, sample_value], [i - 0.4, i + 0.4], 
                            color='red', linewidth=3, linestyle='-', zorder=10,
                            label='Sample' if not sample_plotted else "")
-                    ax.scatter([sample_value], [i], color='red', s=100, 
+                    ax.scatter([sample_value], [i], color=sample_color, s=100, 
                               marker='D', edgecolor='darkred', linewidth=1.5, zorder=11)
                     sample_plotted = True
         
@@ -213,6 +221,12 @@ def plot_constraints(constraints, overlapping=False, class_colors=None, class_co
             
             # Plot sample data if provided
             if sample is not None:
+                # Determine sample color based on sample_class
+                if sample_class is not None and 0 <= sample_class < len(class_colors_list):
+                    sample_color = class_colors_list[sample_class]
+                else:
+                    sample_color = 'red'
+                
                 for i, feature in enumerate(features):
                     # Try to find matching feature in sample (handle variations in naming)
                     sample_value = None
@@ -222,10 +236,10 @@ def plot_constraints(constraints, overlapping=False, class_colors=None, class_co
                             break
                     
                     if sample_value is not None:
-                        # Plot sample as a vertical line or marker
+                        # Plot sample as a vertical line (red) and marker (class color)
                         ax.plot([sample_value, sample_value], [i - 0.3, i + 0.3], 
                                color='red', linewidth=3, linestyle='-', zorder=10)
-                        ax.scatter([sample_value], [i], color='red', s=100, 
+                        ax.scatter([sample_value], [i], color=sample_color, s=100, 
                                   marker='D', edgecolor='darkred', linewidth=1.5, zorder=11)
             
             ax.set_yticks(y_positions)
@@ -239,10 +253,16 @@ def plot_constraints(constraints, overlapping=False, class_colors=None, class_co
         
         # Add legend for sample if provided
         if sample is not None:
+            # Determine sample color for legend
+            if sample_class is not None and 0 <= sample_class < len(class_colors_list):
+                sample_color = class_colors_list[sample_class]
+            else:
+                sample_color = 'red'
+            
             # Create custom legend entry
             from matplotlib.lines import Line2D
             legend_elements = [Line2D([0], [0], marker='D', color='w', 
-                                     markerfacecolor='red', markersize=10, 
+                                     markerfacecolor=sample_color, markersize=10, 
                                      markeredgecolor='darkred', markeredgewidth=1.5,
                                      label='Sample')]
             axes[-1].legend(handles=legend_elements, loc='upper right', fontsize=10, framealpha=0.9)
