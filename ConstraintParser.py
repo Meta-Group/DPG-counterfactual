@@ -86,15 +86,68 @@ class ConstraintParser:
         return True
 
     def read_constraints_from_file(self):
+        def _convert_operator_list_to_minmax(operator_list):
+            # operator_list: [{'feature':'Age','operator':'<=','value':3.4}, ...]
+            features_map = {}
+            for cond in operator_list:
+                f = cond.get('feature')
+                op = cond.get('operator')
+                val = cond.get('value')
+                if f not in features_map:
+                    features_map[f] = {'min': None, 'max': None}
+                if op in ('>', '>='):
+                    if features_map[f]['min'] is None or val > features_map[f]['min']:
+                        features_map[f]['min'] = val
+                elif op in ('<', '<='):
+                    if features_map[f]['max'] is None or val < features_map[f]['max']:
+                        features_map[f]['max'] = val
+            return [{'feature': f, 'min': mm['min'], 'max': mm['max']} for f, mm in features_map.items()]
+
         with open(self.filename, 'r') as file:
             for line in file:
                 line = line.strip()
                 if not line:
                     continue
                 class_label, json_string = line.split(":", 1)
+                class_label = class_label.strip()
                 json_string = json_string.strip().replace("'", '"').replace("None", "null")
                 try:
-                    self.constraints_dict[class_label.strip()] = json.loads(json_string)
+                    parsed = json.loads(json_string)
+                    if class_label.lower() == 'class bounds' and isinstance(parsed, dict):
+                        # Merge inner class bounds entries into top-level
+                        for inner_class_label, conditions in parsed.items():
+                            if isinstance(conditions, list) and len(conditions) and isinstance(conditions[0], str):
+                                # Old style: list of constraint strings; parse and convert
+                                nested = []
+                                for cond_str in conditions:
+                                    parsed_conditions = ConstraintParser.parse_condition(cond_str)
+                                    if parsed_conditions:
+                                        nested.extend(parsed_conditions)
+                                converted = _convert_operator_list_to_minmax(nested)
+                                self.constraints_dict[inner_class_label.strip()] = converted
+                            elif isinstance(conditions, list) and len(conditions) and isinstance(conditions[0], dict) and ('operator' in conditions[0]):
+                                # List of operator dicts; convert to min/max
+                                converted = _convert_operator_list_to_minmax(conditions)
+                                self.constraints_dict[inner_class_label.strip()] = converted
+                            else:
+                                # Already in expected min/max dict format
+                                self.constraints_dict[inner_class_label.strip()] = conditions
+                    else:
+                        # Regular class label line: could contain list of min/max dicts or other
+                        if isinstance(parsed, list) and len(parsed) and isinstance(parsed[0], str):
+                            # If it's a list of strings, convert using parse_condition
+                            nested = []
+                            for cond_str in parsed:
+                                parsed_conditions = ConstraintParser.parse_condition(cond_str)
+                                if parsed_conditions:
+                                    nested.extend(parsed_conditions)
+                            converted = _convert_operator_list_to_minmax(nested)
+                            self.constraints_dict[class_label] = converted
+                        elif isinstance(parsed, list) and len(parsed) and isinstance(parsed[0], dict) and ('operator' in parsed[0]):
+                            converted = _convert_operator_list_to_minmax(parsed)
+                            self.constraints_dict[class_label] = converted
+                        else:
+                            self.constraints_dict[class_label] = parsed
                 except json.JSONDecodeError as e:
                     print(f"Error parsing JSON for {class_label}: {e}")
         return self.constraints_dict
