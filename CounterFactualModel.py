@@ -517,8 +517,13 @@ class CounterFactualModel:
                 individual[feature] = np.round(max(0, individual[feature]), 2)
         return individual,
 
-    def genetic_algorithm(self, sample, target_class, population_size=100, generations=100, mutation_rate=0.8, metric="euclidean", delta_threshold=0.01, patience=10):
-        """Genetic algorithm implementation using DEAP framework."""
+    def genetic_algorithm(self, sample, target_class, population_size=100, generations=100, mutation_rate=0.8, metric="euclidean", delta_threshold=0.01, patience=10, n_jobs=-1):
+        """Genetic algorithm implementation using DEAP framework.
+        
+        Args:
+            n_jobs (int): Number of parallel jobs for fitness evaluation. 
+                         -1 = use all CPUs (default), 1 = sequential.
+        """
         feature_names = list(sample.keys())
         original_features = np.array([sample[feature] for feature in feature_names])
         
@@ -534,6 +539,15 @@ class CounterFactualModel:
         
         # Initialize toolbox
         toolbox = base.Toolbox()
+        
+        # Enable parallel processing (default behavior with n_jobs=-1)
+        if n_jobs != 1:
+            from multiprocessing import Pool
+            import os
+            if n_jobs == -1:
+                n_jobs = os.cpu_count()
+            pool = Pool(processes=n_jobs)
+            toolbox.register("map", pool.map)
         
         # Register individual creation
         toolbox.register("individual", self._create_deap_individual, 
@@ -625,19 +639,27 @@ class CounterFactualModel:
             # Replace population
             population[:] = offspring
         
+        # Clean up multiprocessing pool if used
+        if n_jobs != 1:
+            pool.close()
+            pool.join()
+        
         # Return the best individual found
         if hof[0].fitness.values[0] == np.inf:
             return None
         
         return dict(hof[0])
 
-    def generate_counterfactual(self, sample, target_class, population_size=100, generations=100 ):
+    def generate_counterfactual(self, sample, target_class, population_size=100, generations=100, n_jobs=-1):
         """
         Generate a counterfactual for the given sample and target class using a genetic algorithm.
 
         Args:
             sample (dict): The original sample with feature values.
             target_class (int): The desired class for the counterfactual.
+            population_size (int): Size of the population for the genetic algorithm.
+            generations (int): Number of generations to run.
+            n_jobs (int): Number of parallel jobs. -1=all CPUs (default), 1=sequential.
 
         Returns:
             dict: A modified sample representing the counterfactual or None if not found.
@@ -647,5 +669,5 @@ class CounterFactualModel:
         if sample_class == target_class:
             raise ValueError("Target class need to be different from the predicted class label.")
 
-        counterfactual = self.genetic_algorithm(sample, target_class, population_size, generations)
+        counterfactual = self.genetic_algorithm(sample, target_class, population_size, generations, n_jobs=n_jobs)
         return counterfactual
