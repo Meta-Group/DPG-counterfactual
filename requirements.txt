@@ -4,6 +4,7 @@ matplotlib
 seaborn
 scipy
 scikit-learn
+deap
 
 # notebooks
 ipywidgets
