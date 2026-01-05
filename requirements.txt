@@ -11,4 +11,4 @@ ipywidgets
 ipython
 jupyter
 tqdm
-
+nbstripout
