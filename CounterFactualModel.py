@@ -557,6 +557,9 @@ class CounterFactualModel:
         # Register population creation
         toolbox.register("population", tools.initRepeat, list, toolbox.individual)
         
+        # Register mating
+        toolbox.register("mate", tools.cxUniform, indpb=0.6)
+
         # Register genetic operators
         toolbox.register("evaluate", lambda ind: (self.calculate_fitness(
             ind, original_features, sample, target_class, metric, population),))
@@ -622,6 +625,13 @@ class CounterFactualModel:
             # Selection
             offspring = toolbox.select(population, len(population))
             offspring = [toolbox.clone(ind) for ind in offspring]
+
+            # Crossover
+            for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                if np.random.rand() < 0.7:  # crossover probability
+                    toolbox.mate(child1, child2)
+                    del child1.fitness.values
+                    del child2.fitness.values
             
             # Mutation
             for mutant in offspring:
