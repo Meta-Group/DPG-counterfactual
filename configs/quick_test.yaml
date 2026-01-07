@@ -3,6 +3,7 @@
 experiment:
   name: "quick_test"
   project: "counterfactual-dpg"
+  entity: "mllab-ts-universit-di-trieste"
   tags: ["test", "quick"]
   notes: "Quick test run with reduced parameters"
 
