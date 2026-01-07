@@ -1,0 +1,49 @@
+# Experiment Configuration for CounterFactual DPG
+# This file defines all parameters for running counterfactual generation experiments
+
+experiment:
+  name: "counterfactual_dpg_v1"
+  project: "counterfactual-dpg"  # wandb project name
+  tags: ["baseline", "iris"]
+  notes: "Initial baseline run with default parameters"
+
+data:
+  dataset: "iris"  # Support for future datasets
+  test_size: 0.3
+  random_state: 42
+
+model:
+  type: "RandomForestClassifier"
+  n_estimators: 3
+  random_state: 42
+
+counterfactual:
+  # GA hyperparameters (from CounterFactualModel)
+  diversity_weight: 0.5
+  repulsion_weight: 4.0
+  boundary_weight: 15.0
+  distance_factor: 2.0
+  sparsity_factor: 1.0
+  constraints_factor: 3.0
+  
+  # Runtime parameters
+  population_size: 20
+  max_generations: 60
+  mutation_rate: 0.8
+  delta_threshold: 0.01
+  patience: 10
+  
+  # Actionability rules to test
+  rules: ["none", "no_change"]  # "non_increasing", "non_decreasing"
+
+experiment_params:
+  seed: 42
+  sample_indices: null  # null = random, or list like [0, 5, 10]
+  num_samples: 5  # number of samples to process if sample_indices is null
+  num_combinations_to_test: null  # null = test half of all combinations
+  num_replications: 3
+
+output:
+  local_dir: "experiment_results"
+  save_visualizations: true
+  save_raw_data: true

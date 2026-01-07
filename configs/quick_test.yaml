@@ -1,0 +1,48 @@
+# Quick Test Configuration - Smaller parameters for fast testing
+
+experiment:
+  name: "quick_test"
+  project: "counterfactual-dpg"
+  tags: ["test", "quick"]
+  notes: "Quick test run with reduced parameters"
+
+data:
+  dataset: "iris"
+  test_size: 0.3
+  random_state: 42
+
+model:
+  type: "RandomForestClassifier"
+  n_estimators: 3
+  random_state: 42
+
+counterfactual:
+  # GA hyperparameters - smaller values for testing
+  diversity_weight: 0.5
+  repulsion_weight: 4.0
+  boundary_weight: 15.0
+  distance_factor: 2.0
+  sparsity_factor: 1.0
+  constraints_factor: 3.0
+  
+  # Runtime parameters - reduced for quick testing
+  population_size: 10
+  max_generations: 20
+  mutation_rate: 0.8
+  delta_threshold: 0.01
+  patience: 5
+  
+  # Test minimal rules
+  rules: ["none"]
+
+experiment_params:
+  seed: 42
+  sample_indices: null
+  num_samples: 2  # Just 2 samples for quick test
+  num_combinations_to_test: 1  # Only 1 combination
+  num_replications: 2  # Only 2 replications
+
+output:
+  local_dir: "experiment_results"
+  save_visualizations: true
+  save_raw_data: true
