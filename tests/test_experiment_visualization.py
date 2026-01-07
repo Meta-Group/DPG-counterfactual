@@ -24,5 +24,16 @@ def test_visualization_exports_summary():
         df = pd.read_csv(viz_result['summary_csv'])
         assert not df.empty
 
+        # Request plot export *index* (do not save PNGs)
+        viz_result_idx = run_visualization(sample_id=sample_id, output_dir=tmpdir, export_plots=True, save_plots=False, save_summary=False, save_metrics=False, verbose=False)
+        sample_dir = os.path.join(tmpdir, str(sample_id))
+        index_path = os.path.join(sample_dir, 'plots_index.json')
+        assert os.path.exists(index_path)
+        # The index should list available plots
+        import json
+        with open(index_path, 'r') as f:
+            idx = json.load(f)
+        assert 'plots' in idx
+
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
