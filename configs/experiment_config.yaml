@@ -4,6 +4,7 @@
 experiment:
   name: "counterfactual_dpg_v1"
   project: "counterfactual-dpg"  # wandb project name
+  entity: "mllab-ts-universit-di-trieste"
   tags: ["baseline", "iris"]
   notes: "Initial baseline run with default parameters"
 
