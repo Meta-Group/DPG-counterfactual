@@ -40,7 +40,7 @@ counterfactual:
   
   # Actionability rules to test
   # For credit data, certain features like age, credit_history may be non-actionable
-  rules: ["none", "no_change"]  # "non_increasing", "non_decreasing"
+  rules: ["none"]  # "non_increasing", "non_decreasing"
 
 experiment_params:
   seed: 42
