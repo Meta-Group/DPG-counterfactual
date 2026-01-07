@@ -712,50 +712,77 @@ def run_experiment(config: DictConfig, wandb_run=None):
             if not constraints:
                 logger.info("No DPG constraints extracted; skipping detailed WandB logging for DPG")
             else:
-                # Add constraints to run config so they appear under the 'Config' tab
+                import json
+
+                # Normalize constraints into per-class, per-feature intervals with deterministic ordering
+                normalized = {}
+                for cname in sorted(constraints.keys()):
+                    feature_map = {}
+                    for entry in constraints[cname]:
+                        f = entry.get('feature')
+                        minv = entry.get('min')
+                        maxv = entry.get('max')
+                        if f not in feature_map:
+                            feature_map[f] = {'min': minv, 'max': maxv}
+                        else:
+                            cur = feature_map[f]
+                            # For min (lower bound), keep the most restrictive (largest) value if present
+                            if minv is not None:
+                                if cur['min'] is None or minv > cur['min']:
+                                    cur['min'] = minv
+                            # For max (upper bound), keep the most restrictive (smallest) value if present
+                            if maxv is not None:
+                                if cur['max'] is None or maxv < cur['max']:
+                                    cur['max'] = maxv
+                    # Order features alphabetically for deterministic display
+                    normalized[cname] = {k: feature_map[k] for k in sorted(feature_map.keys())}
+
+                # Put normalized constraints into config so they appear under the Config tab
                 try:
                     try:
-                        wandb_run.config['dpg'] = constraints
+                        wandb_run.config['dpg'] = normalized
                     except Exception:
-                        # Some wandb versions may expose config as dict-like
-                        wandb_run.config.update({'dpg': constraints})
+                        wandb_run.config.update({'dpg': normalized})
                 except Exception:
-                    logger.warning("Unable to add DPG constraints to wandb config")
+                    logger.warning("Unable to add normalized DPG constraints to wandb config")
 
-                # Also add a compact summary into the run summary (best-effort)
+                # Add a compact summary into the run summary (best-effort)
                 try:
+                    class_sizes = {c: len(normalized[c]) for c in normalized}
+                    summary_entry = {'num_classes': len(normalized), 'features_per_class': class_sizes}
                     if hasattr(wandb_run, 'summary') and isinstance(wandb_run.summary, dict):
-                        wandb_run.summary['dpg'] = {'num_classes': len(constraints)}
+                        wandb_run.summary['dpg'] = summary_entry
                     else:
-                        wandb_run.summary.update({'dpg': {'num_classes': len(constraints)}})
+                        wandb_run.summary.update({'dpg': summary_entry})
                 except Exception:
                     logger.warning("Unable to add DPG summary to wandb summary")
 
-                # Log a small table with per-class constraint strings for easy viewing
+                # Log a tidy table with one row per (class, feature, min, max) for easy visual comparison
                 try:
-                    import json
-                    table_data = []
-                    for cname, clist in constraints.items():
-                        table_data.append([cname, json.dumps(clist)])
+                    table_rows = []
+                    for cname in sorted(normalized.keys()):
+                        for feat, bounds in normalized[cname].items():
+                            minv = bounds['min'] if bounds['min'] is not None else None
+                            maxv = bounds['max'] if bounds['max'] is not None else None
+                            table_rows.append([cname, feat, minv, maxv])
 
-                    table = wandb.Table(columns=["class", "constraints"], data=table_data)
+                    table = wandb.Table(columns=["class", "feature", "min", "max"], data=table_rows)
                     wandb.log({"dpg/constraints_table": table})
                 except Exception as exc:
-                    logger.warning(f"Failed to log DPG constraints table to WandB: {exc}")
+                    logger.warning(f"Failed to log normalized DPG constraints table to WandB: {exc}")
 
-                # Save constraints to a JSON file and add as a WandB artifact for inspection
+                # Save normalized constraints to a JSON file and add as a WandB artifact for inspection
                 try:
-                    import json
-                    dpg_json_path = os.path.join(getattr(config.output, 'local_dir', '.'), 'dpg_constraints.json')
+                    dpg_json_path = os.path.join(getattr(config.output, 'local_dir', '.'), 'dpg_constraints_normalized.json')
                     os.makedirs(os.path.dirname(dpg_json_path), exist_ok=True)
                     with open(dpg_json_path, 'w') as jf:
-                        json.dump(constraints, jf, indent=2)
+                        json.dump(normalized, jf, indent=2, sort_keys=True)
 
                     artifact = wandb.Artifact("dpg_constraints", type="dpg")
                     artifact.add_file(dpg_json_path)
                     wandb.log_artifact(artifact)
                 except Exception as exc:
-                    logger.warning(f"Failed to save or log DPG constraints artifact: {exc}")
+                    logger.warning(f"Failed to save or log normalized DPG constraints artifact: {exc}")
         except Exception as exc:
             logger.warning(f"Failed to log DPG constraints to WandB: {exc}")
     # -----------------------------------------------------------------------
