@@ -83,16 +83,19 @@ def run_experiment(
     IRIS_FEATURES = IRIS.data
     IRIS_LABELS = IRIS.target
 
+    # Create DataFrame with feature names for consistent handling
+    IRIS_FEATURES_DF = pd.DataFrame(IRIS_FEATURES, columns=IRIS.feature_names)
+
     TRAIN_FEATURES, TEST_FEATURES, TRAIN_LABELS, TEST_LABELS = train_test_split(
-        IRIS_FEATURES, IRIS_LABELS, test_size=0.3, random_state=42
+        IRIS_FEATURES_DF, IRIS_LABELS, test_size=0.3, random_state=42
     )
 
-    # Train model
+    # Train model with DataFrame (preserves feature names)
     model = RandomForestClassifier(n_estimators=3, random_state=42)
     model.fit(TRAIN_FEATURES, TRAIN_LABELS)
 
-    # Extract constraints
-    constraints = ConstraintParser.extract_constraints_from_dataset(model, TRAIN_FEATURES, TRAIN_LABELS, IRIS.feature_names)
+    # Extract constraints (pass numpy array for DPG compatibility)
+    constraints = ConstraintParser.extract_constraints_from_dataset(model, TRAIN_FEATURES.values, TRAIN_LABELS, IRIS.feature_names)
 
     # Choose a sample index (random if not provided)
     if sample_index is None:
