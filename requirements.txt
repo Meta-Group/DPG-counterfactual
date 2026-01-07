@@ -16,3 +16,4 @@ ipython
 jupyter
 tqdm
 nbstripout
+GitPython
