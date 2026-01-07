@@ -704,6 +704,61 @@ def run_experiment(config: DictConfig, wandb_run=None):
     constraints = ConstraintParser.extract_constraints_from_dataset(
         model, TRAIN_FEATURES.values, TRAIN_LABELS, FEATURE_NAMES
     )
+
+    # --- DPG: send extracted boundaries to WandB under a new 'dpg' section ---
+    if wandb_run:
+        try:
+            # If constraints are empty, log and skip heavy logging
+            if not constraints:
+                logger.info("No DPG constraints extracted; skipping detailed WandB logging for DPG")
+            else:
+                # Add constraints to run config so they appear under the 'Config' tab
+                try:
+                    try:
+                        wandb_run.config['dpg'] = constraints
+                    except Exception:
+                        # Some wandb versions may expose config as dict-like
+                        wandb_run.config.update({'dpg': constraints})
+                except Exception:
+                    logger.warning("Unable to add DPG constraints to wandb config")
+
+                # Also add a compact summary into the run summary (best-effort)
+                try:
+                    if hasattr(wandb_run, 'summary') and isinstance(wandb_run.summary, dict):
+                        wandb_run.summary['dpg'] = {'num_classes': len(constraints)}
+                    else:
+                        wandb_run.summary.update({'dpg': {'num_classes': len(constraints)}})
+                except Exception:
+                    logger.warning("Unable to add DPG summary to wandb summary")
+
+                # Log a small table with per-class constraint strings for easy viewing
+                try:
+                    import json
+                    table_data = []
+                    for cname, clist in constraints.items():
+                        table_data.append([cname, json.dumps(clist)])
+
+                    table = wandb.Table(columns=["class", "constraints"], data=table_data)
+                    wandb.log({"dpg/constraints_table": table})
+                except Exception as exc:
+                    logger.warning(f"Failed to log DPG constraints table to WandB: {exc}")
+
+                # Save constraints to a JSON file and add as a WandB artifact for inspection
+                try:
+                    import json
+                    dpg_json_path = os.path.join(getattr(config.output, 'local_dir', '.'), 'dpg_constraints.json')
+                    os.makedirs(os.path.dirname(dpg_json_path), exist_ok=True)
+                    with open(dpg_json_path, 'w') as jf:
+                        json.dump(constraints, jf, indent=2)
+
+                    artifact = wandb.Artifact("dpg_constraints", type="dpg")
+                    artifact.add_file(dpg_json_path)
+                    wandb.log_artifact(artifact)
+                except Exception as exc:
+                    logger.warning(f"Failed to save or log DPG constraints artifact: {exc}")
+        except Exception as exc:
+            logger.warning(f"Failed to log DPG constraints to WandB: {exc}")
+    # -----------------------------------------------------------------------
     
     # Prepare data dict (renamed from iris_data for generality)
     dataset_data = {
