@@ -283,7 +283,8 @@ def run_single_sample(
     constraints: Dict,
     dataset_data: Dict,
     class_colors_list: List[str],
-    wandb_run=None
+    wandb_run=None,
+    normalized_constraints=None
 ) -> Dict[str, Any]:
     """Run counterfactual generation for a single sample with WandB logging.
     
@@ -295,6 +296,7 @@ def run_single_sample(
         dataset_data: Dict containing features, labels, feature_names, train_features, train_labels
         class_colors_list: List of colors for visualization
         wandb_run: WandB run object for logging
+        normalized_constraints: Normalized DPG constraints dict (optional)
         
     Returns:
         Dict with results including sample_id, success_rate, and file paths
@@ -551,6 +553,16 @@ def run_single_sample(
     with open(raw_filepath, 'wb') as f:
         pickle.dump(raw_data, f)
     
+    # Save normalized DPG constraints in sample folder
+    if normalized_constraints:
+        import json
+        dpg_json_path = os.path.join(sample_dir, 'dpg_constraints_normalized.json')
+        try:
+            with open(dpg_json_path, 'w') as jf:
+                json.dump(normalized_constraints, jf, indent=2, sort_keys=True)
+        except Exception as exc:
+            print(f"WARNING: Failed to save DPG constraints to sample folder: {exc}")
+    
     # Generate visualizations if enabled
     if config.output.save_visualizations:
         for combination_idx, combination_viz in enumerate(visualizations):
@@ -786,6 +798,7 @@ def run_experiment(config: DictConfig, wandb_run=None):
     )
 
     # --- DPG: send extracted boundaries to WandB under a new 'dpg' section ---
+    normalized_constraints = None  # Will store normalized constraints for sample folders
     if wandb_run:
         try:
             # If constraints are empty, log and skip heavy logging
@@ -816,6 +829,9 @@ def run_experiment(config: DictConfig, wandb_run=None):
                                     cur['max'] = maxv
                     # Order features alphabetically for deterministic display
                     normalized[cname] = {k: feature_map[k] for k in sorted(feature_map.keys())}
+
+                # Store for saving in sample folders
+                normalized_constraints = normalized
 
                 # Put normalized constraints into config so they appear under the Config tab
                 try:
@@ -850,20 +866,6 @@ def run_experiment(config: DictConfig, wandb_run=None):
                     wandb.log({"dpg/constraints_table": table})
                 except Exception as exc:
                     print(f"WARNING: Failed to log normalized DPG constraints table to WandB: {exc}")
-
-                # Save normalized constraints to a JSON file and add as a WandB artifact for inspection
-                try:
-                    dpg_json_path = os.path.join(getattr(config.output, 'local_dir', '.'), 'dpg_constraints_normalized.json')
-                    os.makedirs(os.path.dirname(dpg_json_path), exist_ok=True)
-                    
-                    with open(dpg_json_path, 'w') as jf:
-                        json.dump(normalized, jf, indent=2, sort_keys=True)
-
-                    artifact = wandb.Artifact("dpg_constraints", type="dpg")
-                    artifact.add_file(dpg_json_path)
-                    wandb.log_artifact(artifact)
-                except Exception as exc:
-                    print(f"WARNING: Failed to save or log normalized DPG constraints artifact: {exc}")
         except Exception as exc:
             print(f"WARNING: Failed to log DPG constraints to WandB: {exc}")
     # -----------------------------------------------------------------------
@@ -904,7 +906,8 @@ def run_experiment(config: DictConfig, wandb_run=None):
             constraints,
             dataset_data,
             class_colors_list,
-            wandb_run
+            wandb_run,
+            normalized_constraints
         )
         results.append(result)
     
