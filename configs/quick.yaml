@@ -22,14 +22,14 @@ counterfactual:
   diversity_weight: 0.5
   repulsion_weight: 4.0
   boundary_weight: 15.0
-  distance_factor: 2.0
+  distance_factor: 5.0
   sparsity_factor: 1.0
   constraints_factor: 3.0
   
   # Runtime parameters - reduced for quick testing
   population_size: 10
   max_generations: 20
-  mutation_rate: 0.8
+  mutation_rate: 0.2
   delta_threshold: 0.01
   patience: 5
   
