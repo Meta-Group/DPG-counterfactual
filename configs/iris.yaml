@@ -28,8 +28,8 @@ counterfactual:
   constraints_factor: 3.0
   
   # Runtime parameters
-  population_size: 20
-  max_generations: 50
+  population_size: 30
+  max_generations: 60
   mutation_rate: 0.8
   delta_threshold: 0.01
   patience: 10
@@ -41,8 +41,8 @@ experiment_params:
   seed: 42
   sample_indices: null  # null = random, or list like [0, 5, 10]
   num_samples: 1 # number of samples to process if sample_indices is null
-  num_combinations_to_test: null  # null = test half of all combinations
-  num_replications: 3
+  num_combinations_to_test: 1  # null = test half of all combinations
+  num_replications: 5
 
 output:
   local_dir: "experiment_results"
