@@ -27,7 +27,7 @@ counterfactual:
   constraints_factor: 3.0
   
   # Runtime parameters - reduced for quick testing
-  population_size: 10
+  population_size: 20
   max_generations: 20
   mutation_rate: 0.2
   delta_threshold: 0.01
@@ -41,7 +41,7 @@ experiment_params:
   sample_indices: [2]
   num_samples: 1
   num_combinations_to_test: 1
-  num_replications: 3
+  num_replications: 1
 
 output:
   local_dir: "experiment_results"
