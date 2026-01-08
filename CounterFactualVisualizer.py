@@ -841,7 +841,7 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
                 size = 60 if gen_idx < num_generations - 1 else 100
                 # Use class color
                 color = colors[gen_class % len(colors)]
-                
+
                 # Plot the cross marker
                 plt.scatter(
                     coords[0], coords[1],
@@ -849,15 +849,26 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
                     alpha=alpha, edgecolor='black', linewidths=0.5,
                     zorder=5
                 )
-                
-                # Add circle around final generation
+
+                # Add circle around final generation (thinner & slightly smaller)
                 if gen_idx == num_generations - 1:
                     plt.scatter(
                         coords[0], coords[1],
                         facecolors='none', edgecolors=color,
-                        s=size * 3, linewidths=2.5, alpha=1.0,
+                        s=int(size * 2), linewidths=1.25, alpha=1.0,
                         zorder=6
                     )
+
+            # Draw a thin line connecting first and last generation for this replication
+            try:
+                start_coords = history_pca[0]
+                end_coords = history_pca[-1]
+                final_class = history_classes[-1]
+                line_color = colors[final_class % len(colors)]
+                plt.plot([start_coords[0], end_coords[0]], [start_coords[1], end_coords[1]],
+                         color=line_color, linewidth=1.0, alpha=0.6, zorder=4)
+            except Exception:
+                pass
     else:
         # Fallback: plot final counterfactuals only (original behavior)
         for idx, cf_class in enumerate(counterfactual_classes):
