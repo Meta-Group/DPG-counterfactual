@@ -768,6 +768,24 @@ def run_single_sample(
                                     gen_df = pd.DataFrame(gen_rows)
                                     gen_df.to_csv(os.path.join(sample_dir, f'pca_generations_combo_{combination_idx}.csv'), index=False)
 
+                                    # Save feature values for original, all generations, and final counterfactuals
+                                    feature_rows = []
+                                    # Add original sample
+                                    orig_row = {'replication': 'original', 'generation': 0}
+                                    orig_row.update({f: ORIGINAL_SAMPLE[f] for f in FEATURE_NAMES_LOCAL})
+                                    feature_rows.append(orig_row)
+                                    
+                                    for rep_idx, rep in enumerate(combination_viz['replication']):
+                                        evolution_history = rep.get('evolution_history', [])
+                                        if evolution_history:
+                                            for gen_idx, gen_sample in enumerate(evolution_history):
+                                                gen_row = {'replication': rep_idx, 'generation': gen_idx + 1}
+                                                gen_row.update({f: gen_sample.get(f, np.nan) for f in FEATURE_NAMES_LOCAL})
+                                                feature_rows.append(gen_row)
+                                    
+                                    feature_df = pd.DataFrame(feature_rows)
+                                    feature_df.to_csv(os.path.join(sample_dir, f'feature_values_generations_combo_{combination_idx}.csv'), index=False)
+
                                     # Save loadings
                                     loadings = pca_local.components_.T * (pca_local.explained_variance_**0.5)
                                     loadings_df = pd.DataFrame(loadings, index=FEATURE_NAMES_LOCAL, columns=['pc1_loading','pc2_loading'])
