@@ -336,6 +336,10 @@ def run_single_sample(
     configname = getattr(config.experiment, 'name', None)
     save_sample_metadata(SAMPLE_ID, ORIGINAL_SAMPLE, ORIGINAL_SAMPLE_PREDICTED_CLASS, TARGET_CLASS, sample_index, configname=configname, output_dir=output_dir) 
     
+    # Define sample directory early for use throughout the function
+    sample_dir = get_sample_dir(SAMPLE_ID, output_dir=output_dir, configname=configname)
+    os.makedirs(sample_dir, exist_ok=True)
+    
     print(f"INFO: Processing Sample ID: {SAMPLE_ID} (dataset index: {sample_index})")
     print(f"INFO: Original Predicted Class: {ORIGINAL_SAMPLE_PREDICTED_CLASS}, Target Class: {TARGET_CLASS}, combinations to test: {num_combinations_to_test}/{len(RULES_COMBINATIONS)}")
     
@@ -487,6 +491,21 @@ def run_single_sample(
                             "fitness/combination": str(combination),
                             "fitness/replication": replication,
                         })
+                
+                # Save fitness data locally as CSV
+                if getattr(config.output, 'save_visualization_images', False):
+                    os.makedirs(sample_dir, exist_ok=True)
+                    if cf_model.best_fitness_list and cf_model.average_fitness_list:
+                        fitness_data = []
+                        for gen, (best, avg) in enumerate(zip(cf_model.best_fitness_list, cf_model.average_fitness_list)):
+                            fitness_data.append({
+                                'generation': gen,
+                                'best_fitness': best,
+                                'average_fitness': avg
+                            })
+                        fitness_df = pd.DataFrame(fitness_data)
+                        fitness_csv_path = os.path.join(sample_dir, f'fitness_combo_{combination_num}_rep_{replication}.csv')
+                        fitness_df.to_csv(fitness_csv_path, index=False)
         
         if counterfactuals_df_replications:
             counterfactuals_df_replications = pd.DataFrame(counterfactuals_df_replications)
@@ -559,8 +578,6 @@ def run_single_sample(
         raw_data['visualizations_structure'].append(combo_copy)
     
     # Save to disk
-    sample_dir = get_sample_dir(SAMPLE_ID, output_dir=output_dir, configname=configname)
-    os.makedirs(sample_dir, exist_ok=True)
     raw_filepath = os.path.join(sample_dir, 'raw_counterfactuals.pkl')
     with open(raw_filepath, 'wb') as f:
         pickle.dump(raw_data, f) 
@@ -618,6 +635,22 @@ def run_single_sample(
                     # Store visualizations
                     replication_viz['visualizations'] = [heatmap_fig, comparison_fig, fitness_fig]
                     
+                    # Save replication-level visualizations locally
+                    if getattr(config.output, 'save_visualization_images', False):
+                        os.makedirs(sample_dir, exist_ok=True)
+                        
+                        if heatmap_fig:
+                            heatmap_path = os.path.join(sample_dir, f'heatmap_combo_{combination_idx}_rep_{replication_idx}.png')
+                            heatmap_fig.savefig(heatmap_path, bbox_inches='tight', dpi=150)
+                        
+                        if comparison_fig:
+                            comparison_path = os.path.join(sample_dir, f'comparison_combo_{combination_idx}_rep_{replication_idx}.png')
+                            comparison_fig.savefig(comparison_path, bbox_inches='tight', dpi=150)
+                        
+                        if fitness_fig:
+                            fitness_path = os.path.join(sample_dir, f'fitness_combo_{combination_idx}_rep_{replication_idx}.png')
+                            fitness_fig.savefig(fitness_path, bbox_inches='tight', dpi=150)
+                    
                     # Log to WandB
                     if wandb_run:
                         log_dict = {
@@ -646,6 +679,27 @@ def run_single_sample(
                     }
                     
                     replication_viz['explanations'] = explanations
+                    
+                    # Save explanations locally as text file
+                    if getattr(config.output, 'save_visualization_images', False):
+                        os.makedirs(sample_dir, exist_ok=True)
+                        explanation_text = f"""Sample {SAMPLE_ID} - Combination {combination_idx} - Replication {replication_idx}
+
+Feature Modifications
+{explanations['Feature Modifications']}
+
+Constraints Respect
+{explanations['Constraints Respect']}
+
+Stopping Criteria
+{explanations['Stopping Criteria']}
+
+Final Results
+{explanations['Final Results']}
+"""
+                        explanation_path = os.path.join(sample_dir, f'explanation_combo_{combination_idx}_rep_{replication_idx}.txt')
+                        with open(explanation_path, 'w') as f:
+                            f.write(explanation_text)
                     
                     # Log explanations to WandB as text
                     if wandb_run:
