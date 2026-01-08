@@ -37,6 +37,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
@@ -786,15 +787,90 @@ def run_single_sample(
                                     feature_df = pd.DataFrame(feature_rows)
                                     feature_df.to_csv(os.path.join(sample_dir, f'feature_values_generations_combo_{combination_idx}.csv'), index=False)
 
+                                    # Create 4D visualization (pairwise scatter matrix) of feature evolution
+                                    try:
+                                        print(f"INFO: Creating 4D feature evolution plot for combination {combination_idx}...")
+                                        n_features = len(FEATURE_NAMES_LOCAL)
+                                        fig_4d, axes = plt.subplots(n_features, n_features, figsize=(14, 14))
+                                        
+                                        colors_rep = ['blue', 'red', 'green', 'orange', 'purple', 'brown']
+                                        
+                                        for i, feat_y in enumerate(FEATURE_NAMES_LOCAL):
+                                            for j, feat_x in enumerate(FEATURE_NAMES_LOCAL):
+                                                ax = axes[i, j] if n_features > 1 else axes
+                                                
+                                                if i == j:
+                                                    # Diagonal: show feature name
+                                                    ax.text(0.5, 0.5, feat_x, ha='center', va='center', 
+                                                           fontsize=10, weight='bold', transform=ax.transAxes)
+                                                    ax.set_xlim(0, 1)
+                                                    ax.set_ylim(0, 1)
+                                                    ax.axis('off')
+                                                else:
+                                                    # Off-diagonal: scatter plot
+                                                    # Plot original sample
+                                                    ax.scatter(ORIGINAL_SAMPLE[feat_x], ORIGINAL_SAMPLE[feat_y], 
+                                                             marker='o', s=200, c='black', edgecolors='black', 
+                                                             linewidths=2, zorder=10, alpha=0.7)
+                                                    ax.text(ORIGINAL_SAMPLE[feat_x], ORIGINAL_SAMPLE[feat_y], 'S',
+                                                           ha='center', va='center', fontsize=8, color='white', 
+                                                           weight='bold', zorder=11)
+                                                    
+                                                    # Plot evolution for each replication
+                                                    for rep_idx, rep in enumerate(combination_viz['replication']):
+                                                        evolution_history = rep.get('evolution_history', [])
+                                                        if evolution_history:
+                                                            color = colors_rep[rep_idx % len(colors_rep)]
+                                                            
+                                                            # Plot path
+                                                            x_vals = [gen_sample.get(feat_x, np.nan) for gen_sample in evolution_history]
+                                                            y_vals = [gen_sample.get(feat_y, np.nan) for gen_sample in evolution_history]
+                                                            ax.plot(x_vals, y_vals, color=color, alpha=0.4, linewidth=1, zorder=3)
+                                                            
+                                                            # Plot generation points
+                                                            for gen_idx, gen_sample in enumerate(evolution_history):
+                                                                x_val = gen_sample.get(feat_x, np.nan)
+                                                                y_val = gen_sample.get(feat_y, np.nan)
+                                                                
+                                                                # Determine if this is the last generation (final counterfactual)
+                                                                is_final = (gen_idx == len(evolution_history) - 1)
+                                                                marker_size = 120 if is_final else 80
+                                                                alpha = 1.0 if is_final else 0.3 + (0.5 * gen_idx / max(1, len(evolution_history) - 1))
+                                                                
+                                                                ax.scatter(x_val, y_val, marker='o', s=marker_size, 
+                                                                         c='none', edgecolors=color, linewidths=1.5 if is_final else 1, 
+                                                                         alpha=alpha, zorder=5)
+                                                                
+                                                                # Add label
+                                                                label = 'C' if is_final else str(gen_idx + 1)
+                                                                ax.text(x_val, y_val, label, ha='center', va='center',
+                                                                       fontsize=7 if is_final else 6, color=color, 
+                                                                       weight='bold', zorder=6, alpha=alpha)
+                                                    
+                                                    ax.set_xlabel(feat_x if i == n_features - 1 else '', fontsize=8)
+                                                    ax.set_ylabel(feat_y if j == 0 else '', fontsize=8)
+                                                    ax.tick_params(labelsize=7)
+                                        
+                                        plt.tight_layout()
+                                        fig_4d.savefig(os.path.join(sample_dir, f'feature_evolution_4d_combo_{combination_idx}.png'), 
+                                                      bbox_inches='tight', dpi=150)
+                                        plt.close(fig_4d)
+                                        print(f"INFO: Successfully saved 4D feature evolution plot")
+                                    except Exception as exc:
+                                        print(f"ERROR: Failed to save 4D feature evolution plot: {exc}")
+                                        traceback.print_exc()
+
                                     # Save loadings
                                     loadings = pca_local.components_.T * (pca_local.explained_variance_**0.5)
                                     loadings_df = pd.DataFrame(loadings, index=FEATURE_NAMES_LOCAL, columns=['pc1_loading','pc2_loading'])
                                     loadings_df.to_csv(os.path.join(sample_dir, f'pca_loadings_combo_{combination_idx}.csv'))
 
                                 except Exception as exc:
-                                    print(f"WARNING: Failed to save PCA numeric data: {exc}")
+                                    print(f"ERROR: Failed to save PCA numeric data: {exc}")
+                                    traceback.print_exc()
                     except Exception as exc:
-                        print(f"WARNING: Failed saving visualization images: {exc}")
+                        print(f"ERROR: Failed saving visualization images: {exc}")
+                        traceback.print_exc()
 
                     # Log to WandB
                     if wandb_run:
