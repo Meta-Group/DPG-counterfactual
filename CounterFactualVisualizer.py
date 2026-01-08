@@ -842,12 +842,22 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
                 # Use class color
                 color = colors[gen_class % len(colors)]
                 
+                # Plot the cross marker
                 plt.scatter(
                     coords[0], coords[1],
                     color=color, marker='x', s=size,
                     alpha=alpha, edgecolor='black', linewidths=0.5,
                     zorder=5
                 )
+                
+                # Add circle around final generation
+                if gen_idx == num_generations - 1:
+                    plt.scatter(
+                        coords[0], coords[1],
+                        facecolors='none', edgecolors=color,
+                        s=size * 3, linewidths=2.5, alpha=1.0,
+                        zorder=6
+                    )
     else:
         # Fallback: plot final counterfactuals only (original behavior)
         for idx, cf_class in enumerate(counterfactual_classes):
