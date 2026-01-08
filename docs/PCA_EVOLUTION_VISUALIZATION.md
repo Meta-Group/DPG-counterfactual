@@ -125,7 +125,7 @@ The enhancement is **automatic** - no config changes needed:
 python scripts/run_experiment.py --config configs/quick.yaml
 ```
 
-Evolution trails will appear in all generated PCA plots.
+Evolution trails will appear in all generated PCA plots when `output.save_visualizations` is enabled. To also save PNGs and CSVs (PCA coordinates & loadings) locally into each sample folder, set `output.save_visualization_images: true` in the config (defaults to false in most configs for disk control, but `configs/quick.yaml` sets it to true for quick testing).
 
 ## Performance Impact
 

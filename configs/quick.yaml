@@ -47,3 +47,4 @@ output:
   local_dir: "experiment_results"
   save_visualizations: true
   save_raw_data: true
+  save_visualization_images: true

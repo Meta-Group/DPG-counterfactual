@@ -686,6 +686,64 @@ def run_single_sample(
                     combination_viz['pairwise'] = pairwise_fig
                     combination_viz['pca'] = pca_fig
                     
+                    # Optionally save images and CSVs locally
+                    try:
+                        if getattr(config.output, 'save_visualization_images', False):
+                            # Ensure sample_dir exists
+                            os.makedirs(sample_dir, exist_ok=True)
+
+                            if pairwise_fig:
+                                pairwise_path = os.path.join(sample_dir, f'pairwise_combo_{combination_idx}.png')
+                                pairwise_fig.savefig(pairwise_path, bbox_inches='tight')
+
+                            if pca_fig:
+                                pca_path = os.path.join(sample_dir, f'pca_combo_{combination_idx}.png')
+                                pca_fig.savefig(pca_path, bbox_inches='tight')
+
+                                # Also compute and save PCA numeric data (coords & loadings)
+                                try:
+                                    from sklearn.preprocessing import StandardScaler
+                                    from sklearn.decomposition import PCA
+
+                                    FEATURES_ARR = np.array(FEATURES)
+                                    FEATURE_NAMES_LOCAL = FEATURE_NAMES
+                                    df_features = pd.DataFrame(FEATURES_ARR, columns=FEATURE_NAMES_LOCAL).select_dtypes(include=[np.number])
+
+                                    scaler = StandardScaler()
+                                    df_scaled = scaler.fit_transform(df_features)
+                                    pca_local = PCA(n_components=2)
+                                    pca_local.fit(df_scaled)
+
+                                    # Original sample coords
+                                    sample_df_local = pd.DataFrame([ORIGINAL_SAMPLE])[FEATURE_NAMES_LOCAL].select_dtypes(include=[np.number])
+                                    sample_scaled = scaler.transform(sample_df_local)
+                                    sample_coords = pca_local.transform(sample_scaled)
+
+                                    # Counterfactual coords
+                                    cf_list_local = [rep['counterfactual'] for rep in combination_viz['replication']]
+                                    cf_df_local = pd.DataFrame(cf_list_local)[FEATURE_NAMES_LOCAL].select_dtypes(include=[np.number])
+                                    cf_scaled = scaler.transform(cf_df_local)
+                                    cf_coords = pca_local.transform(cf_scaled)
+
+                                    # Save coords CSV
+                                    coords_rows = []
+                                    coords_rows.append({'type':'original','pc1':float(sample_coords[0,0]),'pc2':float(sample_coords[0,1])})
+                                    for i, row in enumerate(cf_coords):
+                                        coords_rows.append({'type':f'counterfactual_{i}','pc1':float(row[0]),'pc2':float(row[1])})
+
+                                    coords_df = pd.DataFrame(coords_rows)
+                                    coords_df.to_csv(os.path.join(sample_dir, f'pca_coords_combo_{combination_idx}.csv'), index=False)
+
+                                    # Save loadings
+                                    loadings = pca_local.components_.T * (pca_local.explained_variance_**0.5)
+                                    loadings_df = pd.DataFrame(loadings, index=FEATURE_NAMES_LOCAL, columns=['pc1_loading','pc2_loading'])
+                                    loadings_df.to_csv(os.path.join(sample_dir, f'pca_loadings_combo_{combination_idx}.csv'))
+
+                                except Exception as exc:
+                                    print(f"WARNING: Failed to save PCA numeric data: {exc}")
+                    except Exception as exc:
+                        print(f"WARNING: Failed saving visualization images: {exc}")
+
                     # Log to WandB
                     if wandb_run:
                         log_dict = {
