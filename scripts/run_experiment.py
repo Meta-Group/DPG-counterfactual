@@ -385,7 +385,8 @@ def run_single_sample(
                 ORIGINAL_SAMPLE, 
                 TARGET_CLASS, 
                 config.counterfactual.population_size,
-                config.counterfactual.max_generations
+                config.counterfactual.max_generations,
+                mutation_rate=config.counterfactual.mutation_rate
             )
             
             if counterfactual is None:
@@ -404,6 +405,14 @@ def run_single_sample(
             
             valid_counterfactuals += 1
             
+            # Ensure evolution_history includes final counterfactual for visualization
+            if counterfactual is not None:
+                try:
+                    if not getattr(cf_model, 'evolution_history', []):
+                        cf_model.evolution_history = [counterfactual.copy() if isinstance(counterfactual, dict) else dict(counterfactual)]
+                except Exception:
+                    pass
+
             # Store replication data with evolution history
             evolution_history = getattr(cf_model, 'evolution_history', [])
             replication_viz = {
