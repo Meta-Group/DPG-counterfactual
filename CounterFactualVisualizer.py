@@ -364,9 +364,11 @@ def plot_pca_with_counterfactual(model, dataset, target, sample, counterfactual)
             alpha=0.6
         )
 
+    # Plot original sample filled with its class color and a thick black outline
     plt.scatter(
         original_sample_pca[:, 0], original_sample_pca[:, 1],
-        color='red', label='Original Sample', edgecolor=colors[original_class]
+        color=colors[original_class % len(colors)], label='Original Sample',
+        edgecolor='black', linewidths=2.5, s=150, zorder=10
     )
     plt.scatter(
         counterfactual_pca[:, 0], counterfactual_pca[:, 1],
@@ -606,10 +608,15 @@ def plot_pairwise_with_counterfactual(model, dataset, target, sample, counterfac
     # Combine the original sample and counterfactual with the dataset for plotting
     combined_df = pd.concat([data_df, original_sample_df, counterfactual_df], ignore_index=True)
 
-    # Plot the pairplot with Seaborn
-    sns.pairplot(combined_df, hue='label', palette={'Dataset': 'gray', 'Original Sample': 'red', 'Counterfactual': 'blue'})
+    # Determine the class color for the original sample
+    original_class = model.predict(pd.DataFrame([sample]))[0]
+    colors = ['purple', 'green', 'orange']
+
+    # Plot the pairplot with Seaborn using the class color for the original sample
+    sns.pairplot(combined_df, hue='label', palette={'Dataset': 'gray', 'Original Sample': colors[original_class % len(colors)], 'Counterfactual': 'blue'})
     plt.suptitle('Pairwise Plot with Original Sample and Counterfactual', y=1.02)
-    return(plt)
+    return(plt)    
+
     #plt.show()
 
 
@@ -714,6 +721,10 @@ def plot_pairwise_with_counterfactual_df(model, dataset, target, sample, counter
     # Create a grid of plots
     fig, axes = plt.subplots(nrows=num_features, ncols=num_features, figsize=(15, 15))
 
+    # Determine class color for the original sample
+    original_class = model.predict(pd.DataFrame([sample]))[0]
+    colors = ['purple', 'green', 'orange']
+
     # Plot each pair of features
     for i, feature_i in enumerate(features):
         for j, feature_j in enumerate(features):
@@ -727,7 +738,7 @@ def plot_pairwise_with_counterfactual_df(model, dataset, target, sample, counter
                            line_kws={'color': 'darkgray', 'linewidth': 2})
 
                 ax.scatter(data_df[feature_i], data_df[feature_j], c='gray', label='Dataset', alpha=0.5)
-                ax.scatter(sample_df[feature_i], sample_df[feature_j], c='red', label='Original Sample', edgecolors='k', s=100)
+                ax.scatter(sample_df[feature_i], sample_df[feature_j], c=colors[original_class % len(colors)], label='Original Sample', edgecolors='black', linewidths=2.5, s=120)
                 ax.scatter(counterfactual_df[feature_i], counterfactual_df[feature_j], c='blue', label='Counterfactuals', alpha=0.6, edgecolors='k', s=50)
                 ax.set_ylabel('')
                 ax.set_xlabel('')
@@ -800,6 +811,8 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
     # Plot the PCA results
     fig = plt.figure(figsize=(10, 6))
     colors = ['purple', 'green', 'orange']
+    # Determine original sample class for consistent styling
+    original_class = model.predict(pd.DataFrame([sample]))[0]
 
     for class_value in np.unique(target):
         plt.scatter(
@@ -812,7 +825,8 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
 
     plt.scatter(
         original_sample_pca[:, 0], original_sample_pca[:, 1],
-        color='red', label='Original Sample', edgecolor='black', s=100, zorder=10
+        color=colors[original_class % len(colors)], label='Original Sample',
+        edgecolor='black', linewidths=2.5, s=150, zorder=10
     )
 
     # Plot evolution histories if provided
@@ -875,7 +889,7 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
             plt.scatter(
                 counterfactuals_pca[idx, 0], counterfactuals_pca[idx, 1],
                 color=colors[cf_class % len(colors)], marker='x', s=100,
-                edgecolor='black', zorder=5
+                linewidths=1.5, zorder=5
             )
 
     plt.xlabel('PCA Component 1')
@@ -884,8 +898,8 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
     # Create custom legend
     from matplotlib.lines import Line2D
     legend_elements = [
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, 
-               markeredgecolor='black', label='Original Sample'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[original_class % len(colors)], markersize=10, 
+               markeredgecolor='black', markeredgewidth=1.5, label='Original Sample'),
         Line2D([0], [0], marker='x', color='w', markerfacecolor='gray', markersize=8,
                markeredgecolor='black', label='GA Evolution (faint→solid)')
     ]
