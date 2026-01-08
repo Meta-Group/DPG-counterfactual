@@ -492,25 +492,138 @@ def run_single_sample(
         for combination_idx, combination_viz in enumerate(visualizations):
             dict_non_actionable = dict(zip(FEATURES_NAMES, combination_viz['label']))
             
+            # Per-replication visualizations
             for replication_idx, replication_viz in enumerate(combination_viz['replication']):
                 counterfactual = replication_viz['counterfactual']
                 cf_model = replication_viz['cf_model']
                 
                 try:
-                    # Create fitness plot
+                    # Create all replication-level visualizations
+                    cf_pred_class = int(model.predict(pd.DataFrame([counterfactual]))[0])
+                    
+                    heatmap_fig = plot_sample_and_counterfactual_heatmap(
+                        ORIGINAL_SAMPLE, 
+                        ORIGINAL_SAMPLE_PREDICTED_CLASS, 
+                        counterfactual, 
+                        cf_pred_class,
+                        dict_non_actionable
+                    )
+                    
+                    comparison_fig = plot_sample_and_counterfactual_comparison(
+                        model,
+                        ORIGINAL_SAMPLE,
+                        SAMPLE_DATAFRAME,
+                        counterfactual,
+                        constraints,
+                        class_colors_list
+                    )
+                    
                     fitness_fig = cf_model.plot_fitness() if hasattr(cf_model, 'plot_fitness') else None
                     
-                    if fitness_fig and wandb_run:
-                        wandb.log({
-                            "visualizations/fitness_curve": wandb.Image(fitness_fig),
+                    # Store visualizations
+                    replication_viz['visualizations'] = [heatmap_fig, comparison_fig, fitness_fig]
+                    
+                    # Log to WandB
+                    if wandb_run:
+                        log_dict = {
                             "viz/sample_id": SAMPLE_ID,
                             "viz/combination": str(combination_viz['label']),
                             "viz/replication": replication_idx,
+                        }
+                        
+                        if heatmap_fig:
+                            log_dict["visualizations/heatmap"] = wandb.Image(heatmap_fig)
+                        if comparison_fig:
+                            log_dict["visualizations/comparison"] = wandb.Image(comparison_fig)
+                        if fitness_fig:
+                            log_dict["visualizations/fitness_curve"] = wandb.Image(fitness_fig)
+                        
+                        wandb.log(log_dict)
+                    
+                    # Generate and log explainer metrics
+                    explainer = CounterFactualExplainer(cf_model, ORIGINAL_SAMPLE, counterfactual, TARGET_CLASS)
+                    
+                    explanations = {
+                        'Feature Modifications': explainer.explain_feature_modifications(),
+                        'Constraints Respect': explainer.check_constraints_respect(),
+                        'Stopping Criteria': explainer.explain_stopping_criteria(),
+                        'Final Results': explainer.summarize_final_results(),
+                    }
+                    
+                    replication_viz['explanations'] = explanations
+                    
+                    # Log explanations to WandB as text
+                    if wandb_run:
+                        explanation_text = f"""## Sample {SAMPLE_ID} - Combination {combination_idx} - Replication {replication_idx}
+
+### Feature Modifications
+{explanations['Feature Modifications']}
+
+### Constraints Respect
+{explanations['Constraints Respect']}
+
+### Stopping Criteria
+{explanations['Stopping Criteria']}
+
+### Final Results
+{explanations['Final Results']}
+"""
+                        wandb.log({
+                            "explanations/text": wandb.Html(f"<pre>{explanation_text}</pre>"),
+                            "expl/sample_id": SAMPLE_ID,
+                            "expl/combination": str(combination_viz['label']),
+                            "expl/replication": replication_idx,
                         })
                     
-                    replication_viz['visualizations'] = [fitness_fig] if fitness_fig else []
                 except Exception as exc:
-                    print(f"WARNING: Visualization generation failed: {exc}")
+                    print(f"WARNING: Visualization generation failed for replication {replication_idx}: {exc}")
+                    replication_viz['visualizations'] = []
+                    replication_viz['explanations'] = {}
+            
+            # Combination-level visualizations (after all replications)
+            try:
+                if combination_viz['replication']:
+                    counterfactuals_list = [rep['counterfactual'] for rep in combination_viz['replication']]
+                    cf_features_df = pd.DataFrame(counterfactuals_list)
+                    
+                    # Create combination-level visualizations
+                    pairwise_fig = plot_pairwise_with_counterfactual_df(
+                        model,
+                        FEATURES,
+                        LABELS,
+                        ORIGINAL_SAMPLE,
+                        cf_features_df
+                    )
+                    
+                    pca_fig = plot_pca_with_counterfactuals(
+                        model,
+                        pd.DataFrame(FEATURES, columns=FEATURE_NAMES),
+                        LABELS,
+                        ORIGINAL_SAMPLE,
+                        cf_features_df
+                    )
+                    
+                    combination_viz['pairwise'] = pairwise_fig
+                    combination_viz['pca'] = pca_fig
+                    
+                    # Log to WandB
+                    if wandb_run:
+                        log_dict = {
+                            "viz_combo/sample_id": SAMPLE_ID,
+                            "viz_combo/combination": str(combination_viz['label']),
+                        }
+                        
+                        if pairwise_fig:
+                            log_dict["visualizations/pairwise"] = wandb.Image(pairwise_fig)
+                        if pca_fig:
+                            log_dict["visualizations/pca"] = wandb.Image(pca_fig)
+                        
+                        wandb.log(log_dict)
+                        
+            except Exception as exc:
+                print(f"WARNING: Combination-level visualization generation failed: {exc}")
+                combination_viz['pairwise'] = None
+                combination_viz['pca'] = None
     
     # Save visualizations data
     viz_filepath = os.path.join(sample_dir, 'after_viz_generation.pkl')
@@ -522,6 +635,12 @@ def run_single_sample(
             'features_names': FEATURES_NAMES,
             'target_class': TARGET_CLASS
         }, f)
+    
+    # Use the storage helper to save structured data (as in experiment_generation.py)
+    try:
+        save_visualizations_data(SAMPLE_ID, visualizations, ORIGINAL_SAMPLE, constraints, FEATURES_NAMES, TARGET_CLASS, output_dir=output_dir)
+    except Exception as exc:
+        print(f"WARNING: save_visualizations_data failed: {exc}")
     
     # Log artifacts to WandB
     if wandb_run:
