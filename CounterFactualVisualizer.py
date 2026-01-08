@@ -760,9 +760,18 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactuals_df):
+def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactuals_df, evolution_histories=None):
     """
     Plot a PCA visualization of the dataset with the original sample and multiple counterfactuals from a DataFrame.
+    Shows the evolutionary process of GA with opacity gradient from initial to final generation.
+    
+    Args:
+        model: Trained model for predictions
+        dataset: Full dataset for PCA
+        target: Target labels
+        sample: Original sample dict
+        counterfactuals_df: DataFrame of final counterfactuals
+        evolution_histories: List of evolution histories (one per replication), each a list of dicts
     """
     # Standardize the dataset
     scaler = StandardScaler()
@@ -803,19 +812,63 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
 
     plt.scatter(
         original_sample_pca[:, 0], original_sample_pca[:, 1],
-        color='red', label='Original Sample', edgecolor='black', s=100
+        color='red', label='Original Sample', edgecolor='black', s=100, zorder=10
     )
 
-    for idx, cf_class in enumerate(counterfactual_classes):
-        plt.scatter(
-            counterfactuals_pca[idx, 0], counterfactuals_pca[idx, 1],
-            color=colors[cf_class % len(colors)], marker='x', s=100, label=f'Counterfactual (Class {cf_class})', edgecolor='black'
-        )
+    # Plot evolution histories if provided
+    if evolution_histories:
+        for history in evolution_histories:
+            if not history:
+                continue
+            
+            # Convert evolution history to DataFrame and transform
+            history_df = pd.DataFrame(history)
+            if history_df.empty:
+                continue
+                
+            history_numeric = history_df.select_dtypes(include=[np.number])
+            history_scaled = scaler.transform(history_numeric)
+            history_pca = pca.transform(history_scaled)
+            
+            # Predict classes for each generation
+            history_classes = model.predict(history_numeric)
+            
+            num_generations = len(history)
+            for gen_idx, (coords, gen_class) in enumerate(zip(history_pca, history_classes)):
+                # Opacity increases from ~0.1 to 1.0
+                alpha = 0.1 + (0.9 * gen_idx / max(1, num_generations - 1))
+                # Size decreases for intermediate generations
+                size = 60 if gen_idx < num_generations - 1 else 100
+                # Use class color
+                color = colors[gen_class % len(colors)]
+                
+                plt.scatter(
+                    coords[0], coords[1],
+                    color=color, marker='x', s=size,
+                    alpha=alpha, edgecolor='black', linewidths=0.5,
+                    zorder=5
+                )
+    else:
+        # Fallback: plot final counterfactuals only (original behavior)
+        for idx, cf_class in enumerate(counterfactual_classes):
+            plt.scatter(
+                counterfactuals_pca[idx, 0], counterfactuals_pca[idx, 1],
+                color=colors[cf_class % len(colors)], marker='x', s=100,
+                edgecolor='black', zorder=5
+            )
 
     plt.xlabel('PCA Component 1')
     plt.ylabel('PCA Component 2')
-    plt.title('PCA Plot with Original Sample and Counterfactuals')
-    #plt.legend()
+    plt.title('PCA Plot with GA Evolution (opacity: initial→final)')
+    # Create custom legend
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, 
+               markeredgecolor='black', label='Original Sample'),
+        Line2D([0], [0], marker='x', color='w', markerfacecolor='gray', markersize=8,
+               markeredgecolor='black', label='GA Evolution (faint→solid)')
+    ]
+    plt.legend(handles=legend_elements, loc='best')
     plt.close(fig)
     return fig
 
