@@ -853,21 +853,9 @@ def run_experiment(config: DictConfig, wandb_run=None):
 
                 # Save normalized constraints to a JSON file and add as a WandB artifact for inspection
                 try:
-                    # Save normalized constraints inside a run-specific experiment folder
-                    base_output = getattr(config.output, 'local_dir', '.')
-                    experiment_name = getattr(config.experiment, 'name', 'experiment')
-                    experiment_folder = os.path.join(base_output, experiment_name)
-
-                    # Include wandb run id if available for uniqueness
-                    try:
-                        run_id = wandb_run.id if wandb_run and hasattr(wandb_run, 'id') else None
-                    except Exception:
-                        run_id = None
-                    if run_id:
-                        experiment_folder = os.path.join(experiment_folder, run_id)
-
-                    os.makedirs(experiment_folder, exist_ok=True)
-                    dpg_json_path = os.path.join(experiment_folder, 'dpg_constraints_normalized.json')
+                    dpg_json_path = os.path.join(getattr(config.output, 'local_dir', '.'), 'dpg_constraints_normalized.json')
+                    os.makedirs(os.path.dirname(dpg_json_path), exist_ok=True)
+                    
                     with open(dpg_json_path, 'w') as jf:
                         json.dump(normalized, jf, indent=2, sort_keys=True)
 
