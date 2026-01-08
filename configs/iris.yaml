@@ -42,7 +42,7 @@ experiment_params:
   sample_indices: [2]  # null = random, or list like [0, 5, 10]
   num_samples: 1 
   num_combinations_to_test: 1 
-  num_replications: 5
+  num_replications: 1
 
 output:
   local_dir: "experiment_results"
