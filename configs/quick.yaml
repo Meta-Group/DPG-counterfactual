@@ -38,7 +38,7 @@ counterfactual:
 
 experiment_params:
   seed: 42
-  sample_indices: null
+  sample_indices: [2]
   num_samples: 1
   num_combinations_to_test: 1
   num_replications: 3
