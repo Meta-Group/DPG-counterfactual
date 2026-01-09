@@ -8,12 +8,34 @@ Adapted from ECE/cf_eval/metrics.py for standalone use in CounterFactualDPG.
 """
 
 import numpy as np
+import pandas as pd
 from scipy.spatial.distance import cdist, pdist
 from scipy.spatial.distance import _validate_vector
 from scipy.stats import median_abs_deviation
 from sklearn.metrics import accuracy_score
 from sklearn.neighbors import KNeighborsClassifier, LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
+
+
+def _safe_predict(model, X):
+    """Safely predict, handling feature names if model was fitted with them.
+    
+    Args:
+        model: sklearn model
+        X: numpy array or DataFrame
+        
+    Returns:
+        predictions array
+    """
+    # Check if model has feature_names_in_ attribute (was fitted with feature names)
+    if hasattr(model, 'feature_names_in_'):
+        feature_names = model.feature_names_in_
+        # Convert to DataFrame if it's a numpy array
+        if isinstance(X, np.ndarray):
+            if X.ndim == 1:
+                X = X.reshape(1, -1)
+            X = pd.DataFrame(X, columns=feature_names)
+    return model.predict(X)
 
 
 class DummyScaler:
@@ -47,7 +69,7 @@ def nbr_valid_cf(cf_list, model, y_val, y_desired=None):
     """
     if len(cf_list) == 0:
         return 0
-    y_cf = model.predict(cf_list)
+    y_cf = _safe_predict(model, cf_list)
     idx = y_cf != y_val if y_desired is None else y_cf == y_desired
     return int(np.sum(idx))
 
@@ -119,7 +141,7 @@ def nbr_valid_actionable_cf(x, cf_list, model, y_val, variable_features, y_desir
     if len(cf_list) == 0:
         return 0
     
-    y_cf = model.predict(cf_list)
+    y_cf = _safe_predict(model, cf_list)
     idx = y_cf != y_val if y_desired is None else y_cf == y_desired
     
     nbr_valid_actionable = 0
@@ -504,7 +526,7 @@ def plausibility(x, model, cf_list, X_test, y_pred, continuous_features_all,
     sum_dist = 0.0
     
     for cf in cf_list:
-        y_cf_val = model.predict(cf.reshape(1, -1))[0]
+        y_cf_val = _safe_predict(model, cf.reshape(1, -1))[0]
         X_test_y = X_test[y_cf_val == y_pred]
         
         if len(X_test_y) == 0:
@@ -551,8 +573,8 @@ def euclidean_jaccard(x, A, continuous_features, categorical_features, ratio_con
 
 def select_test_knn(x, model, X_test, continuous_features, categorical_features, scaler, test_size=5, get_normalized=False):
     """Select test samples for KNN evaluation."""
-    y_val = model.predict(x.reshape(1, -1))[0]
-    y_test = model.predict(X_test)
+    y_val = _safe_predict(model, x.reshape(1, -1))[0]
+    y_test = _safe_predict(model, X_test)
     
     nx = scaler.transform(x.reshape(1, -1))
     nX_test = scaler.transform(X_test)
@@ -589,11 +611,11 @@ def accuracy_knn_sklearn(x, cf_list, model, X_test, continuous_features, categor
     try:
         clf = KNeighborsClassifier(n_neighbors=1)
         X_train = np.vstack([x.reshape(1, -1), cf_list])
-        y_train = model.predict(X_train)
+        y_train = _safe_predict(model, X_train)
         clf.fit(X_train, y_train)
         
         X_test_knn = select_test_knn(x, model, X_test, continuous_features, categorical_features, scaler, test_size)
-        y_test = model.predict(X_test_knn)
+        y_test = _safe_predict(model, X_test_knn)
         y_pred = clf.predict(X_test_knn)
         
         return float(accuracy_score(y_test, y_pred))
@@ -608,13 +630,13 @@ def accuracy_knn_dist(x, cf_list, model, X_test, continuous_features, categorica
     
     try:
         X_train = np.vstack([x.reshape(1, -1), cf_list])
-        y_train = model.predict(X_train)
+        y_train = _safe_predict(model, X_train)
         
         nX_train = scaler.transform(X_train)
         
         X_test_knn, nX_test_knn = select_test_knn(x, model, X_test, continuous_features, 
                                                    categorical_features, scaler, test_size, get_normalized=True)
-        y_test = model.predict(X_test_knn)
+        y_test = _safe_predict(model, X_test_knn)
         
         y_pred = []
         for nx_test in nX_test_knn:
@@ -652,8 +674,8 @@ def delta_proba(x, cf_list, model, agg=None):
         return 0.0
     
     try:
-        y_val = model.predict(x.reshape(1, -1))[0]
-        y_cf = model.predict(cf_list)
+        y_val = _safe_predict(model, x.reshape(1, -1))[0]
+        y_cf = _safe_predict(model, cf_list)
         deltas = np.abs(y_cf - y_val)
         
         if agg is None or agg == 'mean':
@@ -701,7 +723,7 @@ def evaluate_cf_list(cf_list, x, model, y_val, max_nbr_cf, variable_features, co
         scaler = DummyScaler()
         scaler.fit(X_train)
         
-        y_pred = model.predict(X_test)
+        y_pred = _safe_predict(model, X_test)
         
         # Validity metrics
         nbr_valid_cf_ = nbr_valid_cf(cf_list, model, y_val)
