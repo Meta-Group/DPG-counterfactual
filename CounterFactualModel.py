@@ -526,22 +526,26 @@ class CounterFactualModel:
             mutation_rate: Probability of mutating each feature
             target_class: Target class for constraint-aware mutation
         """
-        # Get target class constraints if available
-        target_constraints = None
+        # Get target class constraints if available (list of constraint dicts)
+        target_constraints = []
         if target_class is not None and self.constraints:
-            target_constraints = self.constraints.get(f"Class {target_class}", {})
+            target_constraints = self.constraints.get(f"Class {target_class}", [])
         
         for feature in feature_names:
             if np.random.rand() < mutation_rate:
                 # Determine mutation bounds based on constraints
-                mutation_min, mutation_max = -0.5, 0.5  # Default mutation range
                 feature_min, feature_max = None, None
                 
                 # Get DPG constraint boundaries for this feature and target class
-                if target_constraints and feature in target_constraints:
-                    constraint = target_constraints[feature]
-                    feature_min = constraint.get('min')
-                    feature_max = constraint.get('max')
+                # Constraints are stored as a list of dicts with "feature", "min", "max" keys
+                if target_constraints:
+                    matching_constraint = next(
+                        (c for c in target_constraints if self._features_match(c.get("feature", ""), feature)),
+                        None
+                    )
+                    if matching_constraint:
+                        feature_min = matching_constraint.get('min')
+                        feature_max = matching_constraint.get('max')
                 
                 # Apply mutation only if the feature is actionable
                 if self.dict_non_actionable and feature in self.dict_non_actionable:
