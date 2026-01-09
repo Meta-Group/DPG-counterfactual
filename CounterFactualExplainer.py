@@ -7,6 +7,13 @@ from scipy.spatial.distance import euclidean, cityblock, cosine
 from scipy.spatial.distance import cdist
 import ast
 
+# Import comprehensive metrics module
+try:
+    from CounterFactualMetrics import evaluate_cf_list as evaluate_cf_list_comprehensive
+    COMPREHENSIVE_METRICS_AVAILABLE = True
+except ImportError:
+    COMPREHENSIVE_METRICS_AVAILABLE = False
+
 
 class CounterFactualExplainer:
     def __init__(self, model, original_sample, counterfactual_sample, target_class):
@@ -72,9 +79,19 @@ class CounterFactualExplainer:
         return (f"Original class: {original_class}, Counterfactual class: {counterfactual_class}\n"
                 f"Original fitness: {original_fitness}, Best fitness: {best_fitness}")
 
-    def get_all_metrics(self):
+    def get_all_metrics(self, X_train=None, X_test=None, variable_features=None, 
+                        continuous_features=None, categorical_features=None, 
+                        compute_comprehensive=False):
         """
         Return all metrics as a flat dictionary suitable for experiment tracking (e.g., wandb).
+        
+        Args:
+            X_train: Training data (optional, required for comprehensive metrics)
+            X_test: Test data (optional, required for comprehensive metrics)
+            variable_features: List of actionable feature indices (optional)
+            continuous_features: List of continuous feature indices (optional)
+            categorical_features: List of categorical feature indices (optional)
+            compute_comprehensive: If True and dependencies available, compute full ECE metrics
         
         Returns:
             dict: Dictionary containing all extractable metrics from the counterfactual generation.
@@ -134,7 +151,7 @@ class CounterFactualExplainer:
             self.counterfactual_sample
         )
         
-        return {
+        basic_metrics = {
             'num_feature_changes': num_feature_changes,
             'constraints_respected': constraints_respected,
             'constraint_penalty': float(constraint_penalty),
@@ -150,6 +167,55 @@ class CounterFactualExplainer:
             'distance_manhattan': float(distance_manhattan),
             'sparsity': float(sparsity),
         }
+        
+        # If comprehensive metrics requested and available
+        if compute_comprehensive and COMPREHENSIVE_METRICS_AVAILABLE and X_train is not None:
+            try:
+                # Prepare data
+                cf_array = counterfactual_features_array.reshape(1, -1)
+                x_array = original_features_array.reshape(1, -1)
+                
+                # Default feature indices if not provided
+                nbr_features = len(original_features_array)
+                if variable_features is None:
+                    variable_features = list(range(nbr_features))
+                if continuous_features is None:
+                    continuous_features = list(range(nbr_features))
+                if categorical_features is None:
+                    categorical_features = []
+                
+                # Compute ratio of continuous features
+                ratio_cont = len(continuous_features) / nbr_features if nbr_features > 0 else 1.0
+                
+                # Use test data if provided, otherwise use training data
+                if X_test is None:
+                    X_test = X_train
+                
+                # Compute comprehensive metrics
+                comprehensive = evaluate_cf_list_comprehensive(
+                    cf_list=cf_array,
+                    x=x_array[0],
+                    model=self.model.model,
+                    y_val=original_class,
+                    max_nbr_cf=1,
+                    variable_features=variable_features,
+                    continuous_features_all=continuous_features,
+                    categorical_features_all=categorical_features,
+                    X_train=X_train,
+                    X_test=X_test,
+                    ratio_cont=ratio_cont,
+                    nbr_features=nbr_features
+                )
+                
+                # Merge with basic metrics (basic takes precedence for overlapping keys)
+                comprehensive.update(basic_metrics)
+                return comprehensive
+                
+            except Exception as e:
+                print(f"WARNING: Comprehensive metrics computation failed: {e}")
+                return basic_metrics
+        
+        return basic_metrics
 
 # Example of usage
 #model = CounterFactualModel(...)  # Assume this is your model

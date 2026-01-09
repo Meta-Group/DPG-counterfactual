@@ -65,6 +65,14 @@ except ImportError:
 from CounterFactualModel import CounterFactualModel
 from ConstraintParser import ConstraintParser
 from CounterFactualExplainer import CounterFactualExplainer
+
+# Import comprehensive metrics
+try:
+    from CounterFactualMetrics import evaluate_cf_list as evaluate_cf_list_comprehensive
+    COMPREHENSIVE_METRICS_AVAILABLE = True
+except ImportError:
+    COMPREHENSIVE_METRICS_AVAILABLE = False
+    print("Warning: CounterFactualMetrics not available. Install scipy and sklearn for comprehensive metrics.")
 import CounterFactualVisualizer as CounterFactualVisualizer
 from CounterFactualVisualizer import (
     plot_sample_and_counterfactual_heatmap,
@@ -80,6 +88,45 @@ from utils.notebooks.experiment_storage import (
     save_visualizations_data,
     _get_sample_dir as get_sample_dir,
 ) 
+
+
+def determine_feature_types(features_df, config=None):
+    """Determine continuous and categorical feature indices from DataFrame.
+    
+    Args:
+        features_df: DataFrame with features
+        config: Optional config with explicit feature type specifications
+        
+    Returns:
+        tuple: (continuous_indices, categorical_indices, variable_indices)
+    """
+    # Check if config explicitly specifies feature types
+    if config and hasattr(config.data, 'continuous_features'):
+        continuous_features = config.data.continuous_features
+    else:
+        # Auto-detect: numeric columns are continuous
+        continuous_features = features_df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if config and hasattr(config.data, 'categorical_features'):
+        categorical_features = config.data.categorical_features
+    else:
+        # Auto-detect: non-numeric columns are categorical
+        categorical_features = features_df.select_dtypes(exclude=[np.number]).columns.tolist()
+    
+    # Convert to indices
+    all_cols = list(features_df.columns)
+    continuous_indices = [all_cols.index(f) for f in continuous_features if f in all_cols]
+    categorical_indices = [all_cols.index(f) for f in categorical_features if f in all_cols]
+    
+    # Variable features (actionable) - default to all features
+    if config and hasattr(config.data, 'variable_features'):
+        variable_features = config.data.variable_features
+        variable_indices = [all_cols.index(f) for f in variable_features if f in all_cols]
+    else:
+        # Default: all features are actionable
+        variable_indices = list(range(len(all_cols)))
+    
+    return continuous_indices, categorical_indices, variable_indices
 
 
 def load_dataset(config: 'DictConfig'):
@@ -104,12 +151,18 @@ def load_dataset(config: 'DictConfig'):
         features_df = pd.DataFrame(features, columns=feature_names)
         label_encoders = {}  # No categorical features in iris
         
+        # Determine feature types (Iris: all continuous)
+        continuous_indices, categorical_indices, variable_indices = determine_feature_types(features_df, config)
+        
         return {
             'features': features,
             'labels': labels,
             'feature_names': feature_names,
             'features_df': features_df,
             'label_encoders': label_encoders,
+            'continuous_indices': continuous_indices,
+            'categorical_indices': categorical_indices,
+            'variable_indices': variable_indices,
         }
     
     elif dataset_name == "german_credit":
@@ -144,12 +197,18 @@ def load_dataset(config: 'DictConfig'):
         print(f"INFO: Loaded {len(df)} samples with {len(feature_names)} features")
         print(f"INFO: Encoded {len(label_encoders)} categorical features")
         
+        # Determine feature types
+        continuous_indices, categorical_indices, variable_indices = determine_feature_types(features_df_encoded, config)
+        
         return {
             'features': features,
             'labels': labels,
             'feature_names': feature_names,
             'features_df': features_df_encoded,
             'label_encoders': label_encoders,
+            'continuous_indices': continuous_indices,
+            'categorical_indices': categorical_indices,
+            'variable_indices': variable_indices,
         }
     
     else:
@@ -310,6 +369,19 @@ def run_single_sample(
     TRAIN_FEATURES = dataset_data['train_features']
     TRAIN_LABELS = dataset_data['train_labels']
     
+    # Get feature type indices for comprehensive metrics
+    CONTINUOUS_INDICES = dataset_data.get('continuous_indices', list(range(len(FEATURE_NAMES))))
+    CATEGORICAL_INDICES = dataset_data.get('categorical_indices', [])
+    VARIABLE_INDICES = dataset_data.get('variable_indices', list(range(len(FEATURE_NAMES))))
+    
+    # Prepare training/test data arrays for comprehensive metrics
+    X_TRAIN = TRAIN_FEATURES.values if hasattr(TRAIN_FEATURES, 'values') else TRAIN_FEATURES
+    X_TEST = FEATURES  # Use full dataset as test for metrics computation
+    
+    # Compute ratio of continuous features
+    nbr_features = len(FEATURE_NAMES)
+    ratio_cont = len(CONTINUOUS_INDICES) / nbr_features if nbr_features > 0 else 1.0
+    
     output_dir = config.output.local_dir
     
     # Get original sample
@@ -434,17 +506,31 @@ def run_single_sample(
             cf_data['Replication'] = replication + 1
             counterfactuals_df_replications.append(cf_data)
             
-            # Get metrics from explainer
+            # Get metrics from explainer with comprehensive evaluation
             explainer = CounterFactualExplainer(cf_model, ORIGINAL_SAMPLE, counterfactual, TARGET_CLASS)
-            metrics = explainer.get_all_metrics()
             
-            # Compute cf_eval metrics if available
+            # Enable comprehensive metrics if available and configured
+            compute_comprehensive = getattr(config.experiment_params, 'compute_comprehensive_metrics', True)
+            
+            metrics = explainer.get_all_metrics(
+                X_train=X_TRAIN,
+                X_test=X_TEST,
+                variable_features=VARIABLE_INDICES,
+                continuous_features=CONTINUOUS_INDICES,
+                categorical_features=CATEGORICAL_INDICES,
+                compute_comprehensive=compute_comprehensive and COMPREHENSIVE_METRICS_AVAILABLE
+            )
+            
+            # Store metrics in replication for later aggregation
+            replication_viz['metrics'] = metrics
+            
+            # Compute cf_eval metrics if available (for backwards compatibility)
             cf_eval_metrics = {}
             if CF_EVAL_AVAILABLE:
                 try:
                     x_original = np.array([ORIGINAL_SAMPLE[feat] for feat in FEATURES_NAMES])
                     cf_array = np.array([[counterfactual[feat] for feat in FEATURES_NAMES]])
-                    continuous_features = list(range(len(FEATURES_NAMES)))
+                    continuous_features = CONTINUOUS_INDICES
                     
                     cf_eval_metrics = {
                         'cf_eval/is_valid': int(nbr_valid_cf(cf_array, model, ORIGINAL_SAMPLE_PREDICTED_CLASS, y_desidered=TARGET_CLASS)),
@@ -511,7 +597,49 @@ def run_single_sample(
             counterfactuals_df_replications = pd.DataFrame(counterfactuals_df_replications)
             counterfactuals_df_combinations.extend(counterfactuals_df_replications.to_dict('records'))
         
-        # Compute combination-level cf_eval metrics
+        # Compute combination-level comprehensive metrics
+        combination_comprehensive_metrics = {}
+        if combination_viz['replication'] and COMPREHENSIVE_METRICS_AVAILABLE:
+            try:
+                x_original = np.array([ORIGINAL_SAMPLE[feat] for feat in FEATURES_NAMES])
+                cf_list = [np.array([rep['counterfactual'][feat] for feat in FEATURES_NAMES]) 
+                          for rep in combination_viz['replication']]
+                cf_array = np.array(cf_list)
+                
+                # Compute comprehensive metrics for this combination
+                combination_comprehensive_metrics = evaluate_cf_list_comprehensive(
+                    cf_list=cf_array,
+                    x=x_original,
+                    model=model,
+                    y_val=ORIGINAL_SAMPLE_PREDICTED_CLASS,
+                    max_nbr_cf=config.experiment_params.num_replications,
+                    variable_features=VARIABLE_INDICES,
+                    continuous_features_all=CONTINUOUS_INDICES,
+                    categorical_features_all=CATEGORICAL_INDICES,
+                    X_train=X_TRAIN,
+                    X_test=X_TEST,
+                    ratio_cont=ratio_cont,
+                    nbr_features=nbr_features
+                )
+                
+                # Store for later persistence
+                combination_viz['comprehensive_metrics'] = combination_comprehensive_metrics
+                
+                # Log to WandB
+                if wandb_run:
+                    combo_log = {
+                        "combo/sample_id": SAMPLE_ID,
+                        "combo/combination": str(combination),
+                    }
+                    for key, value in combination_comprehensive_metrics.items():
+                        if isinstance(value, (int, float, bool)) and not (isinstance(value, float) and (np.isnan(value) or np.isinf(value))):
+                            combo_log[f"combo_metrics/{key}"] = value
+                    wandb.log(combo_log)
+                
+            except Exception as exc:
+                print(f"WARNING: Combination-level comprehensive metrics failed: {exc}")
+        
+        # Compute combination-level cf_eval metrics (for backwards compatibility)
         if combination_viz['replication'] and CF_EVAL_AVAILABLE and wandb_run:
             try:
                 x_original = np.array([ORIGINAL_SAMPLE[feat] for feat in FEATURES_NAMES])
@@ -1092,6 +1220,51 @@ Final Results
             'target_class': TARGET_CLASS
         }, f)
     
+    # Save comprehensive metrics to CSV files
+    try:
+        # Collect all replication-level metrics
+        replication_metrics_list = []
+        for combination_idx, combination_viz in enumerate(visualizations):
+            for replication_idx, replication_viz in enumerate(combination_viz['replication']):
+                if 'metrics' in replication_viz:
+                    metrics_row = {
+                        'sample_id': SAMPLE_ID,
+                        'combination_idx': combination_idx,
+                        'combination': str(combination_viz['label']),
+                        'replication_idx': replication_idx,
+                    }
+                    metrics_row.update(replication_viz['metrics'])
+                    replication_metrics_list.append(metrics_row)
+        
+        if replication_metrics_list:
+            replication_metrics_df = pd.DataFrame(replication_metrics_list)
+            replication_metrics_csv = os.path.join(sample_dir, 'replication_metrics.csv')
+            replication_metrics_df.to_csv(replication_metrics_csv, index=False)
+            print(f"INFO: Saved replication metrics to {replication_metrics_csv}")
+        
+        # Collect all combination-level metrics
+        combination_metrics_list = []
+        for combination_idx, combination_viz in enumerate(visualizations):
+            if 'comprehensive_metrics' in combination_viz:
+                metrics_row = {
+                    'sample_id': SAMPLE_ID,
+                    'combination_idx': combination_idx,
+                    'combination': str(combination_viz['label']),
+                }
+                metrics_row.update(combination_viz['comprehensive_metrics'])
+                combination_metrics_list.append(metrics_row)
+        
+        if combination_metrics_list:
+            combination_metrics_df = pd.DataFrame(combination_metrics_list)
+            combination_metrics_csv = os.path.join(sample_dir, 'combination_metrics.csv')
+            combination_metrics_df.to_csv(combination_metrics_csv, index=False)
+            print(f"INFO: Saved combination metrics to {combination_metrics_csv}")
+            
+    except Exception as exc:
+        print(f"WARNING: Failed to save metrics CSV files: {exc}")
+        import traceback
+        traceback.print_exc()
+    
     # Use the storage helper to save structured data (as in experiment_generation.py)
     try:
         save_visualizations_data(SAMPLE_ID, visualizations, ORIGINAL_SAMPLE, constraints, FEATURES_NAMES, TARGET_CLASS, configname=configname, output_dir=output_dir)
@@ -1253,6 +1426,9 @@ def run_experiment(config: DictConfig, wandb_run=None):
         'feature_names': FEATURE_NAMES,
         'train_features': TRAIN_FEATURES,
         'train_labels': TRAIN_LABELS,
+        'continuous_indices': dataset_info.get('continuous_indices', list(range(len(FEATURE_NAMES)))),
+        'categorical_indices': dataset_info.get('categorical_indices', []),
+        'variable_indices': dataset_info.get('variable_indices', list(range(len(FEATURE_NAMES)))),
     }
     
     # Determine number of classes for color assignment
@@ -1323,6 +1499,63 @@ def run_experiment(config: DictConfig, wandb_run=None):
             data=summary_data
         )
         wandb.log({"experiment/summary_table": summary_table})
+    
+    # Save experiment-level summary metrics to CSV
+    try:
+        output_dir = config.output.local_dir
+        experiment_name = getattr(config.experiment, 'name', 'experiment')
+        experiment_dir = os.path.join(output_dir, experiment_name)
+        os.makedirs(experiment_dir, exist_ok=True)
+        
+        # Aggregate all metrics from all samples
+        all_replication_metrics = []
+        all_combination_metrics = []
+        
+        for r in results:
+            sample_dir = r['sample_dir']
+            
+            # Load replication metrics
+            replication_csv = os.path.join(sample_dir, 'replication_metrics.csv')
+            if os.path.exists(replication_csv):
+                rep_df = pd.read_csv(replication_csv)
+                all_replication_metrics.append(rep_df)
+            
+            # Load combination metrics
+            combination_csv = os.path.join(sample_dir, 'combination_metrics.csv')
+            if os.path.exists(combination_csv):
+                comb_df = pd.read_csv(combination_csv)
+                all_combination_metrics.append(comb_df)
+        
+        # Save aggregated metrics
+        if all_replication_metrics:
+            aggregated_rep_df = pd.concat(all_replication_metrics, ignore_index=True)
+            aggregated_rep_csv = os.path.join(experiment_dir, 'all_replication_metrics.csv')
+            aggregated_rep_df.to_csv(aggregated_rep_csv, index=False)
+            print(f"INFO: Saved aggregated replication metrics to {aggregated_rep_csv}")
+        
+        if all_combination_metrics:
+            aggregated_comb_df = pd.concat(all_combination_metrics, ignore_index=True)
+            aggregated_comb_csv = os.path.join(experiment_dir, 'all_combination_metrics.csv')
+            aggregated_comb_df.to_csv(aggregated_comb_csv, index=False)
+            print(f"INFO: Saved aggregated combination metrics to {aggregated_comb_csv}")
+            
+            # Compute and save summary statistics
+            numeric_cols = aggregated_comb_df.select_dtypes(include=[np.number]).columns
+            summary_stats = aggregated_comb_df[numeric_cols].describe()
+            summary_stats_csv = os.path.join(experiment_dir, 'metrics_summary_statistics.csv')
+            summary_stats.to_csv(summary_stats_csv)
+            print(f"INFO: Saved summary statistics to {summary_stats_csv}")
+        
+        # Save experiment configuration
+        config_copy_path = os.path.join(experiment_dir, 'experiment_config.yaml')
+        with open(config_copy_path, 'w') as f:
+            yaml.dump(config.to_dict(), f)
+        print(f"INFO: Saved experiment config to {config_copy_path}")
+        
+    except Exception as exc:
+        print(f"WARNING: Failed to save experiment-level metrics: {exc}")
+        import traceback
+        traceback.print_exc()
     
     return results
 
