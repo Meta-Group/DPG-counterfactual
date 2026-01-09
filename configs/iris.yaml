@@ -20,19 +20,19 @@ model:
 
 counterfactual:
   # GA hyperparameters (from CounterFactualModel)
-  diversity_weight: 0.5
-  repulsion_weight: 4.0
-  boundary_weight: 15.0
-  distance_factor: 2.0
+  diversity_weight: 1.5
+  repulsion_weight: 2.0
+  boundary_weight: 12.0
+  distance_factor: 1.5
   sparsity_factor: 1.0
   constraints_factor: 3.0
   
   # Runtime parameters
-  population_size: 30
+  population_size: 50
   max_generations: 60
-  mutation_rate: 0.8
+  mutation_rate: 0.3
   delta_threshold: 0.01
-  patience: 10
+  patience: 20
   
   # Actionability rules to test
   rules: ["none"] # , "no_change"]  # "non_increasing", "non_decreasing"
