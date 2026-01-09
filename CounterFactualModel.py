@@ -500,6 +500,25 @@ class CounterFactualModel:
                 
                 # Total fitness (lower is better, so we subtract bonuses)
                 fitness = base_fitness - div_bonus - rep_bonus - line_bonus + boundary_penalty
+                
+                # FITNESS SHARING: Penalize individuals in crowded regions to maintain diversity
+                # This prevents population collapse to identical clones
+                sigma_share = 1.0  # Sharing radius - tune based on feature scale
+                niche_count = 1.0  # Start at 1 (counting self)
+                
+                ind_array = np.array([individual[key] for key in sorted(individual.keys())])
+                for other in population:
+                    if other is not individual:
+                        other_array = np.array([other[key] for key in sorted(other.keys())])
+                        dist = np.linalg.norm(ind_array - other_array)
+                        
+                        # Triangular sharing function: nearby individuals increase niche count
+                        if dist < sigma_share:
+                            niche_count += 1.0 - (dist / sigma_share)
+                
+                # Apply fitness sharing: multiply fitness by niche count
+                # This makes crowded regions less attractive (higher fitness = worse for minimization)
+                fitness *= niche_count
             else:
                 # Without population, just use base fitness
                 fitness = base_fitness
