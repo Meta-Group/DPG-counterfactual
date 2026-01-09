@@ -326,13 +326,19 @@ class CounterFactualModel:
                     adjusted_sample[feature] = original_value
                     continue
 
-            # If no explicit min/max constraints, generate values near the original value
+            # If no explicit min/max constraints, use range around original value
             if min_value == -np.inf:
                 min_value = original_value - 0.5 * (abs(original_value) + 1.0)
             if max_value == np.inf:
                 max_value = original_value + 0.5 * (abs(original_value) + 1.0)
 
-            adjusted_sample[feature] = np.random.uniform(min_value, max_value)
+            # Keep original value if it's within bounds, otherwise clip to nearest bound
+            if min_value <= original_value <= max_value:
+                adjusted_sample[feature] = original_value
+            elif original_value < min_value:
+                adjusted_sample[feature] = min_value
+            else:
+                adjusted_sample[feature] = max_value
         return adjusted_sample
 
     def calculate_sparsity(self, original_sample, counterfactual_sample):
@@ -759,9 +765,37 @@ class CounterFactualModel:
                         mutation_rate=mutation_rate,
                         target_class=target_class)
         
-        # Create initial population
-        population = [self._create_deap_individual(self.get_valid_sample(sample, target_class), feature_names) 
-                     for _ in range(population_size)]
+        # Create initial population starting near the original sample
+        # First individual is the original sample adjusted to constraint boundaries
+        base_individual = self.get_valid_sample(sample, target_class)
+        population = [self._create_deap_individual(base_individual.copy(), feature_names)]
+        
+        # Remaining individuals are small perturbations of the original sample
+        target_constraints = self.constraints.get(f"Class {target_class}", [])
+        for _ in range(population_size - 1):
+            perturbed = sample.copy()
+            # Add small random perturbations to each feature (±5% of value or ±0.2)
+            for feature in feature_names:
+                perturbation = np.random.uniform(-0.2, 0.2)
+                perturbed[feature] = sample[feature] + perturbation
+                
+                # Clip to constraint boundaries if they exist
+                matching_constraint = next(
+                    (c for c in target_constraints if self._features_match(c.get("feature", ""), feature)),
+                    None
+                )
+                if matching_constraint:
+                    feature_min = matching_constraint.get('min')
+                    feature_max = matching_constraint.get('max')
+                    if feature_min is not None:
+                        perturbed[feature] = max(feature_min, perturbed[feature])
+                    if feature_max is not None:
+                        perturbed[feature] = min(feature_max, perturbed[feature])
+                
+                # Ensure non-negative and round
+                perturbed[feature] = np.round(max(0, perturbed[feature]), 2)
+            
+            population.append(self._create_deap_individual(perturbed, feature_names))
         
         # Register evaluate operator after population creation so it can capture population in closure
         toolbox.register("evaluate", lambda ind: (self.calculate_fitness(
