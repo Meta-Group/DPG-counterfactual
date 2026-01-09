@@ -46,8 +46,10 @@ experiment_params:
   sample_indices: [2]  # null = random, or list like [0, 5, 10]
   num_samples: 1 
   num_combinations_to_test: 1 
-  num_replications: 1
+  num_replications: 3
   compute_comprehensive_metrics: true  # Enable comprehensive ECE-style metrics
+  parallel_replications: true  # Enable parallel execution of replications
+  max_workers: null  # null = use (CPU_count - 1), or specify a number
 
 output:
   local_dir: "experiment_results"

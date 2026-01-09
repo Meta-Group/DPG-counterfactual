@@ -42,6 +42,8 @@ experiment_params:
   num_samples: 1
   num_combinations_to_test: 1
   num_replications: 1
+  parallel_replications: true  # Enable parallel execution
+  max_workers: null  # null = use (CPU_count - 1)
 
 output:
   local_dir: "experiment_results"
