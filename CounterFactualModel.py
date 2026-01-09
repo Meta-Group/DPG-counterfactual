@@ -785,6 +785,46 @@ class CounterFactualModel:
                 toolbox.mutate(mutant)
                 del mutant.fitness.values
             
+            # Inject random immigrants to maintain genetic diversity (10% of population)
+            # This prevents premature convergence and helps escape local optima
+            num_immigrants = max(1, int(0.1 * population_size))
+            target_constraints = self.constraints.get(f"Class {target_class}", [])
+            
+            for i in range(num_immigrants):
+                # Create a new random individual within constraint boundaries
+                immigrant = {}
+                for feature in feature_names:
+                    # Find constraint for this feature
+                    matching_constraint = next(
+                        (c for c in target_constraints if self._features_match(c.get("feature", ""), feature)),
+                        None
+                    )
+                    
+                    if matching_constraint:
+                        feature_min = matching_constraint.get('min')
+                        feature_max = matching_constraint.get('max')
+                        
+                        # Generate random value within constraints
+                        if feature_min is not None and feature_max is not None:
+                            immigrant[feature] = np.random.uniform(feature_min, feature_max)
+                        elif feature_min is not None:
+                            immigrant[feature] = np.random.uniform(feature_min, feature_min + 2.0)
+                        elif feature_max is not None:
+                            immigrant[feature] = np.random.uniform(max(0, feature_max - 2.0), feature_max)
+                        else:
+                            # No constraints - use original sample ± random offset
+                            immigrant[feature] = sample[feature] + np.random.uniform(-1.0, 1.0)
+                    else:
+                        # No constraint found - use original sample ± random offset
+                        immigrant[feature] = sample[feature] + np.random.uniform(-1.0, 1.0)
+                    
+                    # Ensure non-negative and round
+                    immigrant[feature] = np.round(max(0, immigrant[feature]), 2)
+                
+                # Replace one of the worst offspring with this immigrant
+                immigrant_ind = creator.Individual(immigrant)
+                offspring[-(i + 1)] = immigrant_ind
+            
             # Reduce mutation rate over generations (adaptive mutation)
             current_mutation_rate *= 0.99
             toolbox.unregister("mutate")
