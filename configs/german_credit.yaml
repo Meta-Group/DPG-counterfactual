@@ -18,7 +18,23 @@ data:
   # Feature type specifications (optional - will auto-detect if not specified)
   # continuous_features: ["duration", "amount", "installment_rate", "residence_since", "age", "existing_credits", "liable_people"]
   # categorical_features: ["status", "credit_history", "purpose", "savings", "employment_duration", "sex", "other_debtors", "property", "other_installment_plans", "housing", "job", "telephone", "foreign_worker"]
-  # variable_features: null  # null = all features actionable, or list specific actionable features
+  
+  # Variable features: only these features can change during counterfactual generation
+  # Non-actionable (frozen): age, people_under_maintenance, credit_history, purpose, personal_status_sex, housing, foreign_worker
+  variable_features:
+    - account_check_status
+    - duration_in_month
+    - credit_amount
+    - savings
+    - present_emp_since
+    - installment_as_income_perc
+    - other_debtors
+    - present_res_since
+    - property
+    - other_installment_plans
+    - credits_this_bank
+    - job
+    - telephone
 
 model:
   type: "RandomForestClassifier"
@@ -59,4 +75,5 @@ experiment_params:
 output:
   local_dir: "experiment_results/german_credit"
   save_visualizations: true
+  save_visualization_images: true
   save_raw_data: true
