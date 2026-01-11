@@ -98,7 +98,7 @@ def build_dict_non_actionable(config, feature_names, variable_indices):
     Args:
         config: Experiment configuration
         feature_names: List of all feature names
-        variable_indices: Indices of features that are actionable (from config)
+        variable_indices: Indices of features that are actionable (from config, legacy support)
         
     Returns:
         dict: Mapping of feature names to actionability rules
@@ -106,30 +106,48 @@ def build_dict_non_actionable(config, feature_names, variable_indices):
     """
     dict_non_actionable = {}
     
-    # Check if per-feature rules are specified in config
-    feature_rules_config = getattr(config.counterfactual, 'feature_rules', None)
+    # Check for unified actionability config (preferred)
+    actionability_config = getattr(config.counterfactual, 'actionability', None)
     
     # Convert DictConfig to regular dict if needed
-    if feature_rules_config is not None:
-        if hasattr(feature_rules_config, '_config'):
-            feature_rules = feature_rules_config._config
-        elif hasattr(feature_rules_config, 'to_dict'):
-            feature_rules = feature_rules_config.to_dict()
+    if actionability_config is not None:
+        if hasattr(actionability_config, '_config'):
+            actionability = actionability_config._config
+        elif hasattr(actionability_config, 'to_dict'):
+            actionability = actionability_config.to_dict()
         else:
-            feature_rules = dict(feature_rules_config) if feature_rules_config else {}
+            actionability = dict(actionability_config) if actionability_config else {}
     else:
-        feature_rules = {}
+        actionability = None
     
-    for idx, feature_name in enumerate(feature_names):
-        if idx not in variable_indices:
-            # Non-variable features are frozen
-            dict_non_actionable[feature_name] = "no_change"
-        elif feature_rules and feature_name in feature_rules:
-            # Use specified per-feature rule
-            dict_non_actionable[feature_name] = feature_rules[feature_name]
-        else:
-            # Default: no restriction
-            dict_non_actionable[feature_name] = "none"
+    # Fall back to legacy feature_rules if actionability not set
+    if not actionability:
+        feature_rules_config = getattr(config.counterfactual, 'feature_rules', None)
+        if feature_rules_config is not None:
+            if hasattr(feature_rules_config, '_config'):
+                actionability = feature_rules_config._config
+            elif hasattr(feature_rules_config, 'to_dict'):
+                actionability = feature_rules_config.to_dict()
+            else:
+                actionability = dict(feature_rules_config) if feature_rules_config else {}
+    
+    # If actionability rules are defined, use them directly
+    if actionability:
+        for feature_name in feature_names:
+            if feature_name in actionability:
+                dict_non_actionable[feature_name] = actionability[feature_name]
+            else:
+                # Default: no restriction
+                dict_non_actionable[feature_name] = "none"
+    else:
+        # Legacy fallback: use variable_indices
+        for idx, feature_name in enumerate(feature_names):
+            if idx not in variable_indices:
+                # Non-variable features are frozen
+                dict_non_actionable[feature_name] = "no_change"
+            else:
+                # Default: no restriction
+                dict_non_actionable[feature_name] = "none"
     
     return dict_non_actionable 
 
@@ -526,7 +544,9 @@ def run_single_sample(
     FEATURES_NAMES = list(ORIGINAL_SAMPLE.keys())
     
     # Check if using per-feature rules (preferred) or legacy rule combinations
-    use_feature_rules = hasattr(config.counterfactual, 'feature_rules') and config.counterfactual.feature_rules
+    has_actionability = hasattr(config.counterfactual, 'actionability') and config.counterfactual.actionability
+    has_feature_rules = hasattr(config.counterfactual, 'feature_rules') and config.counterfactual.feature_rules
+    use_feature_rules = has_actionability or has_feature_rules
     
     if use_feature_rules:
         # Use per-feature rules directly (no combination testing)

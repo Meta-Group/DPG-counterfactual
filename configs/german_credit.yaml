@@ -18,24 +18,6 @@ data:
   # Feature type specifications (optional - will auto-detect if not specified)
   # continuous_features: ["duration", "amount", "installment_rate", "residence_since", "age", "existing_credits", "liable_people"]
   # categorical_features: ["status", "credit_history", "purpose", "savings", "employment_duration", "sex", "other_debtors", "property", "other_installment_plans", "housing", "job", "telephone", "foreign_worker"]
-  
-  # Variable features: only these features can change during counterfactual generation
-  # Non-actionable (frozen): people_under_maintenance, credit_history, purpose, personal_status_sex, housing, foreign_worker
-  variable_features:
-    - account_check_status
-    - duration_in_month
-    - credit_amount
-    - savings
-    - present_emp_since
-    - installment_as_income_perc
-    - other_debtors
-    - present_res_since
-    - property
-    - other_installment_plans
-    - credits_this_bank
-    - job
-    - telephone
-    - age  # Added to variable_features so it can be constrained with non_decreasing rule
 
 model:
   type: "RandomForestClassifier"
@@ -59,14 +41,22 @@ counterfactual:
   delta_threshold: 0.01
   patience: 15  # More patience for convergence
   
-  # Per-feature actionability rules (preferred over legacy "rules" combinations)
-  # Available rules: "none", "non_increasing", "non_decreasing", "no_change"
-  # Features not listed default to "none" (no restriction)
-  # Non-variable features (not in data.variable_features) are automatically "no_change"
-  feature_rules:
+  # Per-feature actionability rules
+  # Available rules: "none" (default), "non_increasing", "non_decreasing", "no_change"
+  # Features not listed default to "none" (fully actionable, no restrictions)
+  actionability:
+    # Frozen features (cannot change at all)
+    people_under_maintenance: no_change
+    credit_history: no_change
+    purpose: no_change
+    personal_status_sex: no_change
+    housing: no_change
+    foreign_worker: no_change
+    # Directional constraints
     age: non_decreasing  # Age can only increase (cannot get younger)
+    # All other features not listed here are fully actionable ("none")
   
-  # Legacy: Actionability rules to test (only used if feature_rules is not set)
+  # Legacy: Actionability rules to test (only used if actionability is not set)
   # rules: ["none"]  # "non_increasing", "non_decreasing"
 
 experiment_params:
