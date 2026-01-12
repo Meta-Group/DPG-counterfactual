@@ -243,8 +243,6 @@ class CounterFactualModel:
                             penalty += 0.5
         
         return penalty
-        
-        return penalty
 
     def is_actionable_change(self, counterfactual_sample, original_sample):
       """
@@ -954,22 +952,32 @@ class CounterFactualModel:
         # Calculate mutation based on escape direction and pressure
         if escape_dir == 'increase':
             # Must increase to escape original and reach target
-            if target_max is not None:
-                target_point = target_max if escape_pressure > 0.5 else (target_min if target_min else target_max)
-                range_to_target = abs(target_point - current_value)
+            # Target point is the min of target range (the threshold we need to cross)
+            if target_min is not None:
+                target_point = target_min
+                range_to_target = max(0.1, target_point - current_value)
                 mutation_range = max(0.1, range_to_target * 0.15)
                 # Bias toward increase
+                return current_value + np.random.uniform(0, mutation_range)
+            elif target_max is not None:
+                # Only upper bound - move toward middle of range below it
+                mutation_range = max(0.1, (target_max - current_value) * 0.15)
                 return current_value + np.random.uniform(0, mutation_range)
             else:
                 return current_value + np.random.uniform(0, 0.5)
                 
         elif escape_dir == 'decrease':
             # Must decrease to escape original and reach target
-            if target_min is not None:
-                target_point = target_min if escape_pressure > 0.5 else (target_max if target_max else target_min)
-                range_to_target = abs(current_value - target_point)
+            # Target point is the max of target range (the threshold we need to cross below)
+            if target_max is not None:
+                target_point = target_max
+                range_to_target = max(0.1, current_value - target_point)
                 mutation_range = max(0.1, range_to_target * 0.15)
                 # Bias toward decrease
+                return current_value - np.random.uniform(0, mutation_range)
+            elif target_min is not None:
+                # Only lower bound - move toward middle of range above it
+                mutation_range = max(0.1, (current_value - target_min) * 0.15)
                 return current_value - np.random.uniform(0, mutation_range)
             else:
                 return current_value - np.random.uniform(0, 0.5)
