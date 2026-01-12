@@ -116,21 +116,41 @@ class CounterFactualModel:
                 analysis['feature_bounds'][norm_feature]['original_min'] = orig_min
                 analysis['feature_bounds'][norm_feature]['original_max'] = orig_max
                 
-                # Check for non-overlapping regions
-                # Non-overlapping if: target_min > orig_max OR target_max < orig_min
+                # Determine escape direction based on constraint comparison
+                # Key insight: We need to move FROM original bounds TO target bounds
                 non_overlapping = False
                 escape_dir = 'both'
                 
-                if target_min is not None and orig_max is not None and target_min > orig_max:
-                    non_overlapping = True
-                    escape_dir = 'increase'  # Must increase to reach target
-                elif target_max is not None and orig_min is not None and target_max < orig_min:
-                    non_overlapping = True
-                    escape_dir = 'decrease'  # Must decrease to reach target
-                elif target_min is not None and orig_min is not None and target_min > orig_min:
-                    escape_dir = 'increase'  # Prefer increasing
-                elif target_max is not None and orig_max is not None and target_max < orig_max:
-                    escape_dir = 'decrease'  # Prefer decreasing
+                # Case 1: Target has upper bound, Original has lower bound
+                # Example: target_max=2.45, orig_min=2.45 -> must DECREASE to escape
+                if target_max is not None and orig_min is not None:
+                    if target_max <= orig_min:
+                        non_overlapping = True
+                        escape_dir = 'decrease'  # Must decrease to get below target_max
+                    elif target_max < orig_min + (orig_max - orig_min if orig_max else 1):
+                        escape_dir = 'decrease'  # Prefer decreasing
+                
+                # Case 2: Target has lower bound, Original has upper bound
+                # Example: target_min=5, orig_max=4 -> must INCREASE to escape
+                if target_min is not None and orig_max is not None:
+                    if target_min >= orig_max:
+                        non_overlapping = True
+                        escape_dir = 'increase'  # Must increase to get above target_min
+                    elif target_min > orig_min if orig_min else 0:
+                        escape_dir = 'increase'  # Prefer increasing
+                
+                # Case 3: Both have same type of bound - compare values
+                if target_min is not None and orig_min is not None and target_max is None and orig_max is None:
+                    if target_min > orig_min:
+                        escape_dir = 'increase'  # Target requires higher minimum
+                    elif target_min < orig_min:
+                        escape_dir = 'decrease'  # Target allows lower values
+                        
+                if target_max is not None and orig_max is not None and target_min is None and orig_min is None:
+                    if target_max < orig_max:
+                        escape_dir = 'decrease'  # Target requires lower maximum
+                    elif target_max > orig_max:
+                        escape_dir = 'increase'  # Target allows higher values
                 
                 if non_overlapping:
                     analysis['non_overlapping'].append(feature)
@@ -164,9 +184,10 @@ class CounterFactualModel:
             return 0.0
         
         penalty = 0.0
-        features_in_original = 0
         
         for feature, value in individual.items():
+            original_value = sample.get(feature, value)
+            
             # Find matching original constraint
             matching_constraint = next(
                 (c for c in original_constraints if self._features_match(c.get("feature", ""), feature)),
@@ -178,14 +199,23 @@ class CounterFactualModel:
                 orig_max = matching_constraint.get('max')
                 
                 # Check if value is still within original class bounds
+                # For single-bound constraints, only that bound matters
                 in_original_bounds = True
-                if orig_min is not None and value < orig_min:
-                    in_original_bounds = False
-                if orig_max is not None and value > orig_max:
-                    in_original_bounds = False
+                
+                if orig_min is not None and orig_max is not None:
+                    # Both bounds: check if inside the range
+                    if value < orig_min or value > orig_max:
+                        in_original_bounds = False
+                elif orig_min is not None:
+                    # Only min bound: original class requires value >= orig_min
+                    if value < orig_min:
+                        in_original_bounds = False
+                elif orig_max is not None:
+                    # Only max bound: original class requires value <= orig_max
+                    if value > orig_max:
+                        in_original_bounds = False
                 
                 if in_original_bounds:
-                    features_in_original += 1
                     # Calculate how deep inside the original bounds the value is
                     if orig_min is not None and orig_max is not None:
                         range_size = orig_max - orig_min
@@ -193,10 +223,26 @@ class CounterFactualModel:
                             # Normalized distance from boundary (0 = at boundary, 1 = at center)
                             center = (orig_min + orig_max) / 2
                             dist_from_boundary = 1.0 - abs(value - center) / (range_size / 2)
-                            penalty += dist_from_boundary
-                    else:
-                        # Single bound - penalize being on the wrong side
-                        penalty += 0.5
+                            penalty += max(0, dist_from_boundary)
+                    elif orig_min is not None:
+                        # Single min bound - penalize being above it (deeper inside = worse)
+                        # Use distance from the boundary relative to original value
+                        if original_value > orig_min:
+                            range_estimate = original_value - orig_min
+                            dist_inside = (value - orig_min) / range_estimate if range_estimate > 0 else 0.5
+                            penalty += max(0, min(1, dist_inside))
+                        else:
+                            penalty += 0.5
+                    elif orig_max is not None:
+                        # Single max bound - penalize being below it (deeper inside = worse)
+                        if original_value < orig_max:
+                            range_estimate = orig_max - original_value
+                            dist_inside = (orig_max - value) / range_estimate if range_estimate > 0 else 0.5
+                            penalty += max(0, min(1, dist_inside))
+                        else:
+                            penalty += 0.5
+        
+        return penalty
         
         return penalty
 
@@ -639,6 +685,9 @@ class CounterFactualModel:
             
             Enhanced with dual-boundary support: penalizes staying within original class bounds
             while rewarding movement toward target class bounds.
+            
+            Uses soft class penalty based on prediction probabilities to provide gradient
+            information even when the sample doesn't yet predict as target class.
 
             Args:
                 individual (dict): The individual sample with feature values.
@@ -661,25 +710,50 @@ class CounterFactualModel:
             if not self.is_actionable_change(individual, sample):
                 return INVALID_FITNESS
 
-            # Calculate validity score based on class
-            is_valid_class = self.check_validity(features.flatten(), original_features.flatten(), target_class)
+            # Check if sample is identical to original
+            if np.array_equal(features.flatten(), original_features.flatten()):
+                return INVALID_FITNESS
 
             # Check the constraints
             is_valid_constraint, penalty_constraints = self.validate_constraints(individual, sample, target_class)
-
-            # Base fitness calculation
-            if not is_valid_class:
-                # If class is wrong, return high penalty
-                return INVALID_FITNESS
+            
+            # Calculate class prediction probability for soft penalty
+            # This provides gradient information even when not yet in target class
+            try:
+                if self.feature_names is not None:
+                    features_df = pd.DataFrame(features, columns=self.feature_names)
+                    probs = self.model.predict_proba(features_df)[0]
+                else:
+                    probs = self.model.predict_proba(features)[0]
+                
+                target_prob = probs[target_class]
+                predicted_class = np.argmax(probs)
+                
+                # Soft class penalty: penalize low probability for target class
+                # Range: 0 (target_prob=1) to large value (target_prob=0)
+                # Use exponential to strongly penalize low probabilities
+                class_penalty = 100.0 * (1.0 - target_prob) ** 2
+                
+                # Additional hard penalty if not predicting target class
+                if predicted_class != target_class:
+                    class_penalty += 50.0  # Smaller than before, combined with soft penalty
+                    
+            except Exception:
+                # Fallback: use hard prediction
+                is_valid_class = self.check_validity(features.flatten(), original_features.flatten(), target_class)
+                if not is_valid_class:
+                    return INVALID_FITNESS
+                class_penalty = 0.0
             
             # Calculate core components
             distance_score = self.calculate_distance(original_features, features.flatten(), metric)
             sparsity_score = self.calculate_sparsity(sample, individual)
             
-            # Base fitness (minimize distance and sparsity, penalize constraint violations)
+            # Base fitness (minimize distance and sparsity, penalize constraint violations and wrong class)
             base_fitness = (self.distance_factor * distance_score + 
                           self.sparsity_factor * sparsity_score + 
-                          self.constraints_factor * penalty_constraints)
+                          self.constraints_factor * penalty_constraints +
+                          class_penalty)
             
             # DUAL-BOUNDARY: Add original class escape penalty
             # This penalizes individuals that haven't escaped the original class boundaries
@@ -701,8 +775,8 @@ class CounterFactualModel:
                 dist_line = self.distance_to_boundary_line(individual, target_class)
                 line_bonus = 1.0 / (1.0 + dist_line) * self.boundary_weight
                 
-                # Penalty for being too far from boundary
-                boundary_penalty = 50.0 if dist_line > 0.1 else 0.0
+                # Penalty for being too far from boundary (only if not yet predicting target)
+                boundary_penalty = 30.0 if dist_line > 0.1 and class_penalty > 0 else 0.0
                 
                 # Total fitness (lower is better, so we subtract bonuses)
                 fitness = base_fitness - div_bonus - rep_bonus - line_bonus + boundary_penalty
@@ -731,7 +805,7 @@ class CounterFactualModel:
             
             # Additional penalty for constraint violations
             if not is_valid_constraint:
-                fitness *= 5.0  # Multiply penalty for constraint violations
+                fitness *= 2.0  # Reduced from 5.0 - constraints are already penalized in base
 
             return fitness
 
