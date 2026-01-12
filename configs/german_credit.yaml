@@ -34,6 +34,11 @@ counterfactual:
   sparsity_factor: 1.0
   constraints_factor: 3.0
   
+  # Dual-boundary parameters (original class escape + target class approach)
+  original_escape_weight: 2.0  # Weight for penalizing staying within original class bounds
+  escape_pressure: 0.5  # Balance between escaping original (1.0) vs approaching target (0.0)
+  prioritize_non_overlapping: true  # Prioritize mutating features with non-overlapping boundaries
+  
   # Runtime parameters
   population_size: 40  # Larger population for more features
   max_generations: 100  # More generations for complex feature space
