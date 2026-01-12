@@ -12,7 +12,8 @@ from deap import base, creator, tools, algorithms
 class CounterFactualModel:
     def __init__(self, model, constraints, dict_non_actionable=None, verbose=False, 
                  diversity_weight=0.5, repulsion_weight=4.0, boundary_weight=15.0, 
-                 distance_factor=2.0, sparsity_factor=1.0, constraints_factor=3.0):
+                 distance_factor=2.0, sparsity_factor=1.0, constraints_factor=3.0,
+                 original_escape_weight=2.0, escape_pressure=0.5, prioritize_non_overlapping=True):
         """
         Initialize the CounterFactualDPG object.
 
@@ -29,6 +30,9 @@ class CounterFactualModel:
             distance_factor (float): Weight for distance component in fitness calculation.
             sparsity_factor (float): Weight for sparsity component in fitness calculation.
             constraints_factor (float): Weight for constraint violation component in fitness calculation.
+            original_escape_weight (float): Weight for penalizing staying within original class bounds.
+            escape_pressure (float): Balance between escaping original (1.0) vs approaching target (0.0).
+            prioritize_non_overlapping (bool): Prioritize mutating features with non-overlapping boundaries.
         """
         self.model = model
         self.constraints = constraints
@@ -43,8 +47,158 @@ class CounterFactualModel:
         self.distance_factor = distance_factor
         self.sparsity_factor = sparsity_factor
         self.constraints_factor = constraints_factor
+        # Dual-boundary parameters
+        self.original_escape_weight = original_escape_weight
+        self.escape_pressure = escape_pressure
+        self.prioritize_non_overlapping = prioritize_non_overlapping
         # Store feature names from the model if available
         self.feature_names = getattr(model, 'feature_names_in_', None)
+        # Cache for boundary analysis results
+        self._boundary_analysis_cache = {}
+
+    def _analyze_boundary_overlap(self, original_class, target_class):
+        """
+        Analyze boundary overlap between original and target class constraints.
+        Identifies features where boundaries don't overlap (clear escape paths).
+        
+        Args:
+            original_class (int): The original class of the sample.
+            target_class (int): The target class for counterfactual.
+            
+        Returns:
+            dict: Analysis results with 'non_overlapping', 'overlapping', and 'escape_direction' per feature.
+        """
+        cache_key = (original_class, target_class)
+        if cache_key in self._boundary_analysis_cache:
+            return self._boundary_analysis_cache[cache_key]
+        
+        original_constraints = self.constraints.get(f"Class {original_class}", [])
+        target_constraints = self.constraints.get(f"Class {target_class}", [])
+        
+        analysis = {
+            'non_overlapping': [],  # Features with clear escape path
+            'overlapping': [],      # Features with overlapping bounds
+            'escape_direction': {}, # Direction to escape: 'increase', 'decrease', or 'both'
+            'feature_bounds': {}    # Store both bounds for each feature
+        }
+        
+        # Build lookup dict for original constraints
+        orig_bounds = {}
+        for c in original_constraints:
+            feature = c.get("feature", "")
+            norm_feature = self._normalize_feature_name(feature)
+            orig_bounds[norm_feature] = {
+                'min': c.get('min'),
+                'max': c.get('max'),
+                'original_name': feature
+            }
+        
+        # Analyze each target constraint
+        for tc in target_constraints:
+            feature = tc.get("feature", "")
+            norm_feature = self._normalize_feature_name(feature)
+            target_min = tc.get('min')
+            target_max = tc.get('max')
+            
+            # Store bounds info
+            analysis['feature_bounds'][norm_feature] = {
+                'target_min': target_min,
+                'target_max': target_max,
+                'original_min': None,
+                'original_max': None,
+                'feature_name': feature
+            }
+            
+            if norm_feature in orig_bounds:
+                orig_min = orig_bounds[norm_feature].get('min')
+                orig_max = orig_bounds[norm_feature].get('max')
+                
+                analysis['feature_bounds'][norm_feature]['original_min'] = orig_min
+                analysis['feature_bounds'][norm_feature]['original_max'] = orig_max
+                
+                # Check for non-overlapping regions
+                # Non-overlapping if: target_min > orig_max OR target_max < orig_min
+                non_overlapping = False
+                escape_dir = 'both'
+                
+                if target_min is not None and orig_max is not None and target_min > orig_max:
+                    non_overlapping = True
+                    escape_dir = 'increase'  # Must increase to reach target
+                elif target_max is not None and orig_min is not None and target_max < orig_min:
+                    non_overlapping = True
+                    escape_dir = 'decrease'  # Must decrease to reach target
+                elif target_min is not None and orig_min is not None and target_min > orig_min:
+                    escape_dir = 'increase'  # Prefer increasing
+                elif target_max is not None and orig_max is not None and target_max < orig_max:
+                    escape_dir = 'decrease'  # Prefer decreasing
+                
+                if non_overlapping:
+                    analysis['non_overlapping'].append(feature)
+                else:
+                    analysis['overlapping'].append(feature)
+                
+                analysis['escape_direction'][norm_feature] = escape_dir
+            else:
+                # No original constraint for this feature - it's in overlapping (no restriction)
+                analysis['overlapping'].append(feature)
+                analysis['escape_direction'][norm_feature] = 'both'
+        
+        self._boundary_analysis_cache[cache_key] = analysis
+        return analysis
+
+    def _calculate_original_escape_penalty(self, individual, sample, original_class):
+        """
+        Calculate penalty for features still within original class bounds.
+        Penalizes individuals that haven't escaped the original class boundaries.
+        
+        Args:
+            individual (dict): The individual to evaluate.
+            sample (dict): Original sample.
+            original_class (int): The original class of the sample.
+            
+        Returns:
+            float: Penalty score (higher = worse, more features still in original bounds).
+        """
+        original_constraints = self.constraints.get(f"Class {original_class}", [])
+        if not original_constraints:
+            return 0.0
+        
+        penalty = 0.0
+        features_in_original = 0
+        
+        for feature, value in individual.items():
+            # Find matching original constraint
+            matching_constraint = next(
+                (c for c in original_constraints if self._features_match(c.get("feature", ""), feature)),
+                None
+            )
+            
+            if matching_constraint:
+                orig_min = matching_constraint.get('min')
+                orig_max = matching_constraint.get('max')
+                
+                # Check if value is still within original class bounds
+                in_original_bounds = True
+                if orig_min is not None and value < orig_min:
+                    in_original_bounds = False
+                if orig_max is not None and value > orig_max:
+                    in_original_bounds = False
+                
+                if in_original_bounds:
+                    features_in_original += 1
+                    # Calculate how deep inside the original bounds the value is
+                    if orig_min is not None and orig_max is not None:
+                        range_size = orig_max - orig_min
+                        if range_size > 0:
+                            # Normalized distance from boundary (0 = at boundary, 1 = at center)
+                            center = (orig_min + orig_max) / 2
+                            dist_from_boundary = 1.0 - abs(value - center) / (range_size / 2)
+                            penalty += dist_from_boundary
+                    else:
+                        # Single bound - penalize being on the wrong side
+                        penalty += 0.5
+        
+        return penalty
 
     def is_actionable_change(self, counterfactual_sample, original_sample):
       """
@@ -278,14 +432,18 @@ class CounterFactualModel:
         return valid_change, penalty
 
 
-    def get_valid_sample(self, sample, target_class):
+    def get_valid_sample(self, sample, target_class, original_class=None):
         """
         Generate a valid sample that meets all constraints for the specified target class
         while respecting actionable changes.
+        
+        Enhanced with dual-boundary support: when original_class is provided, the sample
+        is biased to move away from original class bounds toward target class bounds.
 
         Args:
             sample (dict): The sample with feature values.
             target_class (int): The target class for filtering constraints.
+            original_class (int, optional): The original class for escape-aware generation.
 
         Returns:
             dict: A valid sample that meets all constraints for the target class
@@ -294,11 +452,18 @@ class CounterFactualModel:
         adjusted_sample = sample.copy()  # Start with the original values
         # Filter the constraints for the specified target class
         class_constraints = self.constraints.get(f"Class {target_class}", [])
+        original_constraints = self.constraints.get(f"Class {original_class}", []) if original_class is not None else []
+        
+        # Get boundary analysis for escape direction if original class provided
+        boundary_analysis = None
+        if original_class is not None:
+            boundary_analysis = self._analyze_boundary_overlap(original_class, target_class)
 
         for feature, original_value in sample.items():
             min_value = -np.inf
             max_value = np.inf
-
+            escape_dir = 'both'
+            orig_min, orig_max = None, None
 
             # Find the constraints for this feature using direct lookup
             matching_constraint = next(
@@ -309,6 +474,21 @@ class CounterFactualModel:
             if matching_constraint:
                 min_value = matching_constraint.get("min") if matching_constraint.get("min") is not None else -np.inf
                 max_value = matching_constraint.get("max") if matching_constraint.get("max") is not None else np.inf
+            
+            # Get original class bounds for escape direction
+            if original_constraints:
+                matching_orig = next(
+                    (c for c in original_constraints if self._features_match(c.get("feature", ""), feature)),
+                    None
+                )
+                if matching_orig:
+                    orig_min = matching_orig.get('min')
+                    orig_max = matching_orig.get('max')
+            
+            # Get escape direction from boundary analysis
+            if boundary_analysis:
+                norm_feature = self._normalize_feature_name(feature)
+                escape_dir = boundary_analysis.get('escape_direction', {}).get(norm_feature, 'both')
 
             # Incorporate non-actionable constraints
             if self.dict_non_actionable and feature in self.dict_non_actionable:
@@ -332,13 +512,23 @@ class CounterFactualModel:
             if max_value == np.inf:
                 max_value = original_value + 0.5 * (abs(original_value) + 1.0)
 
-            # Keep original value if it's within bounds, otherwise clip to nearest bound
-            if min_value <= original_value <= max_value:
-                adjusted_sample[feature] = original_value
-            elif original_value < min_value:
-                adjusted_sample[feature] = min_value
+            # Determine target value based on escape direction and dual-boundary awareness
+            if escape_dir == 'increase' and max_value != np.inf:
+                # Bias toward upper bound to escape original class
+                target_value = min_value + (max_value - min_value) * (0.5 + 0.3 * self.escape_pressure)
+            elif escape_dir == 'decrease' and min_value != -np.inf:
+                # Bias toward lower bound to escape original class
+                target_value = min_value + (max_value - min_value) * (0.5 - 0.3 * self.escape_pressure)
             else:
-                adjusted_sample[feature] = max_value
+                # Default: keep original value if within bounds, otherwise use midpoint
+                if min_value <= original_value <= max_value:
+                    target_value = original_value
+                else:
+                    target_value = (min_value + max_value) / 2
+
+            # Clip to bounds and set
+            adjusted_sample[feature] = np.clip(target_value, min_value, max_value)
+            
         return adjusted_sample
 
     def calculate_sparsity(self, original_sample, counterfactual_sample):
@@ -442,10 +632,13 @@ class CounterFactualModel:
             # Fallback if model doesn't support predict_proba
             return 0.05
 
-    def calculate_fitness(self, individual, original_features, sample, target_class, metric="cosine", population=None):
+    def calculate_fitness(self, individual, original_features, sample, target_class, metric="cosine", population=None, original_class=None):
             """
             Calculate the fitness score for an individual sample using weighted components.
             Based on the total_fitness logic from dpg_aug.ipynb.
+            
+            Enhanced with dual-boundary support: penalizes staying within original class bounds
+            while rewarding movement toward target class bounds.
 
             Args:
                 individual (dict): The individual sample with feature values.
@@ -454,6 +647,7 @@ class CounterFactualModel:
                 target_class (int): The desired class for the counterfactual.
                 metric (str): The distance metric to use for calculating distance.
                 population (list): The current population for diversity calculations.
+                original_class (int): The original class of the sample for escape penalty.
 
             Returns:
                 float: The fitness score for the individual (lower is better).
@@ -486,6 +680,12 @@ class CounterFactualModel:
             base_fitness = (self.distance_factor * distance_score + 
                           self.sparsity_factor * sparsity_score + 
                           self.constraints_factor * penalty_constraints)
+            
+            # DUAL-BOUNDARY: Add original class escape penalty
+            # This penalizes individuals that haven't escaped the original class boundaries
+            if original_class is not None and self.original_escape_weight > 0:
+                escape_penalty = self._calculate_original_escape_penalty(individual, sample, original_class)
+                base_fitness += self.original_escape_weight * escape_penalty
             
             # If population is provided, add diversity and repulsion bonuses
             if population is not None and len(population) > 1:
@@ -541,8 +741,11 @@ class CounterFactualModel:
         individual = creator.Individual(sample_dict)
         return individual
 
-    def _mutate_individual(self, individual, sample, feature_names, mutation_rate, target_class=None):
-        """Custom mutation operator that respects actionability and DPG constraint boundaries.
+    def _mutate_individual(self, individual, sample, feature_names, mutation_rate, target_class=None, original_class=None, boundary_analysis=None):
+        """Custom mutation operator that respects actionability and uses dual DPG constraint boundaries.
+        
+        Enhanced with dual-boundary support: mutates features to escape original class bounds
+        while moving toward target class bounds, with configurable escape_pressure.
         
         Args:
             individual: The individual to mutate
@@ -550,47 +753,82 @@ class CounterFactualModel:
             feature_names: List of feature names
             mutation_rate: Probability of mutating each feature
             target_class: Target class for constraint-aware mutation
+            original_class: Original class for escape-aware mutation
+            boundary_analysis: Pre-computed boundary analysis (optional, computed if not provided)
         """
         # Get target class constraints if available (list of constraint dicts)
         target_constraints = []
+        original_constraints = []
         if target_class is not None and self.constraints:
             target_constraints = self.constraints.get(f"Class {target_class}", [])
+        if original_class is not None and self.constraints:
+            original_constraints = self.constraints.get(f"Class {original_class}", [])
+        
+        # Get or compute boundary analysis for prioritization
+        if boundary_analysis is None and original_class is not None and target_class is not None:
+            boundary_analysis = self._analyze_boundary_overlap(original_class, target_class)
+        
+        # Determine feature mutation priority based on non-overlapping boundaries
+        non_overlapping_features = set()
+        escape_directions = {}
+        if boundary_analysis and self.prioritize_non_overlapping:
+            non_overlapping_features = set(
+                self._normalize_feature_name(f) for f in boundary_analysis.get('non_overlapping', [])
+            )
+            escape_directions = boundary_analysis.get('escape_direction', {})
         
         for feature in feature_names:
-            if np.random.rand() < mutation_rate:
-                # Determine mutation bounds based on constraints
-                feature_min, feature_max = None, None
-                
-                # Get DPG constraint boundaries for this feature and target class
-                # Constraints are stored as a list of dicts with "feature", "min", "max" keys
+            norm_feature = self._normalize_feature_name(feature)
+            
+            # Adjust mutation rate: higher for non-overlapping features
+            effective_mutation_rate = mutation_rate
+            if self.prioritize_non_overlapping and norm_feature in non_overlapping_features:
+                # Boost mutation rate for features with clear escape paths
+                effective_mutation_rate = min(1.0, mutation_rate * 1.5)
+            
+            if np.random.rand() < effective_mutation_rate:
+                # Get target constraint boundaries for this feature
+                target_min, target_max = None, None
                 if target_constraints:
                     matching_constraint = next(
                         (c for c in target_constraints if self._features_match(c.get("feature", ""), feature)),
                         None
                     )
                     if matching_constraint:
-                        feature_min = matching_constraint.get('min')
-                        feature_max = matching_constraint.get('max')
+                        target_min = matching_constraint.get('min')
+                        target_max = matching_constraint.get('max')
                 
-                # Apply mutation only if the feature is actionable
+                # Get original constraint boundaries for escape direction
+                orig_min, orig_max = None, None
+                if original_constraints:
+                    matching_orig = next(
+                        (c for c in original_constraints if self._features_match(c.get("feature", ""), feature)),
+                        None
+                    )
+                    if matching_orig:
+                        orig_min = matching_orig.get('min')
+                        orig_max = matching_orig.get('max')
+                
+                # Determine escape direction based on analysis
+                escape_dir = escape_directions.get(norm_feature, 'both')
+                
+                # Apply mutation based on actionability constraints
                 if self.dict_non_actionable and feature in self.dict_non_actionable:
                     actionability = self.dict_non_actionable[feature]
                     original_value = sample[feature]
                     
                     if actionability == "non_decreasing":
-                        # Only allow increase
-                        if feature_max is not None:
-                            # Mutate towards the upper bound
-                            mutation_range = min(0.5, (feature_max - individual[feature]) * 0.1)
+                        # Only allow increase - use escape pressure to bias toward target upper bound
+                        if target_max is not None:
+                            mutation_range = min(0.5, (target_max - individual[feature]) * 0.1)
                         else:
                             mutation_range = 0.5
                         individual[feature] += np.random.uniform(0, mutation_range)
                         
                     elif actionability == "non_increasing":
-                        # Only allow decrease
-                        if feature_min is not None:
-                            # Mutate towards the lower bound
-                            mutation_range = min(0.5, (individual[feature] - feature_min) * 0.1)
+                        # Only allow decrease - use escape pressure to bias toward target lower bound
+                        if target_min is not None:
+                            mutation_range = min(0.5, (individual[feature] - target_min) * 0.1)
                         else:
                             mutation_range = 0.5
                         individual[feature] += np.random.uniform(-mutation_range, 0)
@@ -598,52 +836,97 @@ class CounterFactualModel:
                     elif actionability == "no_change":
                         individual[feature] = original_value  # Do not change
                     else:
-                        # Constraint-aware mutation within DPG boundaries
-                        if feature_min is not None and feature_max is not None:
-                            # Both bounds exist - mutate within range, scaled by 10% of range
-                            range_size = feature_max - feature_min
-                            mutation_range = range_size * 0.1
-                            individual[feature] += np.random.uniform(-mutation_range, mutation_range)
-                        elif feature_min is not None:
-                            # Only min bound - prefer moving towards it
-                            mutation_range = max(0.5, (individual[feature] - feature_min) * 0.1)
-                            individual[feature] += np.random.uniform(-mutation_range, mutation_range * 0.5)
-                        elif feature_max is not None:
-                            # Only max bound - prefer moving towards it
-                            mutation_range = max(0.5, (feature_max - individual[feature]) * 0.1)
-                            individual[feature] += np.random.uniform(-mutation_range * 0.5, mutation_range)
-                        else:
-                            # No constraints - use default mutation
-                            individual[feature] += np.random.uniform(-0.5, 0.5)
+                        # Apply dual-boundary mutation
+                        individual[feature] = self._dual_boundary_mutate(
+                            individual[feature], target_min, target_max, orig_min, orig_max, escape_dir
+                        )
                 else:
-                    # Feature not in actionable list - apply constraint-aware mutation
-                    if feature_min is not None and feature_max is not None:
-                        # Both bounds exist - mutate within range
-                        range_size = feature_max - feature_min
-                        mutation_range = range_size * 0.1
-                        individual[feature] += np.random.uniform(-mutation_range, mutation_range)
-                    elif feature_min is not None:
-                        # Only min bound
-                        mutation_range = max(0.5, (individual[feature] - feature_min) * 0.1)
-                        individual[feature] += np.random.uniform(-mutation_range, mutation_range * 0.5)
-                    elif feature_max is not None:
-                        # Only max bound
-                        mutation_range = max(0.5, (feature_max - individual[feature]) * 0.1)
-                        individual[feature] += np.random.uniform(-mutation_range * 0.5, mutation_range)
-                    else:
-                        # No constraints - use default mutation
-                        individual[feature] += np.random.uniform(-0.5, 0.5)
+                    # Feature not constrained by actionability - apply dual-boundary mutation
+                    individual[feature] = self._dual_boundary_mutate(
+                        individual[feature], target_min, target_max, orig_min, orig_max, escape_dir
+                    )
                 
-                # Clip to constraint boundaries if they exist
-                if feature_min is not None:
-                    individual[feature] = max(feature_min, individual[feature])
-                if feature_max is not None:
-                    individual[feature] = min(feature_max, individual[feature])
+                # Clip to target constraint boundaries if they exist
+                if target_min is not None:
+                    individual[feature] = max(target_min, individual[feature])
+                if target_max is not None:
+                    individual[feature] = min(target_max, individual[feature])
                 
                 # Ensure non-negative values and round
                 individual[feature] = np.round(max(0, individual[feature]), 2)
                 
         return individual,
+
+    def _dual_boundary_mutate(self, current_value, target_min, target_max, orig_min, orig_max, escape_dir='both'):
+        """
+        Apply mutation that balances escaping original bounds and approaching target bounds.
+        
+        Uses escape_pressure parameter to control the balance:
+        - escape_pressure=1.0: Fully focused on escaping original bounds
+        - escape_pressure=0.0: Fully focused on approaching target bounds
+        - escape_pressure=0.5 (default): Balanced approach
+        
+        Args:
+            current_value: Current feature value
+            target_min, target_max: Target class bounds
+            orig_min, orig_max: Original class bounds
+            escape_dir: Preferred escape direction ('increase', 'decrease', 'both')
+            
+        Returns:
+            float: Mutated value
+        """
+        escape_pressure = self.escape_pressure
+        
+        # Calculate mutation based on escape direction and pressure
+        if escape_dir == 'increase':
+            # Must increase to escape original and reach target
+            if target_max is not None:
+                target_point = target_max if escape_pressure > 0.5 else (target_min if target_min else target_max)
+                range_to_target = abs(target_point - current_value)
+                mutation_range = max(0.1, range_to_target * 0.15)
+                # Bias toward increase
+                return current_value + np.random.uniform(0, mutation_range)
+            else:
+                return current_value + np.random.uniform(0, 0.5)
+                
+        elif escape_dir == 'decrease':
+            # Must decrease to escape original and reach target
+            if target_min is not None:
+                target_point = target_min if escape_pressure > 0.5 else (target_max if target_max else target_min)
+                range_to_target = abs(current_value - target_point)
+                mutation_range = max(0.1, range_to_target * 0.15)
+                # Bias toward decrease
+                return current_value - np.random.uniform(0, mutation_range)
+            else:
+                return current_value - np.random.uniform(0, 0.5)
+                
+        else:  # 'both' - no clear escape direction
+            # Use standard bounded mutation with bias based on escape_pressure
+            if target_min is not None and target_max is not None:
+                range_size = target_max - target_min
+                mutation_range = range_size * 0.1
+                
+                # Calculate center of target range
+                target_center = (target_min + target_max) / 2
+                
+                # Bias mutation toward target center based on escape_pressure
+                bias = (target_center - current_value) * escape_pressure * 0.1
+                mutation = np.random.uniform(-mutation_range, mutation_range) + bias
+                return current_value + mutation
+                
+            elif target_min is not None:
+                # Only min bound - prefer staying above it
+                mutation_range = max(0.5, (current_value - target_min) * 0.1)
+                return current_value + np.random.uniform(-mutation_range * 0.3, mutation_range)
+                
+            elif target_max is not None:
+                # Only max bound - prefer staying below it
+                mutation_range = max(0.5, (target_max - current_value) * 0.1)
+                return current_value + np.random.uniform(-mutation_range, mutation_range * 0.3)
+                
+            else:
+                # No constraints - use default mutation
+                return current_value + np.random.uniform(-0.5, 0.5)
 
     def _crossover_dict(self, ind1, ind2, indpb, sample=None):
         """Custom crossover operator for dict-based individuals.
@@ -675,15 +958,36 @@ class CounterFactualModel:
         
         return ind1, ind2
 
-    def genetic_algorithm(self, sample, target_class, population_size=100, generations=100, mutation_rate=0.8, metric="euclidean", delta_threshold=0.01, patience=10, n_jobs=-1):
+    def genetic_algorithm(self, sample, target_class, population_size=100, generations=100, mutation_rate=0.8, metric="euclidean", delta_threshold=0.01, patience=10, n_jobs=-1, original_class=None):
         """Genetic algorithm implementation using DEAP framework.
         
+        Enhanced with dual-boundary support: uses both original and target class constraints
+        to guide evolution. Mutations escape original class bounds while approaching target bounds.
+        
         Args:
+            sample (dict): Original sample features.
+            target_class (int): Target class for counterfactual.
+            population_size (int): Population size for GA.
+            generations (int): Maximum generations to run.
+            mutation_rate (float): Base mutation rate.
+            metric (str): Distance metric for fitness calculation.
+            delta_threshold (float): Convergence threshold.
+            patience (int): Generations without improvement before early stopping.
             n_jobs (int): Number of parallel jobs for fitness evaluation. 
                          -1 = use all CPUs (default), 1 = sequential.
+            original_class (int): Original class for escape-aware mutation (dual-boundary).
         """
         feature_names = list(sample.keys())
         original_features = np.array([sample[feature] for feature in feature_names])
+        
+        # Pre-compute boundary analysis for dual-boundary operations
+        boundary_analysis = None
+        if original_class is not None:
+            boundary_analysis = self._analyze_boundary_overlap(original_class, target_class)
+            if self.verbose:
+                non_overlapping = boundary_analysis.get('non_overlapping', [])
+                print(f"[Dual-Boundary] Non-overlapping features: {non_overlapping}")
+                print(f"[Dual-Boundary] Escape directions: {boundary_analysis.get('escape_direction', {})}")
         
         # Reset DEAP classes if they already exist
         if hasattr(creator, "FitnessMin"):
@@ -707,9 +1011,9 @@ class CounterFactualModel:
             pool = Pool(processes=n_jobs)
             toolbox.register("map", pool.map)
         
-        # Register individual creation
+        # Register individual creation (now with original_class for escape-aware initialization)
         toolbox.register("individual", self._create_deap_individual, 
-                        sample_dict=self.get_valid_sample(sample, target_class),
+                        sample_dict=self.get_valid_sample(sample, target_class, original_class),
                         feature_names=feature_names)
         
         # Register population creation
@@ -778,23 +1082,38 @@ class CounterFactualModel:
                         sample=sample, 
                         feature_names=feature_names,
                         mutation_rate=mutation_rate,
-                        target_class=target_class)
+                        target_class=target_class,
+                        original_class=original_class,
+                        boundary_analysis=boundary_analysis)
         
         # Create initial population starting near the original sample
-        # First individual is the original sample adjusted to constraint boundaries
-        base_individual = self.get_valid_sample(sample, target_class)
+        # First individual is the original sample adjusted to constraint boundaries (escape-aware)
+        base_individual = self.get_valid_sample(sample, target_class, original_class)
         population = [self._create_deap_individual(base_individual.copy(), feature_names)]
         
-        # Remaining individuals are small perturbations of the original sample
+        # Remaining individuals are perturbations biased by escape direction
         target_constraints = self.constraints.get(f"Class {target_class}", [])
+        original_constraints = self.constraints.get(f"Class {original_class}", []) if original_class else []
+        escape_directions = boundary_analysis.get('escape_direction', {}) if boundary_analysis else {}
+        
         for _ in range(population_size - 1):
             perturbed = sample.copy()
-            # Add small random perturbations to each feature (±5% of value or ±0.2)
+            # Add perturbations biased by escape direction for each feature
             for feature in feature_names:
-                perturbation = np.random.uniform(-0.2, 0.2)
+                norm_feature = self._normalize_feature_name(feature)
+                escape_dir = escape_directions.get(norm_feature, 'both')
+                
+                # Base perturbation
+                if escape_dir == 'increase':
+                    perturbation = np.random.uniform(0, 0.4)  # Bias toward increase
+                elif escape_dir == 'decrease':
+                    perturbation = np.random.uniform(-0.4, 0)  # Bias toward decrease
+                else:
+                    perturbation = np.random.uniform(-0.2, 0.2)  # Symmetric
+                
                 perturbed[feature] = sample[feature] + perturbation
                 
-                # Clip to constraint boundaries if they exist
+                # Clip to target constraint boundaries if they exist
                 matching_constraint = next(
                     (c for c in target_constraints if self._features_match(c.get("feature", ""), feature)),
                     None
@@ -813,8 +1132,9 @@ class CounterFactualModel:
             population.append(self._create_deap_individual(perturbed, feature_names))
         
         # Register evaluate operator after population creation so it can capture population in closure
+        # Now includes original_class for escape penalty calculation
         toolbox.register("evaluate", lambda ind: (self.calculate_fitness(
-            ind, original_features, sample, target_class, metric, population),))
+            ind, original_features, sample, target_class, metric, population, original_class),))
         
         # Setup statistics
         # Define INVALID_FITNESS threshold for filtering statistics
@@ -890,13 +1210,17 @@ class CounterFactualModel:
             
             # Inject random immigrants to maintain genetic diversity (10% of population)
             # This prevents premature convergence and helps escape local optima
+            # Enhanced: immigrants are now escape-aware, biased toward target class bounds
             num_immigrants = max(1, int(0.1 * population_size))
             target_constraints = self.constraints.get(f"Class {target_class}", [])
             
             for i in range(num_immigrants):
-                # Create a new random individual within constraint boundaries
+                # Create a new random individual within constraint boundaries, biased by escape direction
                 immigrant = {}
                 for feature in feature_names:
+                    norm_feature = self._normalize_feature_name(feature)
+                    escape_dir = escape_directions.get(norm_feature, 'both')
+                    
                     # Find constraint for this feature
                     matching_constraint = next(
                         (c for c in target_constraints if self._features_match(c.get("feature", ""), feature)),
@@ -907,9 +1231,18 @@ class CounterFactualModel:
                         feature_min = matching_constraint.get('min')
                         feature_max = matching_constraint.get('max')
                         
-                        # Generate random value within constraints
+                        # Generate random value within constraints, biased by escape direction
                         if feature_min is not None and feature_max is not None:
-                            immigrant[feature] = np.random.uniform(feature_min, feature_max)
+                            if escape_dir == 'increase':
+                                # Bias toward upper half of target range
+                                mid = (feature_min + feature_max) / 2
+                                immigrant[feature] = np.random.uniform(mid, feature_max)
+                            elif escape_dir == 'decrease':
+                                # Bias toward lower half of target range
+                                mid = (feature_min + feature_max) / 2
+                                immigrant[feature] = np.random.uniform(feature_min, mid)
+                            else:
+                                immigrant[feature] = np.random.uniform(feature_min, feature_max)
                         elif feature_min is not None:
                             immigrant[feature] = np.random.uniform(feature_min, feature_min + 2.0)
                         elif feature_max is not None:
@@ -935,7 +1268,9 @@ class CounterFactualModel:
                            sample=sample, 
                            feature_names=feature_names,
                            mutation_rate=current_mutation_rate,
-                           target_class=target_class)
+                           target_class=target_class,
+                           original_class=original_class,
+                           boundary_analysis=boundary_analysis)
             
             # Elitism: Preserve best individuals from current population
             # Keep top 10% of current population (minimum 1, maximum 5)
@@ -963,6 +1298,9 @@ class CounterFactualModel:
     def generate_counterfactual(self, sample, target_class, population_size=100, generations=100, mutation_rate=0.8, n_jobs=-1):
         """
         Generate a counterfactual for the given sample and target class using a genetic algorithm.
+        
+        Enhanced with dual-boundary support: the GA uses both original and target class
+        constraints to guide evolution, escaping original bounds while approaching target bounds.
 
         Args:
             sample (dict): The original sample with feature values.
@@ -980,5 +1318,9 @@ class CounterFactualModel:
         if sample_class == target_class:
             raise ValueError("Target class need to be different from the predicted class label.")
 
-        counterfactual = self.genetic_algorithm(sample, target_class, population_size, generations, mutation_rate=mutation_rate, n_jobs=n_jobs)
+        # Pass original_class to enable dual-boundary GA
+        counterfactual = self.genetic_algorithm(
+            sample, target_class, population_size, generations, 
+            mutation_rate=mutation_rate, n_jobs=n_jobs, original_class=sample_class
+        )
         return counterfactual

@@ -424,7 +424,7 @@ def _run_single_replication(args):
     config = DictConfig(config_dict)
     
     try:
-        # Create CF model with config parameters
+        # Create CF model with config parameters (including dual-boundary parameters)
         cf_model = CounterFactualModel(
             model, 
             constraints,
@@ -436,6 +436,10 @@ def _run_single_replication(args):
             distance_factor=config.counterfactual.distance_factor,
             sparsity_factor=config.counterfactual.sparsity_factor,
             constraints_factor=config.counterfactual.constraints_factor,
+            # Dual-boundary parameters
+            original_escape_weight=getattr(config.counterfactual, 'original_escape_weight', 2.0),
+            escape_pressure=getattr(config.counterfactual, 'escape_pressure', 0.5),
+            prioritize_non_overlapping=getattr(config.counterfactual, 'prioritize_non_overlapping', True),
         )
         
         counterfactual = cf_model.generate_counterfactual(
@@ -480,6 +484,10 @@ def _run_single_replication(args):
             'distance_factor': cf_model.distance_factor,
             'sparsity_factor': cf_model.sparsity_factor,
             'constraints_factor': cf_model.constraints_factor,
+            # Dual-boundary parameters
+            'original_escape_weight': cf_model.original_escape_weight,
+            'escape_pressure': cf_model.escape_pressure,
+            'prioritize_non_overlapping': cf_model.prioritize_non_overlapping,
         }
         
     except Exception as exc:
@@ -706,7 +714,7 @@ def run_single_sample(
             # Calculate final best fitness
             best_fitness = best_fitness_list[-1] if best_fitness_list else 0.0
             
-            # Recreate cf_model with stored parameters
+            # Recreate cf_model with stored parameters (including dual-boundary parameters)
             cf_model = CounterFactualModel(
                 model,
                 constraints,
@@ -718,6 +726,10 @@ def run_single_sample(
                 distance_factor=result.get('distance_factor', 2.0),
                 sparsity_factor=result.get('sparsity_factor', 1.0),
                 constraints_factor=result.get('constraints_factor', 3.0),
+                # Dual-boundary parameters
+                original_escape_weight=result.get('original_escape_weight', 2.0),
+                escape_pressure=result.get('escape_pressure', 0.5),
+                prioritize_non_overlapping=result.get('prioritize_non_overlapping', True),
             )
             # Restore fitness history
             cf_model.best_fitness_list = best_fitness_list
