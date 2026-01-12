@@ -13,7 +13,8 @@ class CounterFactualModel:
     def __init__(self, model, constraints, dict_non_actionable=None, verbose=False, 
                  diversity_weight=0.5, repulsion_weight=4.0, boundary_weight=15.0, 
                  distance_factor=2.0, sparsity_factor=1.0, constraints_factor=3.0,
-                 original_escape_weight=2.0, escape_pressure=0.5, prioritize_non_overlapping=True):
+                 original_escape_weight=2.0, escape_pressure=0.5, prioritize_non_overlapping=True,
+                 max_bonus_cap=50.0):
         """
         Initialize the CounterFactualDPG object.
 
@@ -33,6 +34,7 @@ class CounterFactualModel:
             original_escape_weight (float): Weight for penalizing staying within original class bounds.
             escape_pressure (float): Balance between escaping original (1.0) vs approaching target (0.0).
             prioritize_non_overlapping (bool): Prioritize mutating features with non-overlapping boundaries.
+            max_bonus_cap (float): Maximum cap for diversity/repulsion bonuses to prevent unbounded negative fitness.
         """
         self.model = model
         self.constraints = constraints
@@ -51,6 +53,8 @@ class CounterFactualModel:
         self.original_escape_weight = original_escape_weight
         self.escape_pressure = escape_pressure
         self.prioritize_non_overlapping = prioritize_non_overlapping
+        # Fitness calculation parameters
+        self.max_bonus_cap = max_bonus_cap
         # Store feature names from the model if available
         self.feature_names = getattr(model, 'feature_names_in_', None)
         # Cache for boundary analysis results
@@ -162,6 +166,14 @@ class CounterFactualModel:
                 # No original constraint for this feature - it's in overlapping (no restriction)
                 analysis['overlapping'].append(feature)
                 analysis['escape_direction'][norm_feature] = 'both'
+        
+        # Warn if no non-overlapping features found (constraints are non-discriminative)
+        if len(analysis['non_overlapping']) == 0 and len(target_constraints) > 0:
+            if self.verbose:
+                print(f"WARNING: No non-overlapping boundaries found between Class {original_class} and Class {target_class}.")
+                print(f"  The DPG constraints are nearly identical for both classes.")
+                print(f"  This may indicate the dataset lacks clear class-separating features in the constraint space.")
+                print(f"  Counterfactual generation may be difficult or produce poor results.")
         
         self._boundary_analysis_cache[cache_key] = analysis
         return analysis
@@ -773,6 +785,15 @@ class CounterFactualModel:
                 dist_line = self.distance_to_boundary_line(individual, target_class)
                 line_bonus = 1.0 / (1.0 + dist_line) * self.boundary_weight
                 
+                # Cap bonuses to prevent unbounded negative fitness
+                # This is critical for high-dimensional datasets (e.g., German Credit with 20+ features)
+                total_bonus = div_bonus + rep_bonus + line_bonus
+                if total_bonus > self.max_bonus_cap:
+                    scale_factor = self.max_bonus_cap / total_bonus
+                    div_bonus *= scale_factor
+                    rep_bonus *= scale_factor
+                    line_bonus *= scale_factor
+                
                 # Penalty for being too far from boundary (only if not yet predicting target)
                 boundary_penalty = 30.0 if dist_line > 0.1 and class_penalty > 0 else 0.0
                 
@@ -781,7 +802,9 @@ class CounterFactualModel:
                 
                 # FITNESS SHARING: Penalize individuals in crowded regions to maintain diversity
                 # This prevents population collapse to identical clones
-                sigma_share = 1.0  # Sharing radius - tune based on feature scale
+                # Dynamic sigma_share: scale with sqrt(n_features) to account for dimensionality
+                n_features = len(individual)
+                sigma_share = max(1.0, np.sqrt(n_features))  # Scale sharing radius with dimensionality
                 niche_count = 1.0  # Start at 1 (counting self)
                 
                 ind_array = np.array([individual[key] for key in sorted(individual.keys())])
@@ -1372,10 +1395,36 @@ class CounterFactualModel:
             pool.join()
         
         # Return the best individual found
-        if hof[0].fitness.values[0] == np.inf:
+        # Check for both np.inf and INVALID_FITNESS (1e6) to detect failed counterfactuals
+        INVALID_FITNESS = 1e6
+        best_fitness = hof[0].fitness.values[0]
+        if best_fitness == np.inf or best_fitness >= INVALID_FITNESS:
+            if self.verbose:
+                print(f"Counterfactual generation failed: best fitness = {best_fitness}")
             return None
         
-        return dict(hof[0])
+        # Final validation: verify the best individual actually predicts the target class
+        # This is necessary because soft class penalty doesn't guarantee correct prediction
+        best_individual = dict(hof[0])
+        features = np.array([best_individual[f] for f in sample.keys()]).reshape(1, -1)
+        
+        try:
+            if self.feature_names is not None:
+                features_df = pd.DataFrame(features, columns=self.feature_names)
+                predicted_class = self.model.predict(features_df)[0]
+            else:
+                predicted_class = self.model.predict(features)[0]
+            
+            if predicted_class != target_class:
+                if self.verbose:
+                    print(f"Counterfactual generation failed: best individual predicts class {predicted_class}, not target {target_class}")
+                return None
+        except Exception as e:
+            if self.verbose:
+                print(f"Counterfactual validation failed with error: {e}")
+            return None
+        
+        return best_individual
 
     def generate_counterfactual(self, sample, target_class, population_size=100, generations=100, mutation_rate=0.8, n_jobs=-1):
         """
