@@ -434,9 +434,9 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
     for i, (orig, cf, change) in enumerate(zip(original_values, counterfactual_values, changes)):
         if abs(change) > 0.01:  # Only show arrow if change is significant
             arrow_color = 'darkgreen' if change < 0 else 'darkred'
-            arrow_style = '<-' if change < 0 else '->'
+            # Arrow always points from original to counterfactual
             ax1.annotate('', xy=(cf, i + width/2), xytext=(orig, i - width/2),
-                        arrowprops=dict(arrowstyle=arrow_style, color=arrow_color, 
+                        arrowprops=dict(arrowstyle='->', color=arrow_color, 
                                       lw=2, alpha=0.6))
             # Add change value
             mid_point = (orig + cf) / 2
