@@ -471,10 +471,13 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
                 y_offset = -width/2 if class_idx == predicted_class else width/2
                 
                 for i, feature in enumerate(feature_list):
-                    # Try to match feature name (handle with and without spaces/underscores)
+                    # Try to match feature name - be more flexible with matching
                     feature_key = None
+                    feature_normalized = feature.replace(' (cm)', '').replace('_', ' ').strip().lower()
+                    
                     for key in constraint_dict.keys():
-                        if key.replace('_', ' ') == feature.replace(' (cm)', '').replace('_', ' '):
+                        key_normalized = key.replace('_', ' ').strip().lower()
+                        if key_normalized == feature_normalized or key == feature or key.replace('_', ' ') == feature:
                             feature_key = key
                             break
                     
@@ -485,33 +488,60 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
                         
                         # Draw constraint range as a horizontal line with markers
                         constraint_color = class_colors_list[class_idx]
-                        alpha_constraint = 0.5
+                        alpha_constraint = 0.8  # Increased from 0.5
                         
                         # Draw the range line
                         if c['min'] is not None and c['max'] is not None:
                             # Both min and max
                             ax1.plot([min_val, max_val], [i + y_offset, i + y_offset], 
-                                   color=constraint_color, linewidth=4, alpha=alpha_constraint, 
-                                   linestyle='-', zorder=1)
+                                   color=constraint_color, linewidth=6, alpha=alpha_constraint, 
+                                   linestyle='-', zorder=10)  # Higher zorder to draw on top
                             # Add markers at boundaries
-                            ax1.plot([min_val], [i + y_offset], marker='|', markersize=12, 
-                                   color=constraint_color, alpha=0.8, markeredgewidth=3, zorder=2)
-                            ax1.plot([max_val], [i + y_offset], marker='|', markersize=12, 
-                                   color=constraint_color, alpha=0.8, markeredgewidth=3, zorder=2)
+                            ax1.plot([min_val], [i + y_offset], marker='|', markersize=15, 
+                                   color=constraint_color, alpha=1.0, markeredgewidth=4, zorder=11)
+                            ax1.plot([max_val], [i + y_offset], marker='|', markersize=15, 
+                                   color=constraint_color, alpha=1.0, markeredgewidth=4, zorder=11)
+                            # Add numerical labels for min and max
+                            ax1.text(min_val, i + y_offset - 0.2, f'{min_val:.2f}', 
+                                   ha='center', va='top', fontsize=8, 
+                                   color=constraint_color, weight='bold', style='italic',
+                                   bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', 
+                                           edgecolor=constraint_color, alpha=0.9, linewidth=1.5),
+                                   zorder=12)
+                            ax1.text(max_val, i + y_offset - 0.2, f'{max_val:.2f}', 
+                                   ha='center', va='top', fontsize=8, 
+                                   color=constraint_color, weight='bold', style='italic',
+                                   bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', 
+                                           edgecolor=constraint_color, alpha=0.9, linewidth=1.5),
+                                   zorder=12)
                         elif c['min'] is not None:
                             # Only min constraint
                             ax1.plot([min_val, xlim[1]], [i + y_offset, i + y_offset], 
-                                   color=constraint_color, linewidth=4, alpha=alpha_constraint, 
-                                   linestyle='-', zorder=1)
-                            ax1.plot([min_val], [i + y_offset], marker='|', markersize=12, 
-                                   color=constraint_color, alpha=0.8, markeredgewidth=3, zorder=2)
+                                   color=constraint_color, linewidth=6, alpha=alpha_constraint, 
+                                   linestyle='--', zorder=10)
+                            ax1.plot([min_val], [i + y_offset], marker='|', markersize=15, 
+                                   color=constraint_color, alpha=1.0, markeredgewidth=4, zorder=11)
+                            # Add numerical label for min
+                            ax1.text(min_val, i + y_offset - 0.2, f'min:{min_val:.2f}', 
+                                   ha='center', va='top', fontsize=8, 
+                                   color=constraint_color, weight='bold', style='italic',
+                                   bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', 
+                                           edgecolor=constraint_color, alpha=0.9, linewidth=1.5),
+                                   zorder=12)
                         elif c['max'] is not None:
                             # Only max constraint
                             ax1.plot([xlim[0], max_val], [i + y_offset, i + y_offset], 
-                                   color=constraint_color, linewidth=4, alpha=alpha_constraint, 
-                                   linestyle='-', zorder=1)
-                            ax1.plot([max_val], [i + y_offset], marker='|', markersize=12, 
-                                   color=constraint_color, alpha=0.8, markeredgewidth=3, zorder=2)
+                                   color=constraint_color, linewidth=6, alpha=alpha_constraint, 
+                                   linestyle='--', zorder=10)
+                            ax1.plot([max_val], [i + y_offset], marker='|', markersize=15, 
+                                   color=constraint_color, alpha=1.0, markeredgewidth=4, zorder=11)
+                            # Add numerical label for max
+                            ax1.text(max_val, i + y_offset - 0.2, f'max:{max_val:.2f}', 
+                                   ha='center', va='top', fontsize=8, 
+                                   color=constraint_color, weight='bold', style='italic',
+                                   bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', 
+                                           edgecolor=constraint_color, alpha=0.9, linewidth=1.5),
+                                   zorder=12)
     
     ax1.set_yticks(x_pos)
     ax1.set_yticklabels([f.replace(' (cm)', '').replace('_', ' ') for f in feature_list])
@@ -546,6 +576,95 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
             ha = 'left' if change > 0 else 'right'
             ax2.text(x_pos, bar.get_y() + bar.get_height()/2,
                     label, ha=ha, va='center', fontsize=9, fontweight='bold')
+    
+    # Add constraint boundaries showing feasible change ranges
+    if constraints is not None:
+        xlim2 = ax2.get_xlim()
+        
+        # For each feature, show the constraint range for the target class
+        # This shows how much the feature COULD change to satisfy target class constraints
+        for class_idx in [predicted_class, counterfactual_class]:
+            class_name = f'Class {class_idx}'
+            if class_name in constraints:
+                class_constraints = constraints[class_name]
+                constraint_dict = {c['feature']: c for c in class_constraints}
+                
+                # Determine vertical offset based on class
+                y_offset = -0.15 if class_idx == predicted_class else 0.15
+                
+                for i, feature in enumerate(feature_list):
+                    # Try to match feature name - be more flexible with matching
+                    feature_key = None
+                    feature_normalized = feature.replace(' (cm)', '').replace('_', ' ').strip().lower()
+                    
+                    for key in constraint_dict.keys():
+                        key_normalized = key.replace('_', ' ').strip().lower()
+                        if key_normalized == feature_normalized or key == feature or key.replace('_', ' ') == feature:
+                            feature_key = key
+                            break
+                    
+                    if feature_key and feature_key in constraint_dict:
+                        c = constraint_dict[feature_key]
+                        orig_val = original_values[i]
+                        
+                        # Calculate the maximum possible change based on constraints
+                        constraint_color = class_colors_list[class_idx]
+                        
+                        if c['min'] is not None or c['max'] is not None:
+                            # Calculate change range based on constraints
+                            min_change = (c['min'] - orig_val) if c['min'] is not None else xlim2[0]
+                            max_change = (c['max'] - orig_val) if c['max'] is not None else xlim2[1]
+                            
+                            # Draw constraint change range
+                            if c['min'] is not None and c['max'] is not None:
+                                # Draw the feasible change range
+                                ax2.plot([min_change, max_change], [i + y_offset, i + y_offset], 
+                                       color=constraint_color, linewidth=5, alpha=0.7, 
+                                       linestyle='-', zorder=10)
+                                # Add boundary markers
+                                ax2.plot([min_change], [i + y_offset], marker='|', markersize=12, 
+                                       color=constraint_color, alpha=1.0, markeredgewidth=3.5, zorder=11)
+                                ax2.plot([max_change], [i + y_offset], marker='|', markersize=12, 
+                                       color=constraint_color, alpha=1.0, markeredgewidth=3.5, zorder=11)
+                                # Add numerical labels
+                                ax2.text(min_change, i + y_offset + 0.28, f'{min_change:+.2f}', 
+                                       ha='center', va='bottom', fontsize=7, 
+                                       color=constraint_color, weight='bold', style='italic',
+                                       bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', 
+                                               edgecolor=constraint_color, alpha=0.9, linewidth=1),
+                                       zorder=12)
+                                ax2.text(max_change, i + y_offset + 0.28, f'{max_change:+.2f}', 
+                                       ha='center', va='bottom', fontsize=7, 
+                                       color=constraint_color, weight='bold', style='italic',
+                                       bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', 
+                                               edgecolor=constraint_color, alpha=0.9, linewidth=1),
+                                       zorder=12)
+                            elif c['min'] is not None:
+                                # Only minimum constraint
+                                ax2.plot([min_change, xlim2[1]], [i + y_offset, i + y_offset], 
+                                       color=constraint_color, linewidth=5, alpha=0.6, 
+                                       linestyle='--', zorder=10)
+                                ax2.plot([min_change], [i + y_offset], marker='|', markersize=12, 
+                                       color=constraint_color, alpha=1.0, markeredgewidth=3.5, zorder=11)
+                                ax2.text(min_change, i + y_offset + 0.28, f'Δmin:{min_change:+.2f}', 
+                                       ha='center', va='bottom', fontsize=7, 
+                                       color=constraint_color, weight='bold', style='italic',
+                                       bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', 
+                                               edgecolor=constraint_color, alpha=0.9, linewidth=1),
+                                       zorder=12)
+                            elif c['max'] is not None:
+                                # Only maximum constraint
+                                ax2.plot([xlim2[0], max_change], [i + y_offset, i + y_offset], 
+                                       color=constraint_color, linewidth=5, alpha=0.6, 
+                                       linestyle='--', zorder=10)
+                                ax2.plot([max_change], [i + y_offset], marker='|', markersize=12, 
+                                       color=constraint_color, alpha=1.0, markeredgewidth=3.5, zorder=11)
+                                ax2.text(max_change, i + y_offset + 0.28, f'Δmax:{max_change:+.2f}', 
+                                       ha='center', va='bottom', fontsize=7, 
+                                       color=constraint_color, weight='bold', style='italic',
+                                       bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', 
+                                               edgecolor=constraint_color, alpha=0.9, linewidth=1),
+                                       zorder=12)
     
     # 3. Class Probability Comparison
     ax3 = axes[2]
