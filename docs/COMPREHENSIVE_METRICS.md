@@ -37,7 +37,7 @@ The implementation adds **70+ evaluation metrics** for counterfactual explanatio
    - Enhanced WandB logging with all new metrics
    - Added experiment-level aggregation and summary statistics
 
-3. **`configs/iris.yaml`** & **`configs/german_credit.yaml`**
+3. **`configs/dpg/iris/config.yaml`** & **`configs/dpg/german_credit/config.yaml`**
    - Added feature type specifications (optional)
    - Added `compute_comprehensive_metrics` flag
    - Added comments explaining configuration options
@@ -301,7 +301,7 @@ This implementation provides **identical metrics** to the ECE benchmark:
 ### 1. Run Experiment with Comprehensive Metrics
 
 ```bash
-python scripts/run_experiment.py --config configs/iris.yaml
+python scripts/run_experiment.py --config configs/dpg/iris/config.yaml
 ```
 
 ### 2. Load and Analyze Results

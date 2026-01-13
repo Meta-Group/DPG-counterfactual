@@ -53,7 +53,7 @@ Successfully ported **70+ counterfactual evaluation metrics** from the ECE exper
 - `experiment_results/<name>/metrics_summary_statistics.csv`: Summary stats
 
 ### 4. Updated Config Files ✅
-**`configs/iris.yaml` & `configs/german_credit.yaml`:**
+**`configs/dpg/iris/config.yaml` & `configs/dpg/german_credit/config.yaml`:**
 - Added feature type specifications (optional)
 - Added `compute_comprehensive_metrics: true` flag
 - Added comments explaining options
@@ -76,7 +76,7 @@ experiment_params:
 
 ### Run Experiment
 ```bash
-python scripts/run_experiment.py --config configs/iris.yaml
+python scripts/run_experiment.py --config configs/dpg/iris/config.yaml
 ```
 
 ### Analyze Results
@@ -107,15 +107,15 @@ The implementation provides **identical metrics** to the ECE benchmark:
 2. **Modified:**
    - `CounterFactualExplainer.py`
    - `scripts/run_experiment.py`
-   - `configs/iris.yaml`
-   - `configs/german_credit.yaml`
+   - `configs/dpg/iris/config.yaml`
+   - `configs/dpg/german_credit/config.yaml`
 
 ## Testing
 
 Recommended tests:
 ```bash
 # Test with Iris dataset (small, fast)
-python scripts/run_experiment.py --config configs/iris.yaml
+python scripts/run_experiment.py --config configs/dpg/iris/config.yaml
 
 # Check outputs
 ls experiment_results/counterfactual_dpg_v1/sample_*/
