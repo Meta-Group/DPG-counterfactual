@@ -32,20 +32,20 @@ experiment_params:
 ### Enable Parallel Execution (Default)
 
 ```bash
-python scripts/run_experiment.py --config configs/dpg/iris/config.yaml
+python scripts/run_experiment.py --config configs/iris/dpg/config.yaml
 ```
 
 ### Disable Parallel Execution
 
 ```bash
-python scripts/run_experiment.py --config configs/dpg/iris/config.yaml \
+python scripts/run_experiment.py --config configs/iris/dpg/config.yaml \
   --set experiment_params.parallel_replications=false
 ```
 
 ### Limit Number of Workers
 
 ```bash
-python scripts/run_experiment.py --config configs/dpg/iris/config.yaml \
+python scripts/run_experiment.py --config configs/iris/dpg/config.yaml \
   --set experiment_params.max_workers=8
 ```
 
@@ -116,10 +116,10 @@ This should not happen. If you observe different results, please:
 ## Example Configs
 
 All config files have been updated with the parallelization parameters:
-- `configs/dpg/iris/config.yaml`
-- `configs/dpg/german_credit/config.yaml`
-- `configs/dpg/quick_test/config.yaml`
-- `configs/dice/iris/config.yaml`
+- `configs/iris/dpg/config.yaml`
+- `configs/german_credit/dpg/config.yaml`
+- `configs/quick_test/dpg/config.yaml`
+- `configs/iris/dice/config.yaml`
 
 ## When to Disable Parallel Execution
 

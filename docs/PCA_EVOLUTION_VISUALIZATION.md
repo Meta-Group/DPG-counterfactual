@@ -122,10 +122,10 @@ size = 60 if gen_idx < num_generations - 1 else 100
 The enhancement is **automatic** - no config changes needed:
 
 ```bash
-python scripts/run_experiment.py --config configs/dpg/quick_test/config.yaml
+python scripts/run_experiment.py --config configs/quick_test/dpg/config.yaml
 ```
 
-Evolution trails will appear in all generated PCA plots when `output.save_visualizations` is enabled. To also save PNGs and CSVs (PCA coordinates & loadings) locally into each sample folder, set `output.save_visualization_images: true` in the config (defaults to false in most configs for disk control, but `configs/dpg/quick_test/config.yaml` sets it to true for quick testing).
+Evolution trails will appear in all generated PCA plots when `output.save_visualizations` is enabled. To also save PNGs and CSVs (PCA coordinates & loadings) locally into each sample folder, set `output.save_visualization_images: true` in the config (defaults to false in most configs for disk control, but `configs/quick_test/dpg/config.yaml` sets it to true for quick testing).
 
 ## Performance Impact
 
@@ -156,7 +156,7 @@ Potential additions:
 
 ### Quick Test (1 sample, 3 replications)
 ```bash
-python scripts/run_experiment.py --config configs/dpg/quick_test/config.yaml
+python scripts/run_experiment.py --config configs/quick_test/dpg/config.yaml
 ```
 - Sample 73: Original class 1 → Target class 0
 - 3 evolution trails of 20 generations each
@@ -164,7 +164,7 @@ python scripts/run_experiment.py --config configs/dpg/quick_test/config.yaml
 
 ### Full Experiment
 ```bash
-python scripts/run_experiment.py --config configs/dpg/iris/config.yaml
+python scripts/run_experiment.py --config configs/iris/dpg/config.yaml
 ```
 - Multiple samples with evolution trails
 - Compare convergence patterns across different starting points
