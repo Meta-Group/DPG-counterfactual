@@ -773,6 +773,23 @@ def load_dataset(config: 'DictConfig'):
             print(f"INFO: Dropping columns: {drop_columns}")
             df = df.drop(columns=[c for c in drop_columns if c in df.columns])
         
+        # Handle missing values - this dataset has many NaN values
+        missing_before = df.isnull().sum().sum()
+        if missing_before > 0:
+            print(f"INFO: Dataset has {missing_before} missing values")
+            # Option 1: Drop rows with any missing values
+            # df = df.dropna()
+            # Option 2: Fill missing values (preferred to keep more data)
+            for col in df.columns:
+                if df[col].dtype in ['float64', 'int64']:
+                    # Fill numerical columns with median
+                    df[col] = df[col].fillna(df[col].median())
+                else:
+                    # Fill categorical columns with mode
+                    df[col] = df[col].fillna(df[col].mode().iloc[0] if not df[col].mode().empty else 'unknown')
+            print(f"INFO: Filled missing values (numerical: median, categorical: mode)")
+            print(f"INFO: Remaining missing values: {df.isnull().sum().sum()}")
+        
         # Extract target
         target_column = config.data.target_column
         labels = df[target_column].values
@@ -802,6 +819,12 @@ def load_dataset(config: 'DictConfig'):
         
         features = features_df_encoded.values.astype(float)
         feature_names = list(features_df_encoded.columns)
+        
+        # Final check for NaN/Inf values
+        if np.any(~np.isfinite(features)):
+            nan_count = np.sum(~np.isfinite(features))
+            print(f"WARNING: Found {nan_count} non-finite values in features, replacing with 0")
+            features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
         
         print(f"INFO: Loaded {len(df)} samples with {len(feature_names)} features")
         print(f"INFO: Encoded {len(label_encoders)} categorical features")
