@@ -672,8 +672,146 @@ def load_dataset(config: 'DictConfig'):
             'variable_indices': variable_indices,
         }
     
+    elif dataset_name == "banknote_authentication":
+        print("INFO: Loading Banknote Authentication dataset...")
+        
+        # Load CSV
+        dataset_path = config.data.dataset_path
+        if not os.path.isabs(dataset_path):
+            dataset_path = os.path.join(REPO_ROOT, dataset_path)
+        
+        df = pd.read_csv(dataset_path)
+        
+        # Extract target
+        target_column = config.data.target_column
+        labels = df[target_column].values
+        features_df = df.drop(columns=[target_column])
+        
+        # All features are numerical (wavelet-transformed image features)
+        features = features_df.values
+        feature_names = list(features_df.columns)
+        label_encoders = {}
+        
+        print(f"INFO: Loaded {len(df)} samples with {len(feature_names)} features")
+        print(f"INFO: Classes: {np.unique(labels)}, distribution: {np.bincount(labels)}")
+        
+        # Determine feature types
+        continuous_indices, categorical_indices, variable_indices = determine_feature_types(features_df, config)
+        
+        return {
+            'features': features,
+            'labels': labels,
+            'feature_names': feature_names,
+            'features_df': features_df,
+            'label_encoders': label_encoders,
+            'continuous_indices': continuous_indices,
+            'categorical_indices': categorical_indices,
+            'variable_indices': variable_indices,
+        }
+    
+    elif dataset_name == "diabetes":
+        print("INFO: Loading Pima Indians Diabetes dataset...")
+        
+        # Load CSV
+        dataset_path = config.data.dataset_path
+        if not os.path.isabs(dataset_path):
+            dataset_path = os.path.join(REPO_ROOT, dataset_path)
+        
+        df = pd.read_csv(dataset_path)
+        
+        # Extract target
+        target_column = config.data.target_column
+        labels = df[target_column].values
+        features_df = df.drop(columns=[target_column])
+        
+        # All features are numerical
+        features = features_df.values
+        feature_names = list(features_df.columns)
+        label_encoders = {}
+        
+        print(f"INFO: Loaded {len(df)} samples with {len(feature_names)} features")
+        print(f"INFO: Classes: {np.unique(labels)}, distribution: {np.bincount(labels)}")
+        
+        # Determine feature types
+        continuous_indices, categorical_indices, variable_indices = determine_feature_types(features_df, config)
+        
+        return {
+            'features': features,
+            'labels': labels,
+            'feature_names': feature_names,
+            'features_df': features_df,
+            'label_encoders': label_encoders,
+            'continuous_indices': continuous_indices,
+            'categorical_indices': categorical_indices,
+            'variable_indices': variable_indices,
+        }
+    
+    elif dataset_name == "heart_disease_uci":
+        print("INFO: Loading Heart Disease UCI dataset...")
+        
+        # Load CSV
+        dataset_path = config.data.dataset_path
+        if not os.path.isabs(dataset_path):
+            dataset_path = os.path.join(REPO_ROOT, dataset_path)
+        
+        df = pd.read_csv(dataset_path)
+        
+        # Drop columns if specified (e.g., id, dataset columns)
+        drop_columns = getattr(config.data, 'drop_columns', [])
+        if drop_columns:
+            print(f"INFO: Dropping columns: {drop_columns}")
+            df = df.drop(columns=[c for c in drop_columns if c in df.columns])
+        
+        # Extract target
+        target_column = config.data.target_column
+        labels = df[target_column].values
+        features_df = df.drop(columns=[target_column])
+        
+        # Binarize target if configured (0 = no disease, >0 = disease)
+        binarize_target = getattr(config.data, 'binarize_target', False)
+        if binarize_target:
+            threshold = getattr(config.data, 'binarize_threshold', 1)
+            print(f"INFO: Binarizing target with threshold {threshold} (>= {threshold} = 1, < {threshold} = 0)")
+            labels = (labels >= threshold).astype(int)
+        
+        # Encode categorical variables
+        label_encoders = {}
+        features_df_encoded = features_df.copy()
+        
+        for col in features_df.columns:
+            if features_df[col].dtype == 'object' or features_df[col].dtype.name == 'category' or features_df[col].dtype == 'bool':
+                print(f"INFO: Encoding categorical feature: {col}")
+                le = LabelEncoder()
+                # Handle boolean columns
+                if features_df[col].dtype == 'bool':
+                    features_df_encoded[col] = features_df[col].astype(int)
+                else:
+                    features_df_encoded[col] = le.fit_transform(features_df[col].astype(str))
+                    label_encoders[col] = le
+        
+        features = features_df_encoded.values.astype(float)
+        feature_names = list(features_df_encoded.columns)
+        
+        print(f"INFO: Loaded {len(df)} samples with {len(feature_names)} features")
+        print(f"INFO: Encoded {len(label_encoders)} categorical features")
+        print(f"INFO: Classes: {np.unique(labels)}, distribution: {np.bincount(labels)}")
+        
+        # Determine feature types
+        continuous_indices, categorical_indices, variable_indices = determine_feature_types(features_df_encoded, config)
+        
+        return {
+            'features': features,
+            'labels': labels,
+            'feature_names': feature_names,
+            'features_df': features_df_encoded,
+            'label_encoders': label_encoders,
+            'continuous_indices': continuous_indices,
+            'categorical_indices': categorical_indices,
+            'variable_indices': variable_indices,
+        }
+    
     else:
-        raise ValueError(f"Unknown dataset: {dataset_name}. Supported: iris, german_credit, wheat_seeds, red_wine_quality, breast_cancer_wisconsin")
+        raise ValueError(f"Unknown dataset: {dataset_name}. Supported: iris, german_credit, wheat_seeds, red_wine_quality, breast_cancer_wisconsin, banknote_authentication, diabetes, heart_disease_uci")
 
 
 class DictConfig:
