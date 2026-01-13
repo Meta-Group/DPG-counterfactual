@@ -540,8 +540,140 @@ def load_dataset(config: 'DictConfig'):
             'variable_indices': variable_indices,
         }
     
+    elif dataset_name == "wheat_seeds":
+        print("INFO: Loading Wheat Seeds dataset...")
+        
+        # Load CSV
+        dataset_path = config.data.dataset_path
+        if not os.path.isabs(dataset_path):
+            dataset_path = os.path.join(REPO_ROOT, dataset_path)
+        
+        df = pd.read_csv(dataset_path)
+        
+        # Extract target
+        target_column = config.data.target_column
+        labels = df[target_column].values
+        features_df = df.drop(columns=[target_column])
+        
+        # All features are numerical - no encoding needed
+        features = features_df.values
+        feature_names = list(features_df.columns)
+        label_encoders = {}
+        
+        print(f"INFO: Loaded {len(df)} samples with {len(feature_names)} features")
+        print(f"INFO: Classes: {np.unique(labels)}")
+        
+        # Determine feature types
+        continuous_indices, categorical_indices, variable_indices = determine_feature_types(features_df, config)
+        
+        return {
+            'features': features,
+            'labels': labels,
+            'feature_names': feature_names,
+            'features_df': features_df,
+            'label_encoders': label_encoders,
+            'continuous_indices': continuous_indices,
+            'categorical_indices': categorical_indices,
+            'variable_indices': variable_indices,
+        }
+    
+    elif dataset_name == "red_wine_quality":
+        print("INFO: Loading Red Wine Quality dataset...")
+        
+        # Load CSV
+        dataset_path = config.data.dataset_path
+        if not os.path.isabs(dataset_path):
+            dataset_path = os.path.join(REPO_ROOT, dataset_path)
+        
+        df = pd.read_csv(dataset_path)
+        
+        # Extract target
+        target_column = config.data.target_column
+        labels = df[target_column].values
+        features_df = df.drop(columns=[target_column])
+        
+        # Binarize target if configured (quality >= threshold = good, else bad)
+        binarize_target = getattr(config.data, 'binarize_target', False)
+        if binarize_target:
+            threshold = getattr(config.data, 'binarize_threshold', 6)
+            print(f"INFO: Binarizing target with threshold {threshold} (>= {threshold} = 1, < {threshold} = 0)")
+            labels = (labels >= threshold).astype(int)
+        
+        # All features are numerical - no encoding needed
+        features = features_df.values
+        feature_names = list(features_df.columns)
+        label_encoders = {}
+        
+        print(f"INFO: Loaded {len(df)} samples with {len(feature_names)} features")
+        print(f"INFO: Classes: {np.unique(labels)}, distribution: {np.bincount(labels)}")
+        
+        # Determine feature types
+        continuous_indices, categorical_indices, variable_indices = determine_feature_types(features_df, config)
+        
+        return {
+            'features': features,
+            'labels': labels,
+            'feature_names': feature_names,
+            'features_df': features_df,
+            'label_encoders': label_encoders,
+            'continuous_indices': continuous_indices,
+            'categorical_indices': categorical_indices,
+            'variable_indices': variable_indices,
+        }
+    
+    elif dataset_name == "breast_cancer_wisconsin":
+        print("INFO: Loading Breast Cancer Wisconsin dataset...")
+        
+        # Load CSV
+        dataset_path = config.data.dataset_path
+        if not os.path.isabs(dataset_path):
+            dataset_path = os.path.join(REPO_ROOT, dataset_path)
+        
+        df = pd.read_csv(dataset_path)
+        
+        # Drop columns if specified (e.g., id column)
+        drop_columns = getattr(config.data, 'drop_columns', [])
+        if drop_columns:
+            print(f"INFO: Dropping columns: {drop_columns}")
+            df = df.drop(columns=[c for c in drop_columns if c in df.columns])
+        
+        # Extract target
+        target_column = config.data.target_column
+        labels = df[target_column].values
+        features_df = df.drop(columns=[target_column])
+        
+        # Encode target (M=1, B=0) if it's string
+        label_encoders = {}
+        if labels.dtype == 'object' or str(labels.dtype) == 'object':
+            print("INFO: Encoding target variable (M=Malignant, B=Benign)")
+            le = LabelEncoder()
+            labels = le.fit_transform(labels)
+            label_encoders['target'] = le
+            print(f"INFO: Label mapping: {dict(zip(le.classes_, le.transform(le.classes_)))}")
+        
+        # All features are numerical - no encoding needed
+        features = features_df.values.astype(float)
+        feature_names = list(features_df.columns)
+        
+        print(f"INFO: Loaded {len(df)} samples with {len(feature_names)} features")
+        print(f"INFO: Classes: {np.unique(labels)}, distribution: {np.bincount(labels)}")
+        
+        # Determine feature types
+        continuous_indices, categorical_indices, variable_indices = determine_feature_types(features_df, config)
+        
+        return {
+            'features': features,
+            'labels': labels,
+            'feature_names': feature_names,
+            'features_df': features_df,
+            'label_encoders': label_encoders,
+            'continuous_indices': continuous_indices,
+            'categorical_indices': categorical_indices,
+            'variable_indices': variable_indices,
+        }
+    
     else:
-        raise ValueError(f"Unknown dataset: {dataset_name}. Supported: iris, german_credit")
+        raise ValueError(f"Unknown dataset: {dataset_name}. Supported: iris, german_credit, wheat_seeds, red_wine_quality, breast_cancer_wisconsin")
 
 
 class DictConfig:
