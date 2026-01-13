@@ -1,0 +1,20 @@
+name: Breast Cancer Wisconsin (Diagnostic)
+source:
+  - "https://www.kaggle.com/datasets/uciml/breast-cancer-wisconsin-data"
+description: |
+  Diagnostic breast cancer dataset containing computed features (mean, se, worst)
+  for cell nuclei from digitized images of fine needle aspirates.
+size: 569
+features:
+  count: 30
+  notes: measurements of radius, texture, perimeter, area, smoothness, compactness, concavity, etc. (mean, se, worst for each)
+  types: all_numerical
+target:
+  name: diagnosis
+  classes: [M, B]
+  type: binary
+actionability_examples:
+  all_features: no_change  # features are measurements of tumor characteristics and are not directly actionable
+notes: |
+  Excellent for testing immutable-feature scenarios; often used for binary classification (malignant vs benign).
+  Always cite the Kaggle/UCI source when using this dataset.

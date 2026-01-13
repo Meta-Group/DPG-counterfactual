@@ -1,0 +1,33 @@
+name: Wine Quality (red + white)
+source:
+  - "https://www.kaggle.com/datasets/uciml/red-wine-quality-cortez-et-al-2009"
+  - "https://www.kaggle.com/datasets/uciml/white-wine-quality"
+description: |
+  Combined red and white wine quality dataset derived from the UCI Wine Quality repository
+  (commonly distributed on Kaggle). Contains physicochemical properties of wines and a
+  sensory quality score.
+size: ~6500  # combined red + white
+features:
+  count: 11
+  names:
+    - fixed_acidity
+    - volatile_acidity
+    - citric_acid
+    - residual_sugar
+    - chlorides
+    - free_sulfur_dioxide
+    - total_sulfur_dioxide
+    - density
+    - pH
+    - sulphates
+    - alcohol
+  types: all_numerical
+target:
+  name: quality
+  type: ordinal (integer score; often binarized to good/bad)
+actionability_examples:
+  alcohol: non_decreasing  # cannot remove alcohol once added
+  fixed_acidity: non_increasing  # hard to reduce in production
+notes: |
+  Useful for regression or classification tasks; can be binarized for 'good' vs 'bad' quality.
+  Always cite the Kaggle/UCI source when using this dataset.
