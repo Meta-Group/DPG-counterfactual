@@ -5,6 +5,7 @@ seaborn
 scipy
 scikit-learn
 deap
+dice-ml
 
 # experiment tracking & configuration
 wandb>=0.16.0
