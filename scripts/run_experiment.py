@@ -53,6 +53,13 @@ except ImportError:
     print("Warning: wandb not available. Install with: pip install wandb")
 
 try:
+    import dice_ml
+    DICE_AVAILABLE = True
+except ImportError:
+    DICE_AVAILABLE = False
+    print("Warning: dice-ml not available. Install with: pip install dice-ml")
+
+try:
     from cf_eval.metrics import (
         nbr_valid_cf,
         perc_valid_cf,
@@ -656,8 +663,8 @@ def init_wandb(config: DictConfig, resume_id: Optional[str] = None, offline: boo
     return run
 
 
-def _run_single_replication(args):
-    """Helper function to run a single replication in parallel.
+def _run_single_replication_dpg(args):
+    """Helper function to run a single DPG replication in parallel.
     
     Args:
         args: Tuple containing (replication_num, ORIGINAL_SAMPLE, TARGET_CLASS, 
@@ -675,6 +682,9 @@ def _run_single_replication(args):
         config_dict,
         model,
         constraints,
+        _,  # train_df (not used for DPG)
+        _,  # continuous_features (not used for DPG)
+        _,  # categorical_features (not used for DPG)
     ) = args
     
     # Reconstruct config from dict
@@ -730,10 +740,12 @@ def _run_single_replication(args):
         return {
             'replication_num': replication_num,
             'counterfactual': counterfactual,
+            'all_counterfactuals': [counterfactual],  # DPG returns single CF
             'evolution_history': evolution_history,
             'best_fitness_list': best_fitness_list,
             'average_fitness_list': average_fitness_list,
             'dict_non_actionable': dict_non_actionable,
+            'method': 'dpg',
             # Store serializable versions of model properties needed later
             'constraints': constraints,
             'feature_names': getattr(cf_model, 'feature_names', None),
@@ -750,8 +762,215 @@ def _run_single_replication(args):
         }
         
     except Exception as exc:
-        print(f"WARNING: Replication {replication_num} failed: {exc}")
+        print(f"WARNING: DPG Replication {replication_num} failed: {exc}")
+        traceback.print_exc()
         return None
+
+
+def _run_single_replication_dice(args):
+    """Helper function to run a single DiCE replication in parallel.
+    
+    Args:
+        args: Tuple containing (replication_num, ORIGINAL_SAMPLE, TARGET_CLASS, 
+              FEATURES_NAMES, dict_non_actionable, config_dict, model, constraints,
+              train_df, continuous_features, categorical_features)
+    
+    Returns:
+        Dict with replication results or None if failed
+    """
+    if not DICE_AVAILABLE:
+        print("ERROR: dice-ml not available. Install with: pip install dice-ml")
+        return None
+    
+    (
+        replication_num,
+        ORIGINAL_SAMPLE,
+        TARGET_CLASS,
+        FEATURES_NAMES,
+        dict_non_actionable,
+        config_dict,
+        model,
+        constraints,
+        train_df,
+        continuous_features,
+        categorical_features,
+    ) = args
+    
+    # Reconstruct config from dict
+    config = DictConfig(config_dict)
+    
+    try:
+        # Build features_to_vary from actionability rules
+        features_to_vary = []
+        for feat in FEATURES_NAMES:
+            rule = dict_non_actionable.get(feat, "none")
+            if rule != "no_change":
+                features_to_vary.append(feat)
+        
+        # If all features are actionable, use 'all'
+        if len(features_to_vary) == len(FEATURES_NAMES):
+            features_to_vary = 'all'
+        elif len(features_to_vary) == 0:
+            print(f"WARNING: DiCE replication {replication_num}: No actionable features!")
+            return None
+        
+        # Build permitted_range from config if specified
+        permitted_range = {}
+        if hasattr(config.counterfactual, 'permitted_range') and config.counterfactual.permitted_range:
+            permitted_range_config = config.counterfactual.permitted_range
+            if hasattr(permitted_range_config, '_config'):
+                permitted_range = permitted_range_config._config
+            elif hasattr(permitted_range_config, 'to_dict'):
+                permitted_range = permitted_range_config.to_dict()
+            else:
+                permitted_range = dict(permitted_range_config) if permitted_range_config else {}
+        
+        # Build feature_weights from config if specified
+        feature_weights = None
+        if hasattr(config.counterfactual, 'feature_weights') and config.counterfactual.feature_weights:
+            feature_weights_config = config.counterfactual.feature_weights
+            if hasattr(feature_weights_config, '_config'):
+                feature_weights = feature_weights_config._config
+            elif hasattr(feature_weights_config, 'to_dict'):
+                feature_weights = feature_weights_config.to_dict()
+            else:
+                feature_weights = dict(feature_weights_config) if feature_weights_config else None
+        
+        # Create DiCE data interface
+        # DiCE needs a DataFrame with the outcome column
+        outcome_name = '_target_'
+        train_df_with_target = train_df.copy()
+        
+        # Get continuous and categorical feature names
+        continuous_feature_names = [FEATURES_NAMES[i] for i in continuous_features] if continuous_features else []
+        categorical_feature_names = [FEATURES_NAMES[i] for i in categorical_features] if categorical_features else []
+        
+        # Create DiCE Data object
+        d = dice_ml.Data(
+            dataframe=train_df_with_target,
+            continuous_features=continuous_feature_names,
+            outcome_name=outcome_name
+        )
+        
+        # Create DiCE Model object
+        m = dice_ml.Model(model=model, backend='sklearn')
+        
+        # Get DiCE parameters from config
+        total_CFs = getattr(config.counterfactual, 'total_CFs', 4)
+        proximity_weight = getattr(config.counterfactual, 'proximity_weight', 0.5)
+        diversity_weight = getattr(config.counterfactual, 'diversity_weight', 1.0)
+        generation_method = getattr(config.counterfactual, 'generation_method', 'genetic')
+        
+        # Create DiCE explainer with specified method
+        exp = dice_ml.Dice(d, m, method=generation_method)
+        
+        # Prepare query instance as DataFrame
+        query_df = pd.DataFrame([ORIGINAL_SAMPLE])
+        
+        # Generate counterfactuals
+        dice_exp = exp.generate_counterfactuals(
+            query_df,
+            total_CFs=total_CFs,
+            desired_class=int(TARGET_CLASS),
+            features_to_vary=features_to_vary,
+            permitted_range=permitted_range if permitted_range else None,
+            proximity_weight=proximity_weight,
+            diversity_weight=diversity_weight,
+        )
+        
+        # Extract results
+        if dice_exp.cf_examples_list and len(dice_exp.cf_examples_list) > 0:
+            cf_df = dice_exp.cf_examples_list[0].final_cfs_df
+            
+            if cf_df is None or len(cf_df) == 0:
+                print(f"WARNING: DiCE replication {replication_num}: No counterfactuals generated")
+                return None
+            
+            # Remove the outcome column if present
+            if outcome_name in cf_df.columns:
+                cf_df = cf_df.drop(columns=[outcome_name])
+            
+            # Convert all CFs to list of dicts
+            all_counterfactuals = []
+            for _, row in cf_df.iterrows():
+                cf_dict = {feat: float(row[feat]) for feat in FEATURES_NAMES if feat in row}
+                all_counterfactuals.append(cf_dict)
+            
+            if not all_counterfactuals:
+                return None
+            
+            # Select the "best" counterfactual (closest to original that reaches target)
+            # Use L2 distance to pick the best one
+            best_cf = None
+            best_distance = float('inf')
+            
+            for cf in all_counterfactuals:
+                # Verify it predicts the target class
+                cf_pred = model.predict(pd.DataFrame([cf]))[0]
+                if cf_pred == TARGET_CLASS:
+                    distance = sum((ORIGINAL_SAMPLE[f] - cf[f])**2 for f in FEATURES_NAMES)**0.5
+                    if distance < best_distance:
+                        best_distance = distance
+                        best_cf = cf
+            
+            # If no CF reaches target, take the first one anyway
+            if best_cf is None:
+                best_cf = all_counterfactuals[0]
+            
+            return {
+                'replication_num': replication_num,
+                'counterfactual': best_cf,
+                'all_counterfactuals': all_counterfactuals,
+                'evolution_history': [best_cf],  # DiCE doesn't have evolution history
+                'best_fitness_list': [],  # DiCE doesn't track fitness
+                'average_fitness_list': [],
+                'dict_non_actionable': dict_non_actionable,
+                'method': 'dice',
+                # Store DiCE-specific params
+                'constraints': constraints,
+                'feature_names': FEATURES_NAMES,
+                'total_CFs': total_CFs,
+                'proximity_weight': proximity_weight,
+                'diversity_weight': diversity_weight,
+                'generation_method': generation_method,
+                # Dummy DPG params for compatibility
+                'repulsion_weight': 0.0,
+                'boundary_weight': 0.0,
+                'distance_factor': 0.0,
+                'sparsity_factor': 0.0,
+                'constraints_factor': 0.0,
+                'original_escape_weight': 0.0,
+                'escape_pressure': 0.0,
+                'prioritize_non_overlapping': False,
+            }
+        else:
+            print(f"WARNING: DiCE replication {replication_num}: No counterfactuals in result")
+            return None
+        
+    except Exception as exc:
+        print(f"WARNING: DiCE Replication {replication_num} failed: {exc}")
+        traceback.print_exc()
+        return None
+
+
+def _run_single_replication(args):
+    """Dispatcher for running a single replication - routes to DPG or DiCE.
+    
+    Args:
+        args: Tuple containing replication parameters including method config
+    
+    Returns:
+        Dict with replication results or None if failed
+    """
+    # Extract config to determine method
+    config_dict = args[5]  # config_dict is at index 5
+    config = DictConfig(config_dict)
+    method = getattr(config.counterfactual, 'method', 'dpg').lower()
+    
+    if method == 'dice':
+        return _run_single_replication_dice(args)
+    else:
+        return _run_single_replication_dpg(args)
 
 
 def run_single_sample(
@@ -903,6 +1122,11 @@ def run_single_sample(
         
         skip_combination = False
         
+        # Prepare training DataFrame with target for DiCE
+        # DiCE needs a DataFrame with features + outcome column
+        train_df_for_dice = TRAIN_FEATURES.copy() if hasattr(TRAIN_FEATURES, 'copy') else pd.DataFrame(TRAIN_FEATURES, columns=FEATURE_NAMES)
+        train_df_for_dice['_target_'] = TRAIN_LABELS
+        
         # Prepare arguments for parallel execution
         replication_args = [
             (
@@ -914,6 +1138,9 @@ def run_single_sample(
                 config.to_dict(),
                 model,
                 constraints,
+                train_df_for_dice,  # Training data for DiCE
+                CONTINUOUS_INDICES,  # Continuous feature indices
+                CATEGORICAL_INDICES,  # Categorical feature indices
             )
             for replication in range(config.experiment_params.num_replications)
         ]
@@ -962,44 +1189,65 @@ def run_single_sample(
         if not replication_results:
             skip_combination = True
         
+        # Determine method for this run
+        cf_method = getattr(config.counterfactual, 'method', 'dpg').lower()
+        
         for result in replication_results:
             valid_counterfactuals += 1
             counterfactual = result['counterfactual']
+            all_counterfactuals = result.get('all_counterfactuals', [counterfactual])
             evolution_history = result['evolution_history']
             best_fitness_list = result['best_fitness_list']
             average_fitness_list = result['average_fitness_list']
             replication_num = result['replication_num']
+            result_method = result.get('method', 'dpg')
             
             # Calculate final best fitness
             best_fitness = best_fitness_list[-1] if best_fitness_list else 0.0
             
-            # Recreate cf_model with stored parameters (including dual-boundary parameters)
-            cf_model = CounterFactualModel(
-                model,
-                constraints,
-                dict_non_actionable=dict_non_actionable,
-                verbose=False,
-                diversity_weight=result.get('diversity_weight', 0.5),
-                repulsion_weight=result.get('repulsion_weight', 4.0),
-                boundary_weight=result.get('boundary_weight', 15.0),
-                distance_factor=result.get('distance_factor', 2.0),
-                sparsity_factor=result.get('sparsity_factor', 1.0),
-                constraints_factor=result.get('constraints_factor', 3.0),
-                # Dual-boundary parameters
-                original_escape_weight=result.get('original_escape_weight', 2.0),
-                escape_pressure=result.get('escape_pressure', 0.5),
-                prioritize_non_overlapping=result.get('prioritize_non_overlapping', True),
-                # Fitness calculation parameters
-                max_bonus_cap=result.get('max_bonus_cap', 50.0),
-            )
-            # Restore fitness history
-            cf_model.best_fitness_list = best_fitness_list
-            cf_model.average_fitness_list = average_fitness_list
-            cf_model.evolution_history = evolution_history
+            # Create cf_model based on method
+            if result_method == 'dice':
+                # For DiCE, create a minimal cf_model for compatibility with explainer
+                # Note: The explainer accepts cf_model=None for DiCE cases
+                cf_model = CounterFactualModel(
+                    model,
+                    constraints,
+                    dict_non_actionable=dict_non_actionable,
+                    verbose=False,
+                )
+                # Set empty fitness lists for DiCE (no evolution tracking)
+                cf_model.best_fitness_list = []
+                cf_model.average_fitness_list = []
+                cf_model.evolution_history = evolution_history
+            else:
+                # Recreate cf_model with stored DPG parameters (including dual-boundary parameters)
+                cf_model = CounterFactualModel(
+                    model,
+                    constraints,
+                    dict_non_actionable=dict_non_actionable,
+                    verbose=False,
+                    diversity_weight=result.get('diversity_weight', 0.5),
+                    repulsion_weight=result.get('repulsion_weight', 4.0),
+                    boundary_weight=result.get('boundary_weight', 15.0),
+                    distance_factor=result.get('distance_factor', 2.0),
+                    sparsity_factor=result.get('sparsity_factor', 1.0),
+                    constraints_factor=result.get('constraints_factor', 3.0),
+                    # Dual-boundary parameters
+                    original_escape_weight=result.get('original_escape_weight', 2.0),
+                    escape_pressure=result.get('escape_pressure', 0.5),
+                    prioritize_non_overlapping=result.get('prioritize_non_overlapping', True),
+                    # Fitness calculation parameters
+                    max_bonus_cap=result.get('max_bonus_cap', 50.0),
+                )
+                # Restore fitness history
+                cf_model.best_fitness_list = best_fitness_list
+                cf_model.average_fitness_list = average_fitness_list
+                cf_model.evolution_history = evolution_history
             
             # Store replication data with evolution history
             replication_viz = {
                 'counterfactual': counterfactual,
+                'all_counterfactuals': all_counterfactuals,
                 'cf_model': cf_model,
                 'evolution_history': evolution_history,
                 'visualizations': [],
@@ -1008,6 +1256,7 @@ def run_single_sample(
                 'success': True,
                 'best_fitness': best_fitness,
                 'best_fitness_list': cf_model.best_fitness_list if hasattr(cf_model, 'best_fitness_list') else [],
+                'method': result_method,
             }
             combination_viz['replication'].append(replication_viz)
             
@@ -1065,6 +1314,7 @@ def run_single_sample(
                     "replication/generations_to_converge": len(cf_model.best_fitness_list),
                     "replication/num_feature_changes": metrics['num_feature_changes'],
                     "replication/constraints_respected": metrics['constraints_respected'],
+                    "replication/method": result_method,  # Track which method was used
                 }
                 
                 # Add all metrics from explainer
@@ -2412,11 +2662,24 @@ def run_experiment(config: DictConfig, wandb_run=None):
     test_score = model.score(TEST_FEATURES, TEST_LABELS)
     print(f"INFO: Model trained - Train accuracy: {train_score:.4f}, Test accuracy: {test_score:.4f}")
     
+    # Determine counterfactual generation method
+    cf_method = getattr(config.counterfactual, 'method', 'dpg').lower()
+    print(f"INFO: Using counterfactual generation method: {cf_method.upper()}")
+    
+    if cf_method == 'dice' and not DICE_AVAILABLE:
+        raise RuntimeError("DiCE method selected but dice-ml is not installed. Install with: pip install dice-ml")
+    
     if wandb_run:
         wandb.log({
             "model/train_accuracy": train_score,
             "model/test_accuracy": test_score,
+            "experiment/cf_method": cf_method,
         })
+        # Also add to config for easy filtering
+        try:
+            wandb_run.config.update({'counterfactual_method': cf_method})
+        except Exception:
+            pass
     
     # Extract constraints (pass numpy array for DPG compatibility)
     print("INFO: Extracting constraints...")
