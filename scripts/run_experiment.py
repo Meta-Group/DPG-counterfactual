@@ -4,11 +4,14 @@ This script provides a parameterized way to run counterfactual generation experi
 with automatic logging to Weights & Biases for experiment tracking and comparison.
 
 Usage:
-  # Run with config file
-  python scripts/run_experiment.py --config configs/experiment_config.yaml
+  # Run with config file path
+  python scripts/run_experiment.py --config configs/dpg/iris/config.yaml
+  
+  # Run with method and dataset (auto-constructs path)
+  python scripts/run_experiment.py --method dpg --dataset german_credit
   
   # Override specific params
-  python scripts/run_experiment.py --config configs/experiment_config.yaml \
+  python scripts/run_experiment.py --config configs/dpg/iris/config.yaml \
     --set counterfactual.population_size=50 \
     --set experiment_params.seed=123
     
@@ -16,7 +19,7 @@ Usage:
   python scripts/run_experiment.py --resume <wandb_run_id>
   
   # Offline mode (no wandb sync)
-  python scripts/run_experiment.py --config configs/experiment_config.yaml --offline
+  python scripts/run_experiment.py --config configs/dpg/iris/config.yaml --offline
 """
 
 from __future__ import annotations
@@ -2961,8 +2964,20 @@ def main():
     parser.add_argument(
         '--config',
         type=str,
-        default='configs/experiment_config.yaml',
-        help='Path to config YAML file'
+        default=None,
+        help='Path to config YAML file (e.g., configs/dpg/iris/config.yaml)'
+    )
+    parser.add_argument(
+        '--method',
+        type=str,
+        default=None,
+        help='Method name (e.g., dpg, dice) - used with --dataset to auto-construct config path'
+    )
+    parser.add_argument(
+        '--dataset',
+        type=str,
+        default=None,
+        help='Dataset name (e.g., iris, german_credit) - used with --method to auto-construct config path'
     )
     parser.add_argument(
         '--set',
@@ -2996,7 +3011,19 @@ def main():
     
     args = parser.parse_args()
     
-
+    # Construct config path from method and dataset if provided
+    if args.method and args.dataset:
+        if args.config:
+            print("WARNING: --config specified along with --method and --dataset. Using --config value.")
+        else:
+            args.config = f"configs/{args.method}/{args.dataset}/config.yaml"
+            print(f"INFO: Auto-constructed config path: {args.config}")
+    elif args.method or args.dataset:
+        print("ERROR: Both --method and --dataset must be specified together, or use --config")
+        return None
+    elif not args.config:
+        print("ERROR: Either --config or both --method and --dataset must be specified")
+        return None
     
     # Load config
     print(f"INFO: Loading config from {args.config}")
