@@ -259,7 +259,9 @@ def continuous_distance(x, cf_list, continuous_features, metric='euclidean', X=N
     
     dist = dist.flatten()
     
-    if agg is None or agg == 'mean':
+    if agg == 'none':
+        return dist
+    elif agg is None or agg == 'mean':
         return float(np.mean(dist))
     elif agg == 'max':
         return float(np.max(dist))
@@ -283,7 +285,9 @@ def categorical_distance(x, cf_list, categorical_features, metric='jaccard', agg
     dist = cdist(x[:, categorical_features], cf_list[:, categorical_features], metric=metric)
     dist = dist.flatten()
     
-    if agg is None or agg == 'mean':
+    if agg == 'none':
+        return dist
+    elif agg is None or agg == 'mean':
         return float(np.mean(dist))
     elif agg == 'max':
         return float(np.max(dist))
@@ -328,17 +332,34 @@ def distance_mh(x, cf_list, continuous_features, categorical_features, X, ratio_
     dist_cont = continuous_distance(x, cf_list, continuous_features, metric='mad', X=X, agg=agg)
     dist_cate = categorical_distance(x, cf_list, categorical_features, metric='hamming', agg=agg)
     
-    if np.isnan(dist_cont):
-        dist_cont = 0.0
-    if np.isnan(dist_cate):
-        dist_cate = 0.0
-    
     if ratio_cont is None:
         ratio_continuous = len(continuous_features) / nbr_features if nbr_features > 0 else 0.5
         ratio_categorical = len(categorical_features) / nbr_features if nbr_features > 0 else 0.5
     else:
         ratio_continuous = ratio_cont
         ratio_categorical = 1.0 - ratio_cont
+    
+    # Handle 'none' aggregation - return array of combined distances
+    if agg == 'none':
+        # Handle cases where one component might be nan or array
+        if isinstance(dist_cont, np.ndarray) and isinstance(dist_cate, np.ndarray):
+            return ratio_continuous * dist_cont + ratio_categorical * dist_cate
+        elif isinstance(dist_cont, np.ndarray):
+            dist_cate = np.zeros_like(dist_cont) if np.isnan(dist_cate) else dist_cate
+            return ratio_continuous * dist_cont + ratio_categorical * dist_cate
+        elif isinstance(dist_cate, np.ndarray):
+            dist_cont = np.zeros_like(dist_cate) if np.isnan(dist_cont) else dist_cont
+            return ratio_continuous * dist_cont + ratio_categorical * dist_cate
+        else:
+            # Both are scalars (shouldn't happen with agg='none', but handle gracefully)
+            return np.array([ratio_continuous * (0.0 if np.isnan(dist_cont) else dist_cont) + 
+                           ratio_categorical * (0.0 if np.isnan(dist_cate) else dist_cate)])
+    
+    # For aggregated results, handle NaN
+    if np.isnan(dist_cont):
+        dist_cont = 0.0
+    if np.isnan(dist_cate):
+        dist_cate = 0.0
     
     return float(ratio_continuous * dist_cont + ratio_categorical * dist_cate)
 
@@ -532,13 +553,19 @@ def plausibility(x, model, cf_list, X_test, y_pred, continuous_features_all,
         if len(X_test_y) == 0:
             continue
         
+        # Use agg='none' to get individual distances for nearest neighbor lookup
         neigh_dist = distance_mh(x.reshape(1, -1), X_test_y, continuous_features_all,
-                                categorical_features_all, X_train, ratio_cont)
+                                categorical_features_all, X_train, ratio_cont, agg='none')
         
-        if np.isnan(neigh_dist) or np.isinf(neigh_dist):
+        if neigh_dist is None or len(neigh_dist) == 0:
             continue
         
-        idx_neigh = np.argsort([neigh_dist])[0]
+        # Filter out invalid distances and find the nearest neighbor
+        valid_mask = ~(np.isnan(neigh_dist) | np.isinf(neigh_dist))
+        if not np.any(valid_mask):
+            continue
+        
+        idx_neigh = np.argsort(neigh_dist)[0]
         closest = X_test_y[idx_neigh]
         
         d = distance_mh(cf, closest.reshape(1, -1), continuous_features_all,
