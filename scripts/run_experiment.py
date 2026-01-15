@@ -4,11 +4,12 @@ This script provides a parameterized way to run counterfactual generation experi
 with automatic logging to Weights & Biases for experiment tracking and comparison.
 
 Usage:
-  # Run with config file path
-  python scripts/run_experiment.py --config configs/iris/dpg/config.yaml
-  
-  # Run with dataset and method (auto-constructs path)
+  # Run with unified config (recommended)
   python scripts/run_experiment.py --dataset german_credit --method dpg
+  python scripts/run_experiment.py --dataset iris --method dice
+  
+  # Run with explicit config path (legacy or unified)
+  python scripts/run_experiment.py --config configs/german_credit/config.yaml --method dpg
   
   # Override specific params
   python scripts/run_experiment.py --config configs/iris/dpg/config.yaml \
@@ -877,10 +878,72 @@ class DictConfig:
         setattr(self, key, value)
 
 
-def load_config(config_path: str) -> DictConfig:
-    """Load YAML config file."""
+def load_config(config_path: str, method: str = None) -> DictConfig:
+    """Load YAML config file with optional method selection for unified configs.
+    
+    Supports two config formats:
+    1. Legacy: configs/dataset/method/config.yaml (method-specific config)
+    2. Unified: configs/dataset/config.yaml (single config with 'methods' section)
+    
+    Args:
+        config_path: Path to config YAML file
+        method: Optional method name (dpg, dice, etc.) to select from unified config
+        
+    Returns:
+        DictConfig with merged configuration
+    """
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
+    
+    # Check if this is a unified config (has 'methods' section)
+    if 'methods' in config_dict:
+        available_methods = list(config_dict['methods'].keys())
+        
+        if not method:
+            # No method specified - use 'dpg' as default if available, else first method
+            method = 'dpg' if 'dpg' in available_methods else available_methods[0]
+            print(f"INFO: No method specified, defaulting to '{method}'")
+        
+        if method not in config_dict['methods']:
+            raise ValueError(f"Method '{method}' not found in config. Available: {available_methods}")
+        
+        # Get method-specific config
+        method_config = config_dict['methods'][method]
+        
+        # Merge counterfactual_defaults if present
+        cf_defaults = config_dict.get('counterfactual_defaults', {})
+        merged_cf = {**cf_defaults, **method_config}
+        
+        # Set as counterfactual section
+        config_dict['counterfactual'] = merged_cf
+        
+        # Ensure method is set in counterfactual
+        config_dict['counterfactual']['method'] = method
+        
+        # Update experiment name to include method
+        if 'experiment' not in config_dict:
+            config_dict['experiment'] = {}
+        base_name = config_dict['experiment'].get('name', config_dict.get('data', {}).get('dataset', 'experiment'))
+        config_dict['experiment']['name'] = f"{base_name}_{method}"
+        
+        # Add method to tags
+        if 'tags' not in config_dict['experiment']:
+            config_dict['experiment']['tags'] = []
+        if method not in config_dict['experiment']['tags']:
+            config_dict['experiment']['tags'].append(method)
+        
+        # Remove 'methods' and 'counterfactual_defaults' from final config
+        config_dict.pop('methods', None)
+        config_dict.pop('counterfactual_defaults', None)
+        
+        print(f"INFO: Using unified config with method '{method}'")
+    elif method:
+        # Legacy config but method was specified - just set it in counterfactual
+        if 'counterfactual' not in config_dict:
+            config_dict['counterfactual'] = {}
+        config_dict['counterfactual']['method'] = method
+        print(f"INFO: Using legacy config, setting method to '{method}'")
+    
     return DictConfig(config_dict)
 
 
@@ -3282,7 +3345,7 @@ def main():
         '--method',
         type=str,
         default=None,
-        help='Method name (e.g., dpg, dice) - used with --dataset to auto-construct config path'
+        help='Method name (e.g., dpg, dice) - selects method from unified config or used with --dataset for legacy paths'
     )
     parser.add_argument(
         '--set',
@@ -3316,23 +3379,35 @@ def main():
     
     args = parser.parse_args()
     
-    # Construct config path from dataset and method if provided
-    if args.dataset and args.method:
+    # Construct config path from dataset if provided
+    if args.dataset:
         if args.config:
-            print("WARNING: --config specified along with --dataset and --method. Using --config value.")
+            print("WARNING: --config specified along with --dataset. Using --config value.")
         else:
-            args.config = f"configs/{args.dataset}/{args.method}/config.yaml"
-            print(f"INFO: Auto-constructed config path: {args.config}")
-    elif args.dataset or args.method:
-        print("ERROR: Both --dataset and --method must be specified together, or use --config")
-        return None
+            # First try unified config path
+            unified_config_path = f"configs/{args.dataset}/config.yaml"
+            legacy_config_path = f"configs/{args.dataset}/{args.method or 'dpg'}/config.yaml" if args.method else None
+            
+            if os.path.exists(os.path.join(REPO_ROOT, unified_config_path)):
+                args.config = unified_config_path
+                print(f"INFO: Using unified config: {args.config}")
+            elif legacy_config_path and os.path.exists(os.path.join(REPO_ROOT, legacy_config_path)):
+                args.config = legacy_config_path
+                print(f"INFO: Using legacy config path: {args.config}")
+            else:
+                # Default to unified config path (will error if not found)
+                args.config = unified_config_path
+                print(f"INFO: Auto-constructed config path: {args.config}")
     elif not args.config:
-        print("ERROR: Either --config or both --dataset and --method must be specified")
+        print("ERROR: Either --config or --dataset must be specified")
+        print("Usage examples:")
+        print("  python scripts/run_experiment.py --dataset german_credit --method dpg")
+        print("  python scripts/run_experiment.py --config configs/iris/config.yaml --method dice")
         return None
     
-    # Load config
+    # Load config with method selection
     print(f"INFO: Loading config from {args.config}")
-    config = load_config(args.config)
+    config = load_config(args.config, method=args.method)
     
     # Apply overrides
     if args.overrides:
