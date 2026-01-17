@@ -25,6 +25,9 @@ Usage:
   
   # Limit number of datasets (useful for testing)
   python scripts/run_all_experiments.py --limit 3
+  
+  # Run multiple experiments in parallel
+  python scripts/run_all_experiments.py --parallel 4
 """
 
 from __future__ import annotations
@@ -35,8 +38,9 @@ import pathlib
 import subprocess
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 # Ensure repo root is on sys.path
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -91,7 +95,7 @@ def run_experiment(
     offline: bool = False,
     overrides: Optional[List[str]] = None,
     dry_run: bool = False
-) -> tuple[bool, str]:
+) -> Dict[str, Any]:
     """Run a single experiment.
     
     Args:
@@ -103,8 +107,10 @@ def run_experiment(
         dry_run: If True, just print the command without executing
         
     Returns:
-        Tuple of (success: bool, message: str)
+        Dict with keys: success (bool), message (str), dataset, method, elapsed_time
     """
+    experiment_key = f"{dataset}/{method}"
+    
     # Build command
     cmd = [
         sys.executable,
@@ -126,29 +132,191 @@ def run_experiment(
     cmd_str = ' '.join(cmd)
     
     if dry_run:
-        print(f"  [DRY RUN] Would execute: {cmd_str}")
-        return True, "Dry run - command not executed"
-    
-    print(f"  Executing: {cmd_str}")
+        return {
+            'success': True,
+            'message': "Dry run - command not executed",
+            'dataset': dataset,
+            'method': method,
+            'experiment_key': experiment_key,
+            'elapsed_time': 0,
+            'cmd': cmd_str
+        }
     
     try:
         start_time = time.time()
         result = subprocess.run(
             cmd,
             cwd=REPO_ROOT,
-            capture_output=not verbose,
+            capture_output=True,
             text=True
         )
         elapsed_time = time.time() - start_time
         
         if result.returncode == 0:
-            return True, f"Completed in {elapsed_time:.1f}s"
+            return {
+                'success': True,
+                'message': f"Completed in {elapsed_time:.1f}s",
+                'dataset': dataset,
+                'method': method,
+                'experiment_key': experiment_key,
+                'elapsed_time': elapsed_time,
+                'cmd': cmd_str
+            }
         else:
             error_msg = result.stderr if result.stderr else f"Exit code: {result.returncode}"
-            return False, f"Failed: {error_msg[:200]}"
+            return {
+                'success': False,
+                'message': f"Failed: {error_msg[:200]}",
+                'dataset': dataset,
+                'method': method,
+                'experiment_key': experiment_key,
+                'elapsed_time': elapsed_time,
+                'cmd': cmd_str
+            }
             
     except Exception as e:
-        return False, f"Exception: {str(e)}"
+        return {
+            'success': False,
+            'message': f"Exception: {str(e)}",
+            'dataset': dataset,
+            'method': method,
+            'experiment_key': experiment_key,
+            'elapsed_time': 0,
+            'cmd': cmd_str
+        }
+
+
+def run_experiments_sequential(
+    experiments: List[Dict[str, Any]],
+    args,
+    output_dir: pathlib.Path,
+    results: Dict[str, List[str]]
+) -> None:
+    """Run experiments sequentially (original behavior).
+    
+    Args:
+        experiments: List of experiment dicts with 'dataset' and 'method' keys
+        args: Parsed command line arguments
+        output_dir: Path to outputs directory
+        results: Dict to track success/failed/skipped experiments
+    """
+    for i, exp in enumerate(experiments, 1):
+        dataset = exp['dataset']
+        method = exp['method']
+        experiment_key = f"{dataset}/{method}"
+        
+        print(f"\n[{i}/{len(experiments)}] {experiment_key}")
+        print("-" * 40)
+        
+        # Check if should skip
+        if args.skip_existing:
+            if check_existing_output(dataset, method, output_dir):
+                print(f"  Skipping (output exists)")
+                results['skipped'].append(experiment_key)
+                continue
+        
+        print(f"  Running...")
+        
+        result = run_experiment(
+            dataset=dataset,
+            method=method,
+            verbose=args.verbose,
+            offline=args.offline,
+            overrides=args.overrides,
+            dry_run=args.dry_run
+        )
+        
+        if result['success']:
+            print(f"  ✓ {result['message']}")
+            results['success'].append(experiment_key)
+        else:
+            print(f"  ✗ {result['message']}")
+            results['failed'].append(experiment_key)
+            
+            if not args.continue_on_error and not args.dry_run:
+                print("\nERROR: Stopping due to failure. Use --continue-on-error to keep going.")
+                break
+
+
+def run_experiments_parallel(
+    experiments: List[Dict[str, Any]],
+    args,
+    output_dir: pathlib.Path,
+    results: Dict[str, List[str]],
+    max_workers: int
+) -> None:
+    """Run experiments in parallel using ProcessPoolExecutor.
+    
+    Args:
+        experiments: List of experiment dicts with 'dataset' and 'method' keys
+        args: Parsed command line arguments
+        output_dir: Path to outputs directory
+        results: Dict to track success/failed/skipped experiments
+        max_workers: Maximum number of parallel workers
+    """
+    # Filter out experiments to skip
+    experiments_to_run = []
+    for exp in experiments:
+        dataset = exp['dataset']
+        method = exp['method']
+        experiment_key = f"{dataset}/{method}"
+        
+        if args.skip_existing and check_existing_output(dataset, method, output_dir):
+            print(f"  [{experiment_key}] Skipping (output exists)")
+            results['skipped'].append(experiment_key)
+        else:
+            experiments_to_run.append(exp)
+    
+    if not experiments_to_run:
+        print("No experiments to run (all skipped).")
+        return
+    
+    print(f"\nRunning {len(experiments_to_run)} experiments with {max_workers} parallel workers...")
+    print("-" * 60)
+    
+    if args.dry_run:
+        # In dry run mode, just show what would be executed
+        for exp in experiments_to_run:
+            result = run_experiment(
+                dataset=exp['dataset'],
+                method=exp['method'],
+                verbose=args.verbose,
+                offline=args.offline,
+                overrides=args.overrides,
+                dry_run=True
+            )
+            print(f"  [DRY RUN] {result['experiment_key']}: {result['cmd']}")
+            results['success'].append(result['experiment_key'])
+        return
+    
+    # Submit all experiments to the pool
+    completed = 0
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_exp = {
+            executor.submit(
+                run_experiment,
+                exp['dataset'],
+                exp['method'],
+                False,  # verbose=False for parallel (output would be interleaved)
+                args.offline,
+                args.overrides,
+                False  # dry_run=False
+            ): exp for exp in experiments_to_run
+        }
+        
+        # Process completed tasks as they finish
+        for future in as_completed(future_to_exp):
+            completed += 1
+            result = future.result()
+            experiment_key = result['experiment_key']
+            
+            if result['success']:
+                print(f"  [{completed}/{len(experiments_to_run)}] ✓ {experiment_key} - {result['message']}")
+                results['success'].append(experiment_key)
+            else:
+                print(f"  [{completed}/{len(experiments_to_run)}] ✗ {experiment_key} - {result['message']}")
+                results['failed'].append(experiment_key)
 
 
 def main():
@@ -207,6 +375,13 @@ def main():
         action='store_true',
         help='Continue running other experiments even if one fails'
     )
+    parser.add_argument(
+        '--parallel',
+        type=int,
+        default=None,
+        metavar='N',
+        help='Run N experiments in parallel (default: sequential execution)'
+    )
     
     args = parser.parse_args()
     
@@ -242,6 +417,7 @@ def main():
     print(f"Skip existing: {args.skip_existing}")
     print(f"Dry run: {args.dry_run}")
     print(f"Continue on error: {args.continue_on_error}")
+    print(f"Parallel workers: {args.parallel if args.parallel else 'sequential'}")
     if args.overrides:
         print(f"Config overrides: {args.overrides}")
     print("=" * 60)
@@ -256,46 +432,29 @@ def main():
     
     total_start_time = time.time()
     
-    # Run experiments
-    for i, dataset in enumerate(datasets, 1):
-        print(f"\n[{i}/{len(datasets)}] Dataset: {dataset}")
-        print("-" * 40)
-        
-        for method in methods:
-            experiment_key = f"{dataset}/{method}"
-            
-            # Check if should skip
-            if args.skip_existing:
-                if check_existing_output(dataset, method, output_dir):
-                    print(f"  [{method.upper()}] Skipping (output exists)")
-                    results['skipped'].append(experiment_key)
-                    continue
-            
-            print(f"  [{method.upper()}] Running...")
-            
-            success, message = run_experiment(
-                dataset=dataset,
-                method=method,
-                verbose=args.verbose,
-                offline=args.offline,
-                overrides=args.overrides,
-                dry_run=args.dry_run
-            )
-            
-            if success:
-                print(f"  [{method.upper()}] ✓ {message}")
-                results['success'].append(experiment_key)
-            else:
-                print(f"  [{method.upper()}] ✗ {message}")
-                results['failed'].append(experiment_key)
-                
-                if not args.continue_on_error and not args.dry_run:
-                    print("\nERROR: Stopping due to failure. Use --continue-on-error to keep going.")
-                    break
-        
-        # Check if we should stop (failure without continue-on-error)
-        if results['failed'] and not args.continue_on_error and not args.dry_run:
-            break
+    # Build list of all experiments
+    experiments = [
+        {'dataset': dataset, 'method': method}
+        for dataset in datasets
+        for method in methods
+    ]
+    
+    # Run experiments (parallel or sequential)
+    if args.parallel and args.parallel > 1:
+        run_experiments_parallel(
+            experiments=experiments,
+            args=args,
+            output_dir=output_dir,
+            results=results,
+            max_workers=args.parallel
+        )
+    else:
+        run_experiments_sequential(
+            experiments=experiments,
+            args=args,
+            output_dir=output_dir,
+            results=results
+        )
     
     total_elapsed = time.time() - total_start_time
     
