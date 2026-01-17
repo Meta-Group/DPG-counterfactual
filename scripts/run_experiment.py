@@ -115,44 +115,15 @@ from utils.replication_runner import (
     _run_single_replication_dice,
     _run_single_replication,
 )
+from utils.wandb_helper import (
+    init_wandb,
+    configure_wandb_metrics,
+)
 
 # Config utilities moved to utils/config_manager.py
 # Replication workers moved to utils/replication_runner.py
-
-
-def init_wandb(config: DictConfig, resume_id: Optional[str] = None, offline: bool = False):
-    """Initialize Weights & Biases run."""
-    if not WANDB_AVAILABLE:
-        print("WARNING: WandB not available, skipping initialization")
-        return None
-    
-    mode = "offline" if offline else "online"
-    
-    # Allow optional entity (organization/team) to be specified in config
-    entity = getattr(config.experiment, 'entity', None)
-    
-    if resume_id:
-        run = wandb.init(
-            entity=entity,
-            project=config.experiment.project,
-            id=resume_id,
-            resume="must",
-            mode=mode
-        )
-    else:
-        run = wandb.init(
-            entity=entity,
-            project=config.experiment.project,
-            name=config.experiment.name,
-            config=config.to_dict(),
-            tags=getattr(config.experiment, 'tags', None),
-            notes=getattr(config.experiment, 'notes', None),
-            mode=mode
-        )
-
-    # Use WandB's built-in git integration; manual collection removed
-
-    return run
+# WandB utilities moved to utils/wandb_helper.py
+# WandB utilities moved to utils/wandb_helper.py
 
 
 # Replication worker functions moved to utils/replication_runner.py
@@ -1883,27 +1854,7 @@ def run_experiment(config: DictConfig, wandb_run=None):
                 import json
 
                 # Normalize constraints into per-class, per-feature intervals with deterministic ordering
-                normalized = {}
-                for cname in sorted(constraints.keys()):
-                    feature_map = {}
-                    for entry in constraints[cname]:
-                        f = entry.get('feature')
-                        minv = entry.get('min')
-                        maxv = entry.get('max')
-                        if f not in feature_map:
-                            feature_map[f] = {'min': minv, 'max': maxv}
-                        else:
-                            cur = feature_map[f]
-                            # For min (lower bound), keep the most restrictive (largest) value if present
-                            if minv is not None:
-                                if cur['min'] is None or minv > cur['min']:
-                                    cur['min'] = minv
-                            # For max (upper bound), keep the most restrictive (smallest) value if present
-                            if maxv is not None:
-                                if cur['max'] is None or maxv < cur['max']:
-                                    cur['max'] = maxv
-                    # Order features alphabetically for deterministic display
-                    normalized[cname] = {k: feature_map[k] for k in sorted(feature_map.keys())}
+                normalized = ConstraintParser.normalize_constraints(constraints)
 
                 # Store for saving in sample folders
                 normalized_constraints = normalized
@@ -1963,24 +1914,7 @@ def run_experiment(config: DictConfig, wandb_run=None):
     
     # Ensure normalized_constraints is computed even without wandb
     if normalized_constraints is None and constraints:
-        normalized_constraints = {}
-        for cname in sorted(constraints.keys()):
-            feature_map = {}
-            for entry in constraints[cname]:
-                f = entry.get('feature')
-                minv = entry.get('min')
-                maxv = entry.get('max')
-                if f not in feature_map:
-                    feature_map[f] = {'min': minv, 'max': maxv}
-                else:
-                    cur = feature_map[f]
-                    if minv is not None:
-                        if cur['min'] is None or minv > cur['min']:
-                            cur['min'] = minv
-                    if maxv is not None:
-                        if cur['max'] is None or maxv < cur['max']:
-                            cur['max'] = maxv
-            normalized_constraints[cname] = {k: feature_map[k] for k in sorted(feature_map.keys())}
+        normalized_constraints = ConstraintParser.normalize_constraints(constraints)
     
     # --- Generate DPG Constraints Overview Visualization ---
     # This visualization shows all constraint boundaries before any counterfactual generation
@@ -2246,17 +2180,9 @@ def main():
         print("INFO: Initializing Weights & Biases...")
         wandb_run = init_wandb(config, resume_id=args.resume, offline=args.offline)
         
-        # Define metric step relationships for proper chart grouping
+        # Configure metric definitions for proper visualization
         if wandb_run:
-            # Fitness metrics use generation as the step (for proper x-axis alignment)
-            wandb.define_metric("generation")
-            wandb.define_metric("fitness/*", step_metric="generation")
-            
-            # Replication and combination metrics use default step (sequential logging)
-            wandb.define_metric("replication/*")
-            wandb.define_metric("metrics/per_counterfactual/*")  # Per-counterfactual metrics (individual CF quality)
-            wandb.define_metric("metrics/combination/*")  # Combination-level aggregate metrics
-            
+            configure_wandb_metrics()
             print("INFO: Configured WandB metric definitions for improved visualization")
     else:
         print("WARNING: WandB not available. Running without experiment tracking.")
