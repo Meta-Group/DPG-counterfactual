@@ -1722,10 +1722,10 @@ def run_single_sample(
                     "replication/method": result_method,  # Track which method was used
                 }
                 
-                # Add all metrics from explainer
+                # Add all metrics from explainer (per-counterfactual level)
                 for key, value in metrics.items():
                     if isinstance(value, (int, float, bool)):
-                        log_data[f"metrics/{key}"] = value
+                        log_data[f"metrics/per_counterfactual/{key}"] = value
                 
                 # Add cf_eval metrics
                 log_data.update(cf_eval_metrics)
@@ -1805,7 +1805,7 @@ def run_single_sample(
                     }
                     for key, value in combination_comprehensive_metrics.items():
                         if isinstance(value, (int, float, bool)) and not (isinstance(value, float) and (np.isnan(value) or np.isinf(value))):
-                            combo_log[f"combo_metrics/{key}"] = value
+                            combo_log[f"metrics/combination/{key}"] = value
                     wandb.log(combo_log)
                 
             except Exception as exc:
@@ -3474,8 +3474,8 @@ def main():
             
             # Replication and combination metrics use default step (sequential logging)
             wandb.define_metric("replication/*")
-            wandb.define_metric("combination/*")
-            wandb.define_metric("combo_metrics/*")
+            wandb.define_metric("metrics/per_counterfactual/*")  # Per-counterfactual metrics (individual CF quality)
+            wandb.define_metric("metrics/combination/*")  # Combination-level aggregate metrics
             
             print("INFO: Configured WandB metric definitions for improved visualization")
     else:
