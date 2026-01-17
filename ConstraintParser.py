@@ -96,6 +96,55 @@ class ConstraintParser:
                     return False
         return True
 
+    @staticmethod
+    def normalize_constraints(constraints):
+        """Normalize DPG constraints into per-class, per-feature intervals.
+        
+        Converts constraint lists into a dictionary structure with min/max bounds
+        per feature per class, keeping the most restrictive bounds when multiple
+        constraints exist for the same feature.
+        
+        Args:
+            constraints: Dict mapping class names to lists of constraint dicts.
+                        Each constraint dict has 'feature', 'min', and 'max' keys.
+                        
+        Returns:
+            Dict mapping class names to dicts of {feature: {'min': val, 'max': val}},
+            with features ordered alphabetically for deterministic output.
+            
+        Example:
+            >>> constraints = {
+            ...     'Class 0': [
+            ...         {'feature': 'age', 'min': 18, 'max': 65},
+            ...         {'feature': 'age', 'min': 25, 'max': None}  # More restrictive min
+            ...     ]
+            ... }
+            >>> ConstraintParser.normalize_constraints(constraints)
+            {'Class 0': {'age': {'min': 25, 'max': 65}}}
+        """
+        normalized = {}
+        for cname in sorted(constraints.keys()):
+            feature_map = {}
+            for entry in constraints[cname]:
+                f = entry.get('feature')
+                minv = entry.get('min')
+                maxv = entry.get('max')
+                if f not in feature_map:
+                    feature_map[f] = {'min': minv, 'max': maxv}
+                else:
+                    cur = feature_map[f]
+                    # For min (lower bound), keep the most restrictive (largest) value if present
+                    if minv is not None:
+                        if cur['min'] is None or minv > cur['min']:
+                            cur['min'] = minv
+                    # For max (upper bound), keep the most restrictive (smallest) value if present
+                    if maxv is not None:
+                        if cur['max'] is None or maxv < cur['max']:
+                            cur['max'] = maxv
+            # Order features alphabetically for deterministic display
+            normalized[cname] = {k: feature_map[k] for k in sorted(feature_map.keys())}
+        return normalized
+
     def read_constraints_from_file(self):
         def _convert_operator_list_to_minmax(operator_list):
             # operator_list: [{'feature':'Age','operator':'<=','value':3.4}, ...]
