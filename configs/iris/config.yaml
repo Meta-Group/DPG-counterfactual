@@ -1,5 +1,6 @@
-# Unified configuration for iris dataset
-# Supports methods: dpg, dice (more can be added under 'methods')
+# Configuration for iris dataset
+# Only dataset-specific overrides are included here.
+# Base defaults are loaded from configs/config.yaml
 #
 # Usage:
 #   python scripts/run_experiment.py --dataset iris --method dpg
@@ -8,11 +9,8 @@
 data:
   dataset: iris
   dataset_path: configs/iris/dataset.csv
-  random_state: 42
   target_column: target
-  test_size: 0.2
 experiment:
-  project: CounterFactualDPG
   tags:
   - iris
   - baseline
@@ -20,52 +18,20 @@ experiment:
   entity: mllab-ts-universit-di-trieste
   notes: Initial baseline run with default parameters
 experiment_params:
-  compute_comprehensive_metrics: true
-  num_combinations_to_test: 1
   num_replications: 1
   num_samples: 1
-  parallel_replications: true
-  seed: 42
   sample_indices:
   - 2
   max_workers: null
 methods:
   _default:
-    actionability: {}
-    # Shared optimization parameters
-    population_size: 50
     max_generations: 60
     mutation_rate: 0.3
-    delta_threshold: 0.01
-    patience: 20
-    # Shared fitness weights
     repulsion_weight: 2.0
     boundary_weight: 12.0
     distance_factor: 1.5
-    sparsity_factor: 1.0
-    constraints_factor: 3.0
-    original_escape_weight: 2.0
-    escape_pressure: 0.5
-    prioritize_non_overlapping: true
     max_bonus_cap: 50.0
     rules:
     - none
-  dice:
-    method: dice
-    # DICE-specific
-    total_CFs: 4
-    generation_method: genetic
-    proximity_weight: 0.5
-    diversity_weight: 1.0
   dpg:
-    method: dpg
-    # DPG-specific
     diversity_weight: 1.5
-model:
-  max_depth: null
-  n_estimators: 100
-  random_state: 42
-  type: RandomForestClassifier
-output:
-  save_visualization_images: true
-  save_visualizations: true
