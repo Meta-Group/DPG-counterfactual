@@ -671,12 +671,19 @@ def main():
     
     methods = args.methods
     
-    # Build experiments list
-    experiments = [
-        {'dataset': dataset, 'method': method}
-        for dataset in datasets
-        for method in methods
-    ]
+    # Build experiments list with iris first (baseline/smallest dataset)
+    experiments = []
+    
+    # Add iris experiments first if iris is in the datasets list
+    if 'iris' in datasets:
+        for method in methods:
+            experiments.append({'dataset': 'iris', 'method': method})
+    
+    # Add remaining experiments (excluding iris which was already added)
+    for dataset in datasets:
+        if dataset != 'iris':
+            for method in methods:
+                experiments.append({'dataset': dataset, 'method': method})
     
     # Print header
     print("=" * 60)
