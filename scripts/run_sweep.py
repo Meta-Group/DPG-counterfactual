@@ -225,11 +225,33 @@ def run_single_sweep_experiment(
     # Apply sweep hyperparameters to config
     # These go under methods._default or methods.dpg
     overrides = []
-    for param, value in sweep_config.items():
-        if param in ['population_size', 'max_generations', 'mutation_rate', 
-                     'diversity_weight', 'repulsion_weight', 'boundary_weight',
-                     'distance_factor', 'sparsity_factor', 'constraints_factor',
-                     'original_escape_weight', 'escape_pressure']:
+    
+    # All supported sweep parameters
+    sweep_params = [
+        # Mutation
+        'mutation_rate', 'mutation_strength', 'adaptive_mutation',
+        # Selection
+        'selection_method', 'tournament_size', 'elitism_rate',
+        # Crossover
+        'crossover_rate', 'crossover_method',
+        # Fitness weights
+        'validity_weight', 'proximity_weight', 'sparsity_weight', 'diversity_weight',
+        'actionability_weight', 'plausibility_weight', 'constraint_weight', 'repulsion_weight',
+        # Constraint handling
+        'constraint_handling_method',
+        # Niching
+        'use_niching', 'niche_radius',
+        # Convergence
+        'early_stopping_patience', 'convergence_threshold',
+        # Legacy
+        'population_size', 'max_generations', 'boundary_weight',
+        'distance_factor', 'sparsity_factor', 'constraints_factor',
+        'original_escape_weight', 'escape_pressure',
+    ]
+    
+    for param in sweep_params:
+        if param in sweep_config:
+            value = sweep_config[param]
             overrides.append(f"methods._default.{param}={value}")
     
     if overrides:
@@ -418,11 +440,44 @@ def main():
                        help='Run in offline mode')
     
     # Sweep parameter overrides (passed by wandb agent)
+    # Mutation parameters
+    parser.add_argument('--mutation_rate', type=float, default=None)
+    parser.add_argument('--mutation_strength', type=float, default=None)
+    parser.add_argument('--adaptive_mutation', type=lambda x: x.lower() == 'true', default=None)
+    
+    # Selection parameters
+    parser.add_argument('--selection_method', type=str, default=None)
+    parser.add_argument('--tournament_size', type=int, default=None)
+    parser.add_argument('--elitism_rate', type=float, default=None)
+    
+    # Crossover parameters
+    parser.add_argument('--crossover_rate', type=float, default=None)
+    parser.add_argument('--crossover_method', type=str, default=None)
+    
+    # Fitness weights
+    parser.add_argument('--validity_weight', type=float, default=None)
+    parser.add_argument('--proximity_weight', type=float, default=None)
+    parser.add_argument('--sparsity_weight', type=float, default=None)
+    parser.add_argument('--diversity_weight', type=float, default=None)
+    parser.add_argument('--actionability_weight', type=float, default=None)
+    parser.add_argument('--plausibility_weight', type=float, default=None)
+    parser.add_argument('--constraint_weight', type=float, default=None)
+    parser.add_argument('--repulsion_weight', type=float, default=None)
+    
+    # Constraint handling
+    parser.add_argument('--constraint_handling_method', type=str, default=None)
+    
+    # Niching / Diversity maintenance
+    parser.add_argument('--use_niching', type=lambda x: x.lower() == 'true', default=None)
+    parser.add_argument('--niche_radius', type=float, default=None)
+    
+    # Convergence control
+    parser.add_argument('--early_stopping_patience', type=int, default=None)
+    parser.add_argument('--convergence_threshold', type=float, default=None)
+    
+    # Legacy parameters (for backward compatibility)
     parser.add_argument('--population_size', type=int, default=None)
     parser.add_argument('--max_generations', type=int, default=None)
-    parser.add_argument('--mutation_rate', type=float, default=None)
-    parser.add_argument('--diversity_weight', type=float, default=None)
-    parser.add_argument('--repulsion_weight', type=float, default=None)
     
     args = parser.parse_args()
     
@@ -489,18 +544,21 @@ def main():
         # Not in a sweep - initialize a run manually with provided params
         print("Starting standalone sweep experiment run...")
         
-        # Build config from CLI args
+        # Build config from CLI args - all supported parameters
         sweep_params = {}
-        if args.population_size is not None:
-            sweep_params['population_size'] = args.population_size
-        if args.max_generations is not None:
-            sweep_params['max_generations'] = args.max_generations
-        if args.mutation_rate is not None:
-            sweep_params['mutation_rate'] = args.mutation_rate
-        if args.diversity_weight is not None:
-            sweep_params['diversity_weight'] = args.diversity_weight
-        if args.repulsion_weight is not None:
-            sweep_params['repulsion_weight'] = args.repulsion_weight
+        param_list = [
+            'population_size', 'max_generations', 'mutation_rate', 'mutation_strength',
+            'adaptive_mutation', 'selection_method', 'tournament_size', 'elitism_rate',
+            'crossover_rate', 'crossover_method', 'validity_weight', 'proximity_weight',
+            'sparsity_weight', 'diversity_weight', 'actionability_weight', 'plausibility_weight',
+            'constraint_weight', 'repulsion_weight', 'constraint_handling_method',
+            'use_niching', 'niche_radius', 'early_stopping_patience', 'convergence_threshold',
+        ]
+        
+        for param in param_list:
+            value = getattr(args, param, None)
+            if value is not None:
+                sweep_params[param] = value
         
         if not sweep_params:
             # No params provided, show help
