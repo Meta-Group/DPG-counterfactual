@@ -166,11 +166,12 @@ def fetch_all_runs(
     """
     techniques = techniques or ['dpg', 'dice']
     api = wandb.Api()
+    api.flush()  # Clear any cached data
     
     print(f"Fetching up to {limit} runs from {entity}/{project}...")
     
-    # Simple query - get runs and limit iteration
-    runs = api.runs(f"{entity}/{project}", per_page=limit)
+    # Order by created_at descending to get most recent first
+    runs = api.runs(f"{entity}/{project}", order="-created_at", per_page=limit)
     
     data = []
     for i, run in enumerate(runs):
@@ -183,16 +184,27 @@ def fetch_all_runs(
         config = run.config
         summary = run.summary._json_dict
         
-        # Require data.dataset and data.method to be set
+        # Get dataset from config
         if 'data' not in config:
             continue
         
         data_config = config['data']
         dataset_name = data_config.get('dataset_name') or data_config.get('dataset')
-        technique = data_config.get('method')
         
-        if not dataset_name or not technique:
+        if not dataset_name:
             continue
+        
+        # Get method from config, or infer from run name (e.g., "iris_dice" -> "dice")
+        technique = data_config.get('method')
+        if not technique:
+            # Try to infer from run name
+            run_name_lower = run.name.lower()
+            if '_dpg' in run_name_lower or run_name_lower.endswith('dpg'):
+                technique = 'dpg'
+            elif '_dice' in run_name_lower or run_name_lower.endswith('dice'):
+                technique = 'dice'
+            else:
+                continue
         
         technique = technique.lower()
         
