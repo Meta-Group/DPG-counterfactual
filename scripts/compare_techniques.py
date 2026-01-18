@@ -398,7 +398,7 @@ def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None,
         else:  # minimize
             is_best = s == s.min()
         
-        return ['background-color: #90EE90; font-weight: bold' if v else '' for v in is_best]
+        return ['font-weight: bold' if v else '' for v in is_best]
     
     return result.style.apply(highlight_best, axis=0).format('{:.4f}')
 
