@@ -33,8 +33,8 @@ experiment_params:
 # Output defaults
 output:
   local_dir: outputs
-  save_visualizations: true
-  save_visualization_images: true
+  save_visualizations: false
+  save_visualization_images: false
 
 # Counterfactual method defaults
 methods:
