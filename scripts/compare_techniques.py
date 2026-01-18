@@ -248,7 +248,6 @@ def fetch_all_runs(
                     row[clean_key] = value
         
         data.append(row)
-        count += 1
     
     df = pd.DataFrame(data)
     
