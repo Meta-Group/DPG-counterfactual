@@ -2,7 +2,7 @@
 # Excludes: generations, population_size (as requested)
 # Covers all genetic algorithm parameters for counterfactual optimization
 
-program: run_sweep.py
+program: scripts/run_sweep.py
 method: bayes  # Bayesian optimization for efficient hyperparameter search
 metric:
   name: avg_validity
