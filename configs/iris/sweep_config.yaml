@@ -9,27 +9,31 @@
 #   wandb agent <entity>/<project>/<sweep_id>
 #   
 #   # Or use the run_sweep.py script:
-#   python scripts/run_sweep.py --dataset iris --target-metric plausibility_sum
-#   python scripts/run_sweep.py --dataset iris --target-metric perc_valid_cf
+#   python scripts/run_sweep.py --dataset iris --target-metric perc_actionable_cf_all
+#   python scripts/run_sweep.py --dataset iris --target-metric perc_valid_cf_all
 #
-# Available target metrics (9 recommended):
-#   Validity:     perc_valid_cf (maximize)
-#   Distance:     distance_l2 (minimize), distance_mad (minimize)
-#   Sparsity:     avg_nbr_changes_per_cf (minimize)
-#   Diversity:    diversity_l2 (maximize)
-#   Plausibility: plausibility_sum (minimize) - DEFAULT
-#   Actionability: perc_valid_actionable_cf (maximize)
-#   Fidelity:     accuracy_knn_sklearn (maximize)
-#   Delta:        delta (maximize)
+# Available target metrics (9 from Guidotti's paper):
+#   Size:              perc_valid_cf_all (maximize)
+#   Actionability:     perc_actionable_cf_all (maximize) - DEFAULT
+#   Implausibility:    plausibility_nbr_cf (minimize)
+#   Dissimilarity_dist: distance_mh (minimize)
+#   Dissimilarity_count: avg_nbr_changes (minimize)
+#   Diversity_dist:    diversity_mh (maximize)
+#   Diversity_count:   count_diversity_all (maximize)
+#   Discriminative Power: accuracy_knn_sklearn (maximize)
+#   Runtime:           runtime (minimize)
+#
+# Note: All metrics are logged under 'metrics/combination/' prefix in WandB
 
 program: scripts/run_sweep.py
 method: random
 name: dpg_hyperparameter_sweep
 
 # Metric to optimize (overridden by --target-metric in run_sweep.py)
+# Use the full WandB path: metrics/combination/<metric_name>
 metric:
-  name: plausibility_sum
-  goal: minimize
+  name: metrics/combination/perc_actionable_cf_all
+  goal: maximize
 
 # Sweep parameters - 5 most impactful GA hyperparameters
 parameters:

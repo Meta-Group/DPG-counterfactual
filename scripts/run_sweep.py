@@ -9,27 +9,29 @@ Usage:
   python scripts/run_sweep.py --dataset iris --method dpg
   
   # Run with specific target metric
-  python scripts/run_sweep.py --dataset iris --target-metric plausibility_sum
-  python scripts/run_sweep.py --dataset iris --target-metric perc_valid_cf
+  python scripts/run_sweep.py --dataset iris --target-metric perc_actionable_cf_all
+  python scripts/run_sweep.py --dataset iris --target-metric perc_valid_cf_all
   
   # Initialize a new sweep
-  python scripts/run_sweep.py --init-sweep --dataset iris --target-metric perc_valid_cf
+  python scripts/run_sweep.py --init-sweep --dataset iris --target-metric perc_valid_cf_all
   
   # Run sweep agent (after initialization)
   python scripts/run_sweep.py --run-agent --sweep-id <sweep_id> --count 10
 
-Available Target Metrics (9 recommended):
+Available Target Metrics (9 from Guidotti's paper):
   Metric Name               | Goal     | Description
   --------------------------|----------|---------------------------------------------
-  plausibility_sum          | minimize | Distance to nearest training sample (DEFAULT)
-  perc_valid_cf             | maximize | Percentage of valid counterfactuals
-  distance_l2               | minimize | Euclidean distance from original
-  distance_mad              | minimize | MAD-normalized distance
-  avg_nbr_changes_per_cf    | minimize | Feature sparsity
-  diversity_l2              | maximize | Pairwise diversity among CFs
-  perc_valid_actionable_cf  | maximize | Valid AND actionable CFs percentage
-  accuracy_knn_sklearn      | maximize | KNN fidelity score
-  delta                     | maximize | Mean prediction probability change
+  perc_actionable_cf_all    | maximize | Actionability - respects constraints (DEFAULT)
+  perc_valid_cf_all         | maximize | Size - percentage of valid CFs
+  plausibility_nbr_cf       | minimize | Implausibility - distance to nearest real sample
+  distance_mh               | minimize | Dissimilarity_dist - MAD+Hamming distance
+  avg_nbr_changes           | minimize | Dissimilarity_count - proportion of features changed
+  diversity_mh              | maximize | Diversity_dist - pairwise CF diversity
+  count_diversity_all       | maximize | Diversity_count - feature diversity
+  accuracy_knn_sklearn      | maximize | Discriminative Power (dipo) - 1NN accuracy
+  runtime                   | minimize | Execution time in seconds
+
+Note: Metrics are logged under 'metrics/combination/' prefix in WandB.
 """
 
 from __future__ import annotations
@@ -58,52 +60,48 @@ except ImportError:
 
 from utils.config_manager import load_config, apply_overrides, deep_merge_dicts, DictConfig
 
-# Define target metrics with their optimization goals
+# Define target metrics with their optimization goals (from Guidotti's paper)
+# All metrics are logged under 'metrics/combination/' prefix in WandB
 TARGET_METRICS = {
-    # Plausibility (default)
-    'plausibility_sum': {'goal': 'minimize', 'description': 'Distance to nearest training sample'},
-    'plausibility_nbr_cf': {'goal': 'minimize', 'description': 'Normalized plausibility'},
+    # Size (Validity) - perc_valid_cf_all = |C|/k
+    'perc_valid_cf_all': {'goal': 'maximize', 'description': 'Size - percentage of valid CFs', 'wandb_key': 'metrics/combination/perc_valid_cf_all'},
     
-    # Validity
-    'perc_valid_cf': {'goal': 'maximize', 'description': 'Percentage of valid CFs'},
-    'nbr_valid_cf': {'goal': 'maximize', 'description': 'Number of valid CFs'},
+    # Actionability - perc_actionable_cf_all = |{c ∈ C | aA(c,x)}|/k (DEFAULT)
+    'perc_actionable_cf_all': {'goal': 'maximize', 'description': 'Actionability - respects constraints', 'wandb_key': 'metrics/combination/perc_actionable_cf_all'},
     
-    # Distance
-    'distance_l2': {'goal': 'minimize', 'description': 'Euclidean distance'},
-    'distance_mad': {'goal': 'minimize', 'description': 'MAD-normalized distance'},
+    # Implausibility - plausibility_nbr_cf = (1/|C|)Σ min d(c, x)
+    'plausibility_nbr_cf': {'goal': 'minimize', 'description': 'Implausibility - distance to nearest real sample', 'wandb_key': 'metrics/combination/plausibility_nbr_cf'},
     
-    # Sparsity
-    'avg_nbr_changes_per_cf': {'goal': 'minimize', 'description': 'Average feature changes'},
-    'avg_nbr_changes': {'goal': 'minimize', 'description': 'Normalized sparsity'},
+    # Dissimilarity_dist - distance_mh = (1/|C|)Σ d(x, c) using MAD+Hamming
+    'distance_mh': {'goal': 'minimize', 'description': 'Dissimilarity_dist - MAD+Hamming distance', 'wandb_key': 'metrics/combination/distance_mh'},
     
-    # Diversity
-    'diversity_l2': {'goal': 'maximize', 'description': 'Pairwise L2 diversity'},
-    'diversity_mad': {'goal': 'maximize', 'description': 'Pairwise MAD diversity'},
+    # Dissimilarity_count - avg_nbr_changes = (1/|C|m)ΣΣ 1_{ci≠xi}
+    'avg_nbr_changes': {'goal': 'minimize', 'description': 'Dissimilarity_count - proportion of features changed', 'wandb_key': 'metrics/combination/avg_nbr_changes'},
     
-    # Actionability
-    'perc_valid_actionable_cf': {'goal': 'maximize', 'description': 'Valid & actionable percentage'},
-    'perc_actionable_cf': {'goal': 'maximize', 'description': 'Actionable percentage'},
+    # Diversity_dist - diversity_mh = (1/|C|²)ΣΣ d(c, c')
+    'diversity_mh': {'goal': 'maximize', 'description': 'Diversity_dist - pairwise CF diversity', 'wandb_key': 'metrics/combination/diversity_mh'},
     
-    # Fidelity
-    'accuracy_knn_sklearn': {'goal': 'maximize', 'description': 'KNN accuracy'},
-    'accuracy_knn_dist': {'goal': 'maximize', 'description': 'Distance-based KNN accuracy'},
+    # Diversity_count - count_diversity_all = (1/|C|²m)ΣΣΣ 1_{ci≠c'i}
+    'count_diversity_all': {'goal': 'maximize', 'description': 'Diversity_count - feature diversity', 'wandb_key': 'metrics/combination/count_diversity_all'},
     
-    # Delta
-    'delta': {'goal': 'maximize', 'description': 'Mean prediction change'},
-    'delta_max': {'goal': 'maximize', 'description': 'Max prediction change'},
+    # Discriminative Power (dipo) - accuracy_knn_sklearn = 1NN accuracy
+    'accuracy_knn_sklearn': {'goal': 'maximize', 'description': 'Discriminative Power - 1NN accuracy', 'wandb_key': 'metrics/combination/accuracy_knn_sklearn'},
+    
+    # Runtime
+    'runtime': {'goal': 'minimize', 'description': 'Execution time in seconds', 'wandb_key': 'metrics/combination/runtime'},
 }
 
-# 9 recommended metrics for sweep optimization
+# 9 metrics for sweep optimization (from Guidotti's paper summary table)
 RECOMMENDED_METRICS = [
-    'plausibility_sum',
-    'perc_valid_cf', 
-    'distance_l2',
-    'distance_mad',
-    'avg_nbr_changes_per_cf',
-    'diversity_l2',
-    'perc_valid_actionable_cf',
-    'accuracy_knn_sklearn',
-    'delta',
+    'perc_actionable_cf_all',  # Actionability (DEFAULT)
+    'perc_valid_cf_all',       # Size
+    'plausibility_nbr_cf',     # Implausibility
+    'distance_mh',             # Dissimilarity_dist
+    'avg_nbr_changes',         # Dissimilarity_count
+    'diversity_mh',            # Diversity_dist
+    'count_diversity_all',     # Diversity_count
+    'accuracy_knn_sklearn',    # Discriminative Power
+    'runtime',                 # Runtime
 ]
 
 
@@ -122,13 +120,15 @@ def get_sweep_config(dataset: str, target_metric: str, entity: Optional[str] = N
         raise ValueError(f"Unknown metric: {target_metric}. Available: {list(TARGET_METRICS.keys())}")
     
     metric_info = TARGET_METRICS[target_metric]
+    # Use the wandb_key for the sweep metric name (e.g., 'metrics/combination/perc_valid_cf_all')
+    wandb_metric_key = metric_info['wandb_key']
     
     return {
         'program': 'scripts/run_sweep.py',
         'method': 'random',
         'name': f'dpg_sweep_{dataset}_{target_metric}',
         'metric': {
-            'name': target_metric,
+            'name': wandb_metric_key,
             'goal': metric_info['goal'],
         },
         'parameters': {
@@ -179,7 +179,7 @@ def get_sweep_config(dataset: str, target_metric: str, entity: Optional[str] = N
 def run_single_sweep_experiment(
     dataset: str,
     method: str = 'dpg',
-    target_metric: str = 'plausibility_sum',
+    target_metric: str = 'perc_actionable_cf_all',
     offline: bool = False,
 ) -> Dict[str, Any]:
     """Run a single experiment as part of a sweep.
@@ -243,17 +243,28 @@ def run_single_sweep_experiment(
         results = run_experiment(config, wandb_run=run)
         
         # Extract the target metric from results
+        # Metrics are already logged under 'metrics/combination/' by run_experiment
+        # The sweep config uses wandb_key (e.g., 'metrics/combination/perc_valid_cf_all')
+        # so WandB can pick it up automatically from the logged metrics
+        
         if results and 'aggregated_metrics' in results:
             agg_metrics = results['aggregated_metrics']
+            # Look for the metric in aggregated_metrics (without the prefix)
             target_value = agg_metrics.get(target_metric, None)
             
             if target_value is not None:
+                # Get the wandb_key for this metric
+                metric_info = TARGET_METRICS.get(target_metric, {})
+                wandb_key = metric_info.get('wandb_key', f'metrics/combination/{target_metric}')
+                
                 # Log the target metric explicitly for sweep optimization
-                wandb.log({target_metric: target_value})
-                wandb.summary[target_metric] = target_value
-                print(f"\n✓ Target metric '{target_metric}': {target_value}")
+                # This ensures the sweep can find it at the expected path
+                wandb.log({wandb_key: target_value})
+                wandb.summary[wandb_key] = target_value
+                print(f"\n✓ Target metric '{target_metric}' ({wandb_key}): {target_value}")
             else:
-                print(f"\n⚠ Target metric '{target_metric}' not found in results")
+                print(f"\n⚠ Target metric '{target_metric}' not found in aggregated_metrics")
+                print(f"  Available metrics: {list(agg_metrics.keys())[:10]}...")
         
         return results
         
@@ -266,7 +277,7 @@ def run_single_sweep_experiment(
 
 def init_sweep(
     dataset: str,
-    target_metric: str = 'plausibility_sum',
+    target_metric: str = 'perc_actionable_cf_all',
     project: str = 'CounterFactualDPG',
     entity: Optional[str] = None,
 ) -> str:
@@ -313,7 +324,7 @@ def run_agent(
     entity: Optional[str] = None,
     count: Optional[int] = None,
     dataset: str = 'iris',
-    target_metric: str = 'plausibility_sum',
+    target_metric: str = 'perc_actionable_cf_all',
 ) -> None:
     """Run a WandB sweep agent.
     
@@ -380,8 +391,8 @@ def main():
                        help='Dataset to use (default: iris)')
     parser.add_argument('--method', type=str, default='dpg',
                        help='Method to use (default: dpg)')
-    parser.add_argument('--target-metric', type=str, default='plausibility_sum',
-                       help='Metric to optimize (default: plausibility_sum)')
+    parser.add_argument('--target-metric', type=str, default='perc_actionable_cf_all',
+                       help='Metric to optimize (default: perc_actionable_cf_all)')
     
     # WandB configuration
     parser.add_argument('--project', type=str, default='CounterFactualDPG',
@@ -408,7 +419,7 @@ def main():
         print("-" * 70)
         for metric in RECOMMENDED_METRICS:
             info = TARGET_METRICS[metric]
-            marker = "★" if metric == 'plausibility_sum' else " "
+            marker = "★" if metric == 'perc_actionable_cf_all' else " "
             print(f"{marker} {metric:<26} {info['goal']:<10} {info['description']}")
         print("-" * 70)
         print("★ = Default metric")
