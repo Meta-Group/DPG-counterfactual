@@ -346,12 +346,16 @@ class ExperimentRunner:
     def _clear_previous_display(self):
         """Clear the previous display by moving cursor up and clearing lines."""
         if self.last_display_lines > 0:
-            # Move cursor up N lines and clear each
-            sys.stdout.write(f'\033[{self.last_display_lines}A')
-            for _ in range(self.last_display_lines):
-                sys.stdout.write('\033[2K\033[1B')  # Clear line and move down
-            sys.stdout.write(f'\033[{self.last_display_lines}A')  # Move back up
-            sys.stdout.flush()
+            try:
+                # Move cursor up N lines and clear each
+                sys.stdout.write(f'\033[{self.last_display_lines}A')
+                for _ in range(self.last_display_lines):
+                    sys.stdout.write('\033[2K\033[1B')  # Clear line and move down
+                sys.stdout.write(f'\033[{self.last_display_lines}A')  # Move back up
+                sys.stdout.flush()
+            except (BlockingIOError, IOError):
+                # Terminal buffer full, skip clearing
+                pass
     
     def _print_status(self):
         """Print current status of all experiments."""
@@ -422,8 +426,17 @@ class ExperimentRunner:
         self._clear_previous_display()
         
         output = '\n'.join(lines)
-        print(output)
-        sys.stdout.flush()
+        
+        # Handle potential BlockingIOError when terminal buffer is full
+        try:
+            print(output)
+            sys.stdout.flush()
+        except BlockingIOError:
+            # Terminal buffer full, skip this update
+            pass
+        except IOError:
+            # Other IO errors, skip update
+            pass
         
         self.last_display_lines = len(lines)
     
