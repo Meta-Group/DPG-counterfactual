@@ -35,14 +35,8 @@ metric:
   name: metrics/combination/plausibility_nbr_cf
   goal: minimize
 
-# Sweep parameters - 5 most impactful GA hyperparameters
+# Sweep parameters - 4 most impactful GA hyperparameters
 parameters:
-  # Population size: affects exploration vs. computation cost
-  population_size:
-    distribution: int_uniform
-    min: 20
-    max: 100
-
   # Max generations: affects convergence depth
   max_generations:
     distribution: int_uniform
