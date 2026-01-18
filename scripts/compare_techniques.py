@@ -146,14 +146,16 @@ def fetch_all_runs(
     entity: str = DEFAULT_ENTITY,
     techniques: Optional[List[str]] = None,
     datasets: Optional[List[str]] = None,
+    limit: int = 10,
 ) -> pd.DataFrame:
-    """Fetch all runs from WandB and organize by dataset/technique.
+    """Fetch runs from WandB and organize by dataset/technique.
     
     Args:
         project: WandB project name
         entity: WandB entity (team/user)
         techniques: Optional list of techniques to include (default: ['dpg', 'dice'])
         datasets: Optional list of datasets to include (default: all)
+        limit: Maximum number of recent runs to fetch (default: 10)
         
     Returns:
         DataFrame with columns: dataset, technique, replication, and all metrics
@@ -165,14 +167,18 @@ def fetch_all_runs(
     techniques = techniques or ['dpg', 'dice']
     api = wandb.Api()
     
-    print(f"Fetching runs from {entity}/{project}...")
+    print(f"Fetching up to {limit} most recent runs from {entity}/{project}...")
     
-    # Filter at API level for finished runs only (saves transfer time)
+    # Filter at API level for finished runs only, order by created_at descending
     filters = {"state": "finished"}
-    runs = api.runs(f"{entity}/{project}", filters=filters)
+    runs = api.runs(f"{entity}/{project}", filters=filters, order="-created_at")
     
     data = []
+    count = 0
     for run in runs:
+        if count >= limit:
+            break
+        
         config = run.config
         summary = run.summary._json_dict
         
@@ -235,6 +241,7 @@ def fetch_all_runs(
                     row[clean_key] = value
         
         data.append(row)
+        count += 1
     
     df = pd.DataFrame(data)
     
