@@ -2,20 +2,46 @@
 
 This guide explains how to use the WandB sweep functionality to find optimal hyperparameters for the DPG genetic algorithm counterfactual generator.
 
-## Quick Start
+## Prerequisites
+
+Activate the virtual environment:
+```bash
+source .venv/bin/activate
+```
+
+## Quick Start (Using Helper Script)
 
 ```bash
 # 1. Initialize a sweep (choose your target metric)
-python scripts/run_sweep.py --init-sweep --dataset iris --target-metric plausibility_sum
+./scripts/quick_sweep.sh init plausibility_sum
+
+# 2. Run the sweep agent (use sweep_id from step 1)
+./scripts/quick_sweep.sh run <sweep_id> 20
+
+# Or list available metrics first
+./scripts/quick_sweep.sh list
+```
+
+## Quick Start (Using Python Script Directly)
+
+```bash
+# 1. Initialize a sweep with entity
+.venv/bin/python scripts/run_sweep.py --init-sweep \
+    --dataset iris \
+    --target-metric plausibility_sum \
+    --entity mllab-ts-universit-di-trieste
 
 # 2. Run the sweep agent (replace <sweep_id> with the ID from step 1)
-python scripts/run_sweep.py --run-agent --sweep-id <sweep_id> --count 20
+.venv/bin/python scripts/run_sweep.py --run-agent \
+    --sweep-id <sweep_id> \
+    --count 20 \
+    --entity mllab-ts-universit-di-trieste
 
 # Or run multiple agents in parallel for faster exploration:
 # Terminal 1:
-python scripts/run_sweep.py --run-agent --sweep-id <sweep_id>
+.venv/bin/python scripts/run_sweep.py --run-agent --sweep-id <sweep_id> --entity mllab-ts-universit-di-trieste
 # Terminal 2:
-python scripts/run_sweep.py --run-agent --sweep-id <sweep_id>
+.venv/bin/python scripts/run_sweep.py --run-agent --sweep-id <sweep_id> --entity mllab-ts-universit-di-trieste
 ```
 
 ## Available Target Metrics
