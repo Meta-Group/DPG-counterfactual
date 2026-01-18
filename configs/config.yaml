@@ -25,7 +25,7 @@ experiment:
 experiment_params:
   seed: 42
   num_samples: 1
-  num_replications: 3
+  num_replications: 5
   num_combinations_to_test: 1
   parallel_replications: true
   compute_comprehensive_metrics: true
@@ -41,11 +41,11 @@ methods:
   _default:
     actionability: {}
     # Shared optimization parameters
-    population_size: 50
-    max_generations: 100
+    population_size: 30
+    max_generations: 60
     mutation_rate: 0.1
     delta_threshold: 0.01
-    patience: 20
+    patience: 15
     # Shared fitness weights
     repulsion_weight: 4.0
     boundary_weight: 15.0
