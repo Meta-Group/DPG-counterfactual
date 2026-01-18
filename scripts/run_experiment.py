@@ -2221,8 +2221,9 @@ def main():
     
     # Add method to data config for easy filtering in compare_techniques.py
     # This must be done before init_wandb so it's included in the initial config
+    # Use __setitem__ to ensure _config dict is updated for to_dict()
     if hasattr(config, 'data'):
-        config.data.method = method_name
+        config.data['method'] = method_name
     
     # Write initial "running" status
     start_time = time.time()
