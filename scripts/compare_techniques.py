@@ -339,6 +339,49 @@ def create_comparison_table(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(comparison_data)
 
 
+def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None) -> pd.DataFrame:
+    """Create a table with methods as rows and metrics as columns.
+    
+    Args:
+        df: DataFrame from fetch_all_runs()
+        dataset: Optional dataset name to filter. If None, aggregates across all datasets.
+        
+    Returns:
+        DataFrame with methods as rows (dpg, dice) and metrics as columns
+        
+    Example output:
+        |          | perc_valid_cf | plausibility_sum | distance_l2 | ...
+        |----------|---------------|------------------|-------------|----
+        | dpg      | 0.95          | 23.5             | 2.1         | ...
+        | dice     | 0.98          | 18.2             | 1.8         | ...
+    """
+    if len(df) == 0:
+        return df
+    
+    # Filter by dataset if specified
+    if dataset is not None:
+        df = df[df['dataset'] == dataset]
+        if len(df) == 0:
+            print(f"No data found for dataset: {dataset}")
+            return pd.DataFrame()
+    
+    # Get metric columns
+    metric_cols = [col for col in COMPARISON_METRICS.keys() if col in df.columns]
+    
+    # Aggregate by technique only (across all datasets if dataset is None)
+    agg_data = df.groupby('technique')[metric_cols].mean()
+    
+    # Reset index to make technique a column, then set it back as index for display
+    result = agg_data.reset_index()
+    result = result.set_index('technique')
+    
+    # Rename columns to use friendly names
+    rename_map = {col: COMPARISON_METRICS[col]['name'] for col in metric_cols if col in COMPARISON_METRICS}
+    result = result.rename(columns=rename_map)
+    
+    return result
+
+
 def determine_winner(dpg_val: float, dice_val: float, goal: str) -> str:
     """Determine which technique is better for a metric.
     
