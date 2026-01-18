@@ -5,7 +5,8 @@ This script iterates through all dataset directories in configs/ and runs
 experiments with each specified method (dpg, dice).
 
 Interactive Controls (when running with --parallel):
-  q / Ctrl+C  - Hard stop: Kill all running experiments immediately
+  Ctrl+C / d  - Detach: Exit but leave experiments running (can reconnect later)
+  q           - Hard quit: Kill all running experiments immediately
   s           - Soft stop: Let running experiments finish, don't start new ones
   p           - Pause/Resume: Toggle starting new experiments
   r           - Refresh display
@@ -216,6 +217,27 @@ class ExperimentRunner:
         self.skip_existing = skip_existing
         self.monitor_only = monitor_only
         
+        # Thread management (must be initialized before experiment loop)
+        self.log_queue: queue.Queue = queue.Queue()
+        self.reader_threads: List[threading.Thread] = []
+        self.lock = threading.Lock()
+        
+        # Control flags
+        self.stop_requested = False  # Hard stop - kill all experiments
+        self.detach_requested = False  # Detach - exit but leave experiments running
+        self.soft_stop_requested = False or monitor_only  # Don't start new if monitor_only
+        self.paused = False
+        
+        # Spinner animation
+        self.spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        self.spinner_idx = 0
+        
+        # Stats
+        self.start_time: Optional[float] = None
+        
+        # Display state
+        self.last_display_lines = 0
+        
         # Initialize experiments
         self.experiments: Dict[str, Experiment] = {}
         self.pending_queue: List[str] = []
@@ -261,26 +283,6 @@ class ExperimentRunner:
                 # No status or unknown - add to queue unless monitor_only
                 if not monitor_only:
                     self.pending_queue.append(exp.key)
-        
-        # Control flags
-        self.stop_requested = False
-        self.soft_stop_requested = False or monitor_only  # Don't start new if monitor_only
-        self.paused = False
-        
-        # Thread management
-        self.log_queue: queue.Queue = queue.Queue()
-        self.reader_threads: List[threading.Thread] = []
-        self.lock = threading.Lock()
-        
-        # Spinner animation
-        self.spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-        self.spinner_idx = 0
-        
-        # Stats
-        self.start_time: Optional[float] = None
-        
-        # Display state
-        self.last_display_lines = 0
     
     def _start_external_log_reader(self, exp: Experiment):
         """Start a thread to read logs from an external experiment's log file."""
@@ -423,14 +425,16 @@ class ExperimentRunner:
         for key, exp in self.experiments.items():
             if exp.status == ExperimentStatus.EXTERNAL_RUNNING:
                 # Check if the process is still running
-                status_info = get_experiment_status(exp.dataset, exp.method)
+                persistent_status, status_info = get_experiment_status(
+                    exp.dataset, exp.method, self.output_dir
+                )
                 if status_info:
                     if not status_info.pid or not is_process_running(status_info.pid):
                         # Process no longer running, check final status
-                        if status_info.status == PersistentStatus.FINISHED:
+                        if persistent_status == PersistentStatus.FINISHED:
                             exp.status = ExperimentStatus.COMPLETED
                             exp.end_time = status_info.end_time or time.time()
-                        elif status_info.status == PersistentStatus.ERROR:
+                        elif persistent_status == PersistentStatus.ERROR:
                             exp.status = ExperimentStatus.FAILED
                             exp.end_time = status_info.end_time or time.time()
                         else:
@@ -479,6 +483,25 @@ class ExperimentRunner:
                 exp.status = ExperimentStatus.CANCELLED
         self.pending_queue.clear()
     
+    def _detach_from_experiments(self):
+        """Detach from running experiments without killing them.
+        
+        This allows the user to exit the orchestrator while experiments continue
+        running in the background. When the orchestrator is started again, it will
+        detect these experiments via their status files and reconnect.
+        """
+        running_count = 0
+        for exp in self.experiments.values():
+            if exp.status == ExperimentStatus.RUNNING and exp.process:
+                # Don't kill the process, just detach
+                # The process will continue running independently
+                running_count += 1
+        
+        if running_count > 0:
+            print(f"\n{Colors.YELLOW}Detaching from {running_count} running experiment(s).{Colors.RESET}")
+            print(f"{Colors.DIM}Experiments will continue running in the background.{Colors.RESET}")
+            print(f"{Colors.DIM}Run this script again to reconnect and monitor progress.{Colors.RESET}")
+    
     def _format_status_line(self, exp: Experiment, width: int = 80) -> str:
         """Format a single experiment status line."""
         status_colors = {
@@ -491,10 +514,10 @@ class ExperimentRunner:
             ExperimentStatus.CANCELLED: Colors.MAGENTA,
         }
         
-        status_labels = {
+        status_symbols = {
             ExperimentStatus.PENDING: '○',
             ExperimentStatus.RUNNING: self.spinner_chars[self.spinner_idx],
-            ExperimentStatus.EXTERNAL_RUNNING: '⟐',
+            ExperimentStatus.EXTERNAL_RUNNING: '⟐',  # Different symbol for external
             ExperimentStatus.COMPLETED: '✓',
             ExperimentStatus.FAILED: '✗',
             ExperimentStatus.SKIPPED: '⊘',
@@ -502,10 +525,10 @@ class ExperimentRunner:
         }
         
         color = status_colors.get(exp.status, Colors.WHITE)
-        label = status_labels.get(exp.status, '?')
+        symbol = status_symbols.get(exp.status, '?')
         
         # Format: [symbol] dataset/method (elapsed) - last_log
-        key_part = f"{label} {exp.key}"
+        key_part = f"{symbol} {exp.key}"
         time_part = f"({exp.elapsed_str})" if exp.status in (ExperimentStatus.RUNNING, ExperimentStatus.EXTERNAL_RUNNING) or exp.end_time else ""
         
         # Add PID for external processes
@@ -582,20 +605,20 @@ class ExperimentRunner:
         global_stats = get_global_stats(self.output_dir)
         
         # Session stats bar (this orchestrator's view)
-        stats_line = (f"{Colors.GREEN}Done: {stats['completed']}{Colors.RESET} | "
-                     f"{Colors.RED}Failed: {stats['failed']}{Colors.RESET} | "
-                     f"{Colors.CYAN}Running: {stats['running']}{Colors.RESET} | "
-                     f"{Colors.BLUE}External: {stats.get('external_running', 0)}{Colors.RESET} | "
-                     f"{Colors.DIM}Pending: {stats['pending']}{Colors.RESET} | "
-                     f"{Colors.YELLOW}Skipped: {stats['skipped']}{Colors.RESET} | "
-                     f"{Colors.MAGENTA}Cancelled: {stats['cancelled']}{Colors.RESET}")
+        stats_line = (f"{Colors.GREEN}✓ {stats['completed']}{Colors.RESET} | "
+                     f"{Colors.RED}✗ {stats['failed']}{Colors.RESET} | "
+                     f"{Colors.CYAN}⟳ {stats['running']}{Colors.RESET} | "
+                     f"{Colors.BLUE}⟐ {stats.get('external_running', 0)}{Colors.RESET} | "
+                     f"{Colors.DIM}○ {stats['pending']}{Colors.RESET} | "
+                     f"{Colors.YELLOW}⊘ {stats['skipped']}{Colors.RESET} | "
+                     f"{Colors.MAGENTA}⊗ {stats['cancelled']}{Colors.RESET}")
         lines.append(stats_line)
         
         # Global stats line (all experiments ever)
         global_line = (f"{Colors.DIM}Global: "
-                      f"Finished: {global_stats['finished']} | "
-                      f"Running: {global_stats['running']} | "
-                      f"Error: {global_stats['error']} | "
+                      f"✓ {global_stats['finished']} | "
+                      f"⟳ {global_stats['running']} | "
+                      f"✗ {global_stats['error']} | "
                       f"Total tracked: {global_stats['total']}{Colors.RESET}")
         lines.append(global_line)
         lines.append(f"{Colors.DIM}{'─' * width}{Colors.RESET}")
@@ -623,7 +646,7 @@ class ExperimentRunner:
         
         # Controls hint
         lines.append(f"{Colors.DIM}{'─' * width}{Colors.RESET}")
-        lines.append(f"{Colors.DIM}[q] quit  [s] soft-stop  [p] pause/resume  [r] refresh{Colors.RESET}")
+        lines.append(f"{Colors.DIM}[Ctrl+C/d] detach  [q] kill all  [s] soft-stop  [p] pause  [r] refresh{Colors.RESET}")
         
         # Clear previous and print new
         self._clear_previous_display()
@@ -670,9 +693,9 @@ class ExperimentRunner:
             except Exception:
                 is_tty = False
         
-        # Set up signal handler for Ctrl+C
+        # Set up signal handler for Ctrl+C (detach, not kill)
         def signal_handler(signum, frame):
-            self.stop_requested = True
+            self.detach_requested = True
         
         old_signal = signal.signal(signal.SIGINT, signal_handler)
         
@@ -687,7 +710,9 @@ class ExperimentRunner:
                     key = self._handle_input()
                     if key:
                         if key == 'q':
-                            self.stop_requested = True
+                            self.stop_requested = True  # Hard quit
+                        elif key == 'd':
+                            self.detach_requested = True  # Detach
                         elif key == 's':
                             self.soft_stop_requested = True
                             self._cancel_pending()
@@ -695,10 +720,15 @@ class ExperimentRunner:
                             self.paused = not self.paused
                         # 'r' just triggers refresh below
                 
-                # Check stop flag (from signal or key)
+                # Check hard stop flag (kills experiments)
                 if self.stop_requested:
                     self._kill_all_running()
                     self._cancel_pending()
+                    break
+                
+                # Check detach flag (exit but leave experiments running)
+                if self.detach_requested:
+                    self._detach_from_experiments()
                     break
                 
                 # Check for completed experiments (local processes)
@@ -942,10 +972,24 @@ def main():
         
         if args.dry_run:
             print("\n[DRY RUN MODE]")
-            for exp in experiments:
-                print(f"  Would run: {exp['dataset']}/{exp['method']}")
-            results = {'success': [f"{e['dataset']}/{e['method']}" for e in experiments], 
-                      'failed': [], 'skipped': [], 'cancelled': []}
+            # Show status-aware info from the runner
+            stats = runner._get_stats()
+            print(f"  Pending (will run): {stats['pending']}")
+            print(f"  Skipped (finished): {stats['skipped']}")
+            print(f"  External running: {stats.get('external_running', 0)}")
+            print(f"  Failed (will retry): {stats.get('failed', 0)}")
+            print()
+            for key, exp in runner.experiments.items():
+                status_str = exp.status.value
+                if exp.status == ExperimentStatus.PENDING:
+                    print(f"  [RUN]  {key}")
+                elif exp.status == ExperimentStatus.SKIPPED:
+                    print(f"  [SKIP] {key} (already completed)")
+                elif exp.status == ExperimentStatus.EXTERNAL_RUNNING:
+                    print(f"  [EXT]  {key} (running externally, PID {exp.external_pid})")
+                elif exp.status == ExperimentStatus.FAILED:
+                    print(f"  [RETRY] {key} (previous run failed)")
+            results = {'success': [], 'failed': [], 'skipped': [], 'cancelled': []}
         else:
             results = runner.run()
     else:
