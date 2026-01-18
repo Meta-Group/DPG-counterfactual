@@ -235,6 +235,10 @@ def run_single_sweep_experiment(
     if overrides:
         config = apply_overrides(config, overrides)
     
+    # Update WandB config with the full experiment config
+    # The sweep agent only sets sweep hyperparameters, so we need to add the rest
+    wandb.config.update(config.to_dict(), allow_val_change=True)
+    
     # Set data.dataset and data.method properties
     # These are normally set in run_experiment.py's main() but we call run_experiment() directly
     if hasattr(config, 'data'):
