@@ -63,74 +63,70 @@ DEFAULT_ENTITY = 'mllab-ts-universit-di-trieste'
 DEFAULT_PROJECT = 'CounterFactualDPG'
 
 # Key metrics for comparison (from RECOMMENDED_METRICS)
-# Note: WandB uses 'metrics/combination/' and 'metrics/per_counterfactual/' prefixes
+# Note: Only using 'metrics/combination/' prefix for aggregated metrics across all CFs
 COMPARISON_METRICS = {
     'perc_valid_cf': {
         'name': 'Validity (%)',
         'goal': 'maximize',
         'description': 'Percentage of valid counterfactuals',
         'format': '.2%',
-        'wandb_keys': ['metrics/combination/perc_valid_cf', 'metrics/per_counterfactual/perc_valid_cf'],
+        'wandb_keys': ['metrics/combination/perc_valid_cf'],
     },
     'plausibility_sum': {
         'name': 'Plausibility',
         'goal': 'minimize',
         'description': 'Sum of distances to nearest training samples',
         'format': '.3f',
-        'wandb_keys': ['metrics/combination/plausibility_sum', 'metrics/per_counterfactual/plausibility_sum', 
-                       'metrics/combination/plausibility_nbr_cf', 'metrics/per_counterfactual/plausibility_nbr_cf'],
+        'wandb_keys': ['metrics/combination/plausibility_sum', 'metrics/combination/plausibility_nbr_cf'],
     },
     'distance_l2': {
         'name': 'Distance (L2)',
         'goal': 'minimize',
         'description': 'Mean Euclidean distance from original',
         'format': '.3f',
-        'wandb_keys': ['metrics/combination/distance_l2', 'metrics/per_counterfactual/distance_l2', 
-                       'metrics/per_counterfactual/distance_euclidean'],
+        'wandb_keys': ['metrics/combination/distance_l2'],
     },
     'distance_mad': {
         'name': 'Distance (MAD)',
         'goal': 'minimize',
         'description': 'Mean MAD-normalized distance',
         'format': '.3f',
-        'wandb_keys': ['metrics/combination/distance_mad', 'metrics/per_counterfactual/distance_mad'],
+        'wandb_keys': ['metrics/combination/distance_mad'],
     },
     'avg_nbr_changes_per_cf': {
         'name': 'Sparsity',
         'goal': 'minimize',
         'description': 'Average number of feature changes',
         'format': '.2f',
-        'wandb_keys': ['metrics/combination/avg_nbr_changes_per_cf', 'metrics/per_counterfactual/avg_nbr_changes_per_cf', 
-                       'metrics/per_counterfactual/num_feature_changes', 'metrics/per_counterfactual/sparsity'],
+        'wandb_keys': ['metrics/combination/avg_nbr_changes_per_cf'],
     },
     'diversity_l2': {
         'name': 'Diversity',
         'goal': 'maximize',
         'description': 'Mean pairwise diversity (L2)',
         'format': '.3f',
-        'wandb_keys': ['metrics/combination/diversity_l2', 'metrics/per_counterfactual/diversity_l2'],
+        'wandb_keys': ['metrics/combination/diversity_l2'],
     },
     'perc_valid_actionable_cf': {
         'name': 'Actionability (%)',
         'goal': 'maximize',
         'description': 'Percentage of valid and actionable CFs',
         'format': '.2%',
-        'wandb_keys': ['metrics/combination/perc_valid_actionable_cf', 'metrics/per_counterfactual/perc_valid_actionable_cf'],
+        'wandb_keys': ['metrics/combination/perc_valid_actionable_cf'],
     },
     'accuracy_knn_sklearn': {
         'name': 'Fidelity (KNN)',
         'goal': 'maximize',
         'description': 'KNN classifier accuracy on CFs',
         'format': '.2%',
-        'wandb_keys': ['metrics/combination/accuracy_knn_sklearn', 'metrics/per_counterfactual/accuracy_knn_sklearn', 
-                       'metrics/combination/accuracy_knn_dist', 'metrics/per_counterfactual/accuracy_knn_dist'],
+        'wandb_keys': ['metrics/combination/accuracy_knn_sklearn', 'metrics/combination/accuracy_knn_dist'],
     },
     'delta': {
         'name': 'Δ Prediction',
         'goal': 'maximize',
         'description': 'Mean prediction probability change',
         'format': '.3f',
-        'wandb_keys': ['metrics/combination/delta', 'metrics/per_counterfactual/delta'],
+        'wandb_keys': ['metrics/combination/delta'],
     },
 }
 
