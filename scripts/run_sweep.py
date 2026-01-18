@@ -235,6 +235,12 @@ def run_single_sweep_experiment(
     if overrides:
         config = apply_overrides(config, overrides)
     
+    # Set data.dataset and data.method properties
+    # These are normally set in run_experiment.py's main() but we call run_experiment() directly
+    if hasattr(config, 'data'):
+        config.data['dataset'] = dataset
+        config.data['method'] = method
+    
     # Import and run experiment
     from scripts.run_experiment import run_experiment
     
