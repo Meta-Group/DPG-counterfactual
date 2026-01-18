@@ -1872,16 +1872,6 @@ def run_experiment(config: DictConfig, wandb_run=None):
             "model/test_accuracy": test_score,
             "experiment/cf_method": cf_method,
         })
-        # Add method to data config for easy filtering in compare_techniques.py
-        try:
-            wandb_run.config.update({
-                'data': {
-                    **wandb_run.config.get('data', {}),
-                    'method': cf_method,
-                }
-            })
-        except Exception:
-            pass
     
     # Extract constraints (pass numpy array for DPG compatibility)
     print("INFO: Extracting constraints...")
@@ -2228,6 +2218,11 @@ def main():
     # Determine dataset and method for status tracking
     dataset_name = args.dataset or getattr(config.data, 'dataset', 'unknown')
     method_name = args.method or getattr(config.counterfactual, 'method', 'unknown')
+    
+    # Add method to data config for easy filtering in compare_techniques.py
+    # This must be done before init_wandb so it's included in the initial config
+    if hasattr(config, 'data'):
+        config.data.method = method_name
     
     # Write initial "running" status
     start_time = time.time()
