@@ -17,6 +17,10 @@ experiment:
   name: iris
   entity: mllab-ts-universit-di-trieste
   notes: Initial baseline run with default parameters
+output:
+  local_dir: outputs/iris
+  save_visualization_images: true
+  save_visualizations: true
 experiment_params:
   num_replications: 5
   num_samples: 1
