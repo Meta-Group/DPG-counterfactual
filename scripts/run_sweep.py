@@ -247,6 +247,8 @@ def run_single_sweep_experiment(
         'population_size', 'max_generations', 'boundary_weight',
         'distance_factor', 'sparsity_factor', 'constraints_factor',
         'original_escape_weight', 'escape_pressure',
+        # Fitness mode
+        'fitness_mode',
     ]
     
     for param in sweep_params:
@@ -479,6 +481,11 @@ def main():
     parser.add_argument('--population_size', type=int, default=None)
     parser.add_argument('--max_generations', type=int, default=None)
     
+    # Fitness mode
+    parser.add_argument('--fitness_mode', type=str, default=None,
+                       choices=['multi_objective', 'plausibility_only'],
+                       help='Fitness calculation mode: multi_objective (default) or plausibility_only')
+    
     args = parser.parse_args()
     
     # List metrics mode
@@ -553,6 +560,7 @@ def main():
             'sparsity_weight', 'diversity_weight', 'actionability_weight', 'plausibility_weight',
             'constraint_weight', 'repulsion_weight', 'constraint_handling_method',
             'use_niching', 'niche_radius', 'early_stopping_patience', 'convergence_threshold',
+            'fitness_mode',
         ]
         
         for param in param_list:

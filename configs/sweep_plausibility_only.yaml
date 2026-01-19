@@ -1,0 +1,61 @@
+# Plausibility-Only Fitness Mode Sweep Configuration
+# This sweep uses the plausibility-only fitness function in the GA
+# Fitness = distance to nearest real sample in target class + validity penalty
+#
+# This focuses purely on optimizing plausibility by evolving CFs that are
+# close to real data points in the target class.
+
+program: scripts/run_sweep.py
+method: bayes  # Bayesian optimization for efficient hyperparameter search
+metric:
+  name: metrics/combination/plausibility_nbr_cf
+  goal: minimize
+
+parameters:
+  # =============================================================================
+  # ENABLE PLAUSIBILITY-ONLY FITNESS MODE
+  # =============================================================================
+  fitness_mode:
+    value: plausibility_only
+
+  # =============================================================================
+  # MUTATION PARAMETERS
+  # These control how the GA explores the search space
+  # =============================================================================
+  mutation_rate:
+    distribution: uniform
+    min: 0.05
+    max: 0.5
+  
+  # =============================================================================
+  # SELECTION PARAMETERS
+  # =============================================================================
+  selection_method:
+    values: ["tournament", "roulette", "rank"]
+  
+  tournament_size:
+    distribution: int_uniform
+    min: 2
+    max: 8
+  
+  elitism_rate:
+    distribution: uniform
+    min: 0.05
+    max: 0.3
+
+  # =============================================================================
+  # CROSSOVER PARAMETERS
+  # =============================================================================
+  crossover_rate:
+    distribution: uniform
+    min: 0.5
+    max: 0.95
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
