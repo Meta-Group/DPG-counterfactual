@@ -55,6 +55,9 @@ methods:
     original_escape_weight: 2.0
     escape_pressure: 0.5
     prioritize_non_overlapping: true
+    # Fitness mode: 'multi_objective' (default) or 'plausibility_only'
+    # 'plausibility_only' uses ONLY distance to nearest real sample in target class
+    fitness_mode: multi_objective
   dpg:
     method: dpg
     diversity_weight: 0.5

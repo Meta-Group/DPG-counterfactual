@@ -306,6 +306,8 @@ def run_single_sample(
                 train_df_for_dice,  # Training data for DiCE
                 CONTINUOUS_INDICES,  # Continuous feature indices
                 CATEGORICAL_INDICES,  # Categorical feature indices
+                X_TRAIN,  # Training features for plausibility-only fitness
+                TRAIN_LABELS.values if hasattr(TRAIN_LABELS, 'values') else TRAIN_LABELS,  # Training labels for plausibility
             )
             for replication in range(config.experiment_params.num_replications)
         ]
