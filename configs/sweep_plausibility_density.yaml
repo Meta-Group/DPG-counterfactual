@@ -1,0 +1,76 @@
+# Plausibility-Density Fitness Mode Sweep Configuration
+# This sweep uses the plausibility-density fitness function in the GA
+# Fitness = average distance to k nearest neighbors in target class
+#
+# Unlike plausibility_only (which finds the nearest point = cluster edge),
+# this mode pushes counterfactuals toward the CENTER of clusters by
+# minimizing average distance to k=5 nearest neighbors.
+
+program: scripts/run_sweep.py
+method: bayes  # Bayesian optimization for efficient hyperparameter search
+metric:
+  name: metrics/combination/plausibility_nbr_cf
+  goal: minimize
+
+parameters:
+  # =============================================================================
+  # ENABLE PLAUSIBILITY-DENSITY FITNESS MODE
+  # =============================================================================
+  fitness_mode:
+    value: plausibility_density
+
+  # =============================================================================
+  # MUTATION PARAMETERS
+  # These control how the GA explores the search space
+  # =============================================================================
+  mutation_rate:
+    distribution: uniform
+    min: 0.05
+    max: 0.5
+  
+  # =============================================================================
+  # SELECTION PARAMETERS
+  # =============================================================================
+  selection_method:
+    values: ["tournament", "roulette", "rank"]
+  
+  tournament_size:
+    distribution: int_uniform
+    min: 2
+    max: 8
+  
+  elitism_rate:
+    distribution: uniform
+    min: 0.05
+    max: 0.3
+
+  # =============================================================================
+  # CROSSOVER PARAMETERS
+  # =============================================================================
+  crossover_rate:
+    distribution: uniform
+    min: 0.5
+    max: 0.95
+
+  # =============================================================================
+  # EARLY STOPPING / CONVERGENCE PARAMETERS
+  # These control when the GA stops - critical for reaching cluster center
+  # =============================================================================
+  patience:
+    distribution: int_uniform
+    min: 30
+    max: 80
+  
+  delta_threshold:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.001
+
+# =============================================================================
+# SWEEP CONFIGURATION
+# =============================================================================
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args}
