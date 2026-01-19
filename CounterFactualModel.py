@@ -980,8 +980,16 @@ class CounterFactualModel:
             # Fallback to Euclidean if no feature type info
             combined_distances = cdist(cf_features.reshape(1, -1), target_samples, metric='euclidean').flatten()
         
-        # Plausibility = minimum distance to any sample in target class
-        plausibility_distance = np.min(combined_distances)
+        # Plausibility calculation depends on fitness_mode
+        if self.fitness_mode == 'plausibility_density':
+            # DENSITY-BASED: Average distance to k-nearest neighbors
+            # This pushes CF toward the DENSE CENTER of the cluster, not just any nearby point
+            k = min(5, len(combined_distances))  # Use 5-NN or fewer if not enough samples
+            sorted_distances = np.sort(combined_distances)
+            plausibility_distance = np.mean(sorted_distances[:k])
+        else:
+            # STANDARD (plausibility_only): Minimum distance to any sample in target class
+            plausibility_distance = np.min(combined_distances)
         
         # Total fitness = plausibility distance + validity penalty
         # Lower is better (more plausible = closer to real data)
@@ -1398,11 +1406,14 @@ class CounterFactualModel:
         # Register evaluate operator after population creation so it can capture population in closure
         # Now includes original_class for escape penalty calculation
         # Choose fitness function based on fitness_mode
-        if self.fitness_mode == 'plausibility_only':
+        if self.fitness_mode in ('plausibility_only', 'plausibility_density'):
             if self.X_train is None or self.y_train is None:
-                raise ValueError("X_train and y_train must be provided for plausibility_only fitness mode")
+                raise ValueError("X_train and y_train must be provided for plausibility fitness modes")
             if self.verbose:
-                print(f"[Fitness Mode] Using PLAUSIBILITY-ONLY fitness (distance to nearest target class sample)")
+                if self.fitness_mode == 'plausibility_density':
+                    print(f"[Fitness Mode] Using PLAUSIBILITY-DENSITY fitness (k-NN avg distance to cluster center)")
+                else:
+                    print(f"[Fitness Mode] Using PLAUSIBILITY-ONLY fitness (distance to nearest target class sample)")
             toolbox.register("evaluate", lambda ind: (self.calculate_plausibility_fitness(
                 ind, original_features, sample, target_class, original_class),))
         else:
