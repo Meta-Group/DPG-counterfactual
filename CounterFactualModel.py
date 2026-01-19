@@ -14,7 +14,8 @@ class CounterFactualModel:
                  diversity_weight=0.5, repulsion_weight=4.0, boundary_weight=15.0, 
                  distance_factor=2.0, sparsity_factor=1.0, constraints_factor=3.0,
                  original_escape_weight=2.0, escape_pressure=0.5, prioritize_non_overlapping=True,
-                 max_bonus_cap=50.0, fitness_mode='multi_objective', X_train=None, y_train=None):
+                 max_bonus_cap=50.0, fitness_mode='multi_objective', X_train=None, y_train=None,
+                 continuous_features=None, categorical_features=None):
         """
         Initialize the CounterFactualDPG object.
 
@@ -40,6 +41,8 @@ class CounterFactualModel:
                 - 'plausibility_only': Uses ONLY plausibility (distance to nearest real sample in target class)
             X_train (np.ndarray): Training data for plausibility calculation (required if fitness_mode='plausibility_only')
             y_train (np.ndarray): Training labels for plausibility calculation (required if fitness_mode='plausibility_only')
+            continuous_features (list): Indices of continuous features for MAD distance calculation
+            categorical_features (list): Indices of categorical features for Hamming distance calculation
         """
         self.model = model
         self.constraints = constraints
@@ -69,13 +72,23 @@ class CounterFactualModel:
         self.fitness_mode = fitness_mode
         self.X_train = X_train
         self.y_train = y_train
+        self.continuous_features = continuous_features if continuous_features is not None else []
+        self.categorical_features = categorical_features if categorical_features is not None else []
         
-        # Precompute target class samples for plausibility calculation
+        # Precompute target class samples and MAD values for plausibility calculation
         self._target_class_samples_cache = {}
+        self._mad_values = None
         if X_train is not None and y_train is not None:
             unique_classes = np.unique(y_train)
             for cls in unique_classes:
                 self._target_class_samples_cache[cls] = X_train[y_train == cls]
+            
+            # Precompute MAD (Median Absolute Deviation) for continuous features
+            if len(self.continuous_features) > 0:
+                from scipy.stats import median_abs_deviation
+                self._mad_values = median_abs_deviation(X_train[:, self.continuous_features], axis=0)
+                # Avoid division by zero
+                self._mad_values = np.array([v if v != 0 else 1.0 for v in self._mad_values])
 
     def _analyze_boundary_overlap(self, original_class, target_class):
         """
@@ -860,6 +873,9 @@ class CounterFactualModel:
         This implements the implausibility metric from Guidotti's paper:
         impl = (1/|C|) * sum_{c in C} min_{x' in X} d(c, x')
         
+        Uses MAD (Median Absolute Deviation) normalized distance for continuous features
+        and Hamming distance for categorical features, matching the evaluation metric.
+        
         For a single counterfactual during evolution, we compute:
         - Distance to nearest sample in training data that belongs to target class
         
@@ -930,14 +946,42 @@ class CounterFactualModel:
             return INVALID_FITNESS
         
         # Calculate distance to nearest neighbor in target class
-        # Using Euclidean distance on normalized features for simplicity
+        # Using MAD+Hamming distance to match the evaluation metric
         cf_features = features.flatten()
+        n_features = len(cf_features)
         
-        # Compute distances to all target class samples
-        distances = cdist(cf_features.reshape(1, -1), target_samples, metric='euclidean').flatten()
+        # Calculate distances using MAD for continuous and Hamming for categorical
+        if len(self.continuous_features) > 0 and self._mad_values is not None:
+            # MAD-normalized Manhattan distance for continuous features
+            cont_cf = cf_features[self.continuous_features]
+            cont_targets = target_samples[:, self.continuous_features]
+            # MAD-normalized distance: |x - y| / MAD
+            cont_distances = np.sum(np.abs(cont_cf - cont_targets) / self._mad_values, axis=1)
+            ratio_cont = len(self.continuous_features) / n_features
+        else:
+            cont_distances = np.zeros(len(target_samples))
+            ratio_cont = 0.0
+        
+        if len(self.categorical_features) > 0:
+            # Hamming distance for categorical features
+            cat_cf = cf_features[self.categorical_features]
+            cat_targets = target_samples[:, self.categorical_features]
+            # Hamming = proportion of differing features
+            cat_distances = np.mean(cat_cf != cat_targets, axis=1)
+            ratio_cat = len(self.categorical_features) / n_features
+        else:
+            cat_distances = np.zeros(len(target_samples))
+            ratio_cat = 0.0
+        
+        # Combined distance (weighted by feature type ratio)
+        if ratio_cont + ratio_cat > 0:
+            combined_distances = ratio_cont * cont_distances + ratio_cat * cat_distances
+        else:
+            # Fallback to Euclidean if no feature type info
+            combined_distances = cdist(cf_features.reshape(1, -1), target_samples, metric='euclidean').flatten()
         
         # Plausibility = minimum distance to any sample in target class
-        plausibility_distance = np.min(distances)
+        plausibility_distance = np.min(combined_distances)
         
         # Total fitness = plausibility distance + validity penalty
         # Lower is better (more plausible = closer to real data)

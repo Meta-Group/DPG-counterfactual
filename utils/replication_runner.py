@@ -39,8 +39,8 @@ def _run_single_replication_dpg(args):
         model,
         constraints,
         _,  # train_df (not used for DPG)
-        _,  # continuous_features (not used for DPG)
-        _,  # categorical_features (not used for DPG)
+        continuous_features,  # Continuous feature indices for plausibility MAD distance
+        categorical_features,  # Categorical feature indices for plausibility Hamming distance
         X_train,  # Training features for plausibility
         y_train,  # Training labels for plausibility
     ) = args
@@ -74,6 +74,8 @@ def _run_single_replication_dpg(args):
             fitness_mode=fitness_mode,
             X_train=X_train,
             y_train=y_train,
+            continuous_features=continuous_features,
+            categorical_features=categorical_features,
         )
         
         counterfactual = cf_model.generate_counterfactual(
