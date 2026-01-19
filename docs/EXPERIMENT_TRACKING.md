@@ -86,7 +86,7 @@ Use the `query_results.py` utility to analyze experiment results:
 ### List All Runs
 
 ```bash
-python scripts/query_results.py list --project counterfactual-dpg
+python scripts/query_results.py list --project CounterFactualDPG
 ```
 
 ### Compare Specific Runs
@@ -101,7 +101,7 @@ python scripts/query_results.py compare \
 
 ```bash
 python scripts/query_results.py export \
-  --project counterfactual-dpg \
+  --project CounterFactualDPG \
   --output results.csv
 ```
 
@@ -109,7 +109,7 @@ python scripts/query_results.py export \
 
 ```bash
 python scripts/query_results.py best \
-  --project counterfactual-dpg \
+  --project CounterFactualDPG \
   --metric experiment/overall_success_rate
 ```
 

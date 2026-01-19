@@ -40,7 +40,7 @@ python3 scripts/query_results.py export --output my_results.csv
 wandb sweep configs/sweep_config.yaml
 
 # Run agent (copy sweep_id from above)
-wandb agent <your-entity>/counterfactual-dpg/<sweep_id>
+wandb agent <your-entity>/CounterFactualDPG/<sweep_id>
 ```
 
 ## Key Configuration Parameters
