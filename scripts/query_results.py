@@ -5,16 +5,16 @@ logged to WandB for analysis and reporting.
 
 Usage:
   # List all runs in a project
-  python scripts/query_results.py list --project counterfactual-dpg
+  python scripts/query_results.py list --project CounterFactualDPG
   
   # Compare specific runs by ID
   python scripts/query_results.py compare --runs run1_id run2_id --metric sample/success_rate
   
   # Export all runs to CSV
-  python scripts/query_results.py export --project counterfactual-dpg --output results.csv
+  python scripts/query_results.py export --project CounterFactualDPG --output results.csv
   
   # Get best run by metric
-  python scripts/query_results.py best --project counterfactual-dpg --metric experiment/overall_success_rate
+  python scripts/query_results.py best --project CounterFactualDPG --metric experiment/overall_success_rate
 """
 
 import argparse
@@ -261,28 +261,28 @@ def main():
     # List command
     list_parser = subparsers.add_parser('list', help='List all runs in a project')
     list_parser.add_argument('--entity', type=str, default='mllab-ts-universit-di-trieste', help='WandB entity (username or team)')
-    list_parser.add_argument('--project', type=str, default='counterfactual-dpg', help='WandB project name')
+    list_parser.add_argument('--project', type=str, default='CounterFactualDPG', help='WandB project name')
     list_parser.add_argument('--tags', nargs='+', help='Filter by tags')
     list_parser.add_argument('--limit', type=int, default=50, help='Maximum number of runs to show')
     
     # Compare command
     compare_parser = subparsers.add_parser('compare', help='Compare specific runs')
     compare_parser.add_argument('--entity', type=str, default='mllab-ts-universit-di-trieste', help='WandB entity (username or team)')
-    compare_parser.add_argument('--project', type=str, default='counterfactual-dpg', help='WandB project name')
+    compare_parser.add_argument('--project', type=str, default='CounterFactualDPG', help='WandB project name')
     compare_parser.add_argument('--runs', nargs='+', required=True, help='Run IDs to compare')
     compare_parser.add_argument('--metrics', nargs='+', help='Specific metrics to compare')
     
     # Export command
     export_parser = subparsers.add_parser('export', help='Export runs to CSV')
     export_parser.add_argument('--entity', type=str, default='mllab-ts-universit-di-trieste', help='WandB entity (username or team)')
-    export_parser.add_argument('--project', type=str, default='counterfactual-dpg', help='WandB project name')
+    export_parser.add_argument('--project', type=str, default='CounterFactualDPG', help='WandB project name')
     export_parser.add_argument('--output', type=str, required=True, help='Output CSV file path')
     export_parser.add_argument('--tags', nargs='+', help='Filter by tags')
     
     # Best command
     best_parser = subparsers.add_parser('best', help='Get best run by metric')
     best_parser.add_argument('--entity', type=str, default='mllab-ts-universit-di-trieste', help='WandB entity (username or team)')
-    best_parser.add_argument('--project', type=str, default='counterfactual-dpg', help='WandB project name')
+    best_parser.add_argument('--project', type=str, default='CounterFactualDPG', help='WandB project name')
     best_parser.add_argument('--metric', type=str, required=True, help='Metric to optimize')
     best_parser.add_argument('--minimize', action='store_true', help='Minimize metric (default: maximize)')
     
