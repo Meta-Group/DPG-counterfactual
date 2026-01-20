@@ -1875,8 +1875,13 @@ def run_experiment(config: DictConfig, wandb_run=None):
     
     # Extract constraints (pass numpy array for DPG compatibility)
     print("INFO: Extracting constraints...")
+    
+    # Get DPG config from counterfactual section if available
+    dpg_config = getattr(config.counterfactual, 'config', None)
+    
     constraints = ConstraintParser.extract_constraints_from_dataset(
-        model, TRAIN_FEATURES.values, TRAIN_LABELS, FEATURE_NAMES
+        model, TRAIN_FEATURES.values, TRAIN_LABELS, FEATURE_NAMES,
+        dpg_config=dpg_config
     )
 
     # --- DPG: send extracted boundaries to WandB under a new 'dpg' section ---
