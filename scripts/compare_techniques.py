@@ -763,7 +763,9 @@ def plot_heatmap_winners(
         return None
     
     datasets = sorted(comparison_df['dataset'].unique())
-    metrics = list(COMPARISON_METRICS.keys())
+    # Exclude delta and perc_valid_cf from metrics
+    excluded_metrics = {'delta', 'perc_valid_cf'}
+    metrics = [m for m in COMPARISON_METRICS.keys() if m not in excluded_metrics]
     
     # Create winner matrix: 1 = DPG wins, -1 = DiCE wins, 0 = tie/na
     winner_matrix = np.zeros((len(datasets), len(metrics)))
@@ -788,6 +790,21 @@ def plot_heatmap_winners(
                     winner_matrix[i, j] = 1
                 elif winner == 'dice':
                     winner_matrix[i, j] = -1
+    
+    # Filter out datasets without any data (all zeros = tie/na)
+    datasets_with_data = []
+    rows_with_data = []
+    for i, dataset in enumerate(datasets):
+        if np.any(winner_matrix[i, :] != 0):
+            datasets_with_data.append(dataset)
+            rows_with_data.append(i)
+    
+    if len(datasets_with_data) == 0:
+        print("No datasets with data to display")
+        return None
+    
+    winner_matrix = winner_matrix[rows_with_data, :]
+    datasets = datasets_with_data
     
     fig, ax = plt.subplots(figsize=figsize)
     
