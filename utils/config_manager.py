@@ -36,6 +36,26 @@ class DictConfig:
     def __setitem__(self, key, value):
         self._config[key] = value
         setattr(self, key, value)
+    
+    def get(self, key, default=None):
+        """Get a value from the config, returning default if not found."""
+        return self._config.get(key, default)
+    
+    def __contains__(self, key):
+        """Check if key exists in config."""
+        return key in self._config
+    
+    def keys(self):
+        """Return config keys."""
+        return self._config.keys()
+    
+    def items(self):
+        """Return config items."""
+        return self._config.items()
+    
+    def values(self):
+        """Return config values."""
+        return self._config.values()
 
 
 def deep_merge_dicts(base: dict, override: dict) -> dict:

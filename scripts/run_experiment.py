@@ -1877,7 +1877,27 @@ def run_experiment(config: DictConfig, wandb_run=None):
     print("INFO: Extracting constraints...")
     
     # Get DPG config from counterfactual section if available
-    dpg_config = getattr(config.counterfactual, 'config', None)
+    # Restructure to match DPG's expected format: {'dpg': {'default': {...}, 'visualization': {...}}}
+    raw_dpg_config = getattr(config.counterfactual, 'config', None)
+    dpg_config = None
+    if raw_dpg_config is not None:
+        # Convert to dict if needed
+        if hasattr(raw_dpg_config, 'to_dict'):
+            raw_dpg_config = raw_dpg_config.to_dict()
+        elif hasattr(raw_dpg_config, '_config'):
+            raw_dpg_config = raw_dpg_config._config
+        
+        # Restructure: flat config -> nested DPG format
+        dpg_config = {
+            'dpg': {
+                'default': {
+                    'perc_var': raw_dpg_config.get('perc_var', 0.0000001),
+                    'decimal_threshold': raw_dpg_config.get('decimal_threshold', 3),
+                    'n_jobs': raw_dpg_config.get('n_jobs', -1),
+                },
+                'visualization': raw_dpg_config.get('visualization', {}),
+            }
+        }
     
     constraints = ConstraintParser.extract_constraints_from_dataset(
         model, TRAIN_FEATURES.values, TRAIN_LABELS, FEATURE_NAMES,
