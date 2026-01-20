@@ -347,10 +347,10 @@ def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None,
         Best values are highlighted in green when styled=True.
         
     Example output:
-        |          | perc_valid_cf | plausibility_sum | distance_l2 | ...
-        |----------|---------------|------------------|-------------|----
-        | dpg      | 0.95          | 23.5             | 2.1         | ...
-        | dice     | 0.98          | 18.2             | 1.8         | ...
+        |          | perc_valid_cf | plausibility_sum | distance_l2 | Link | ...
+        |----------|---------------|------------------|-------------|------|----
+        | dpg      | 0.95          | 23.5             | 2.1         | [link] | ...
+        | dice     | 0.98          | 18.2             | 1.8         | [link] | ...
     """
     if len(df) == 0:
         return df
@@ -368,9 +368,19 @@ def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None,
     # Aggregate by technique only (across all datasets if dataset is None)
     agg_data = df.groupby('technique')[metric_cols].mean()
     
+    # Collect run IDs and create wandb links for each technique
+    run_links = {}
+    for technique in df['technique'].unique():
+        technique_runs = df[df['technique'] == technique]['run_id'].tolist()
+        links = [f"https://wandb.ai/{DEFAULT_ENTITY}/{DEFAULT_PROJECT}/runs/{run_id}" for run_id in technique_runs]
+        run_links[technique] = ', '.join(links)
+    
     # Reset index to make technique a column, then set it back as index for display
     result = agg_data.reset_index()
     result = result.set_index('technique')
+    
+    # Add Link column
+    result['Link'] = result.index.map(run_links)
     
     # Build rename map and track goals for styling
     rename_map = {}
@@ -401,7 +411,7 @@ def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None,
         
         return ['font-weight: bold' if v else '' for v in is_best]
     
-    return result.style.apply(highlight_best, axis=0).format('{:.4f}')
+    return result.style.apply(highlight_best, axis=0).format('{:.4f}', subset=[col for col in result.columns if col != 'Link'])
 
 
 def determine_winner(dpg_val: float, dice_val: float, goal: str) -> str:
