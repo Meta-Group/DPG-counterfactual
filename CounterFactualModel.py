@@ -14,7 +14,7 @@ class CounterFactualModel:
                  diversity_weight=0.5, repulsion_weight=4.0, boundary_weight=15.0, 
                  distance_factor=2.0, sparsity_factor=1.0, constraints_factor=3.0,
                  original_escape_weight=2.0, escape_pressure=0.5, prioritize_non_overlapping=True,
-                 max_bonus_cap=50.0):
+                 max_bonus_cap=50.0, X_train=None, y_train=None):
         """
         Initialize the CounterFactualDPG object.
 
@@ -35,6 +35,8 @@ class CounterFactualModel:
             escape_pressure (float): Balance between escaping original (1.0) vs approaching target (0.0).
             prioritize_non_overlapping (bool): Prioritize mutating features with non-overlapping boundaries.
             max_bonus_cap (float): Maximum cap for diversity/repulsion bonuses to prevent unbounded negative fitness.
+            X_train (DataFrame): Training data features for nearest neighbor fallback.
+            y_train (Series): Training data labels for nearest neighbor fallback.
         """
         self.model = model
         self.constraints = constraints
@@ -59,6 +61,9 @@ class CounterFactualModel:
         self.feature_names = getattr(model, 'feature_names_in_', None)
         # Cache for boundary analysis results
         self._boundary_analysis_cache = {}
+        # Store training data for nearest neighbor fallback
+        self.X_train = X_train
+        self.y_train = y_train
 
     def _analyze_boundary_overlap(self, original_class, target_class):
         """
@@ -125,36 +130,44 @@ class CounterFactualModel:
                 non_overlapping = False
                 escape_dir = 'both'
                 
-                # Case 1: Target has upper bound, Original has lower bound
-                # Example: target_max=2.45, orig_min=2.45 -> must DECREASE to escape
-                if target_max is not None and orig_min is not None:
-                    if target_max <= orig_min:
-                        non_overlapping = True
-                        escape_dir = 'decrease'  # Must decrease to get below target_max
-                    elif target_max < orig_min + (orig_max - orig_min if orig_max else 1):
-                        escape_dir = 'decrease'  # Prefer decreasing
-                
-                # Case 2: Target has lower bound, Original has upper bound
-                # Example: target_min=5, orig_max=4 -> must INCREASE to escape
-                if target_min is not None and orig_max is not None:
-                    if target_min >= orig_max:
-                        non_overlapping = True
-                        escape_dir = 'increase'  # Must increase to get above target_min
-                    elif target_min > orig_min if orig_min else 0:
-                        escape_dir = 'increase'  # Prefer increasing
-                
-                # Case 3: Both have same type of bound - compare values
-                if target_min is not None and orig_min is not None and target_max is None and orig_max is None:
-                    if target_min > orig_min:
-                        escape_dir = 'increase'  # Target requires higher minimum
-                    elif target_min < orig_min:
-                        escape_dir = 'decrease'  # Target allows lower values
-                        
-                if target_max is not None and orig_max is not None and target_min is None and orig_min is None:
-                    if target_max < orig_max:
-                        escape_dir = 'decrease'  # Target requires lower maximum
-                    elif target_max > orig_max:
-                        escape_dir = 'increase'  # Target allows higher values
+                # First check if constraints are identical (100% overlap, no discrimination)
+                if (target_min == orig_min and target_max == orig_max):
+                    # Identical constraints - maximally overlapping, not useful for discrimination
+                    non_overlapping = False
+                    escape_dir = 'both'
+                else:
+                    # Case 1: Target has upper bound, Original has lower bound
+                    # Example: target_max=2.45, orig_min=2.50 -> must DECREASE to escape
+                    # Use strict inequality to avoid false positives when bounds touch
+                    if target_max is not None and orig_min is not None:
+                        if target_max < orig_min:
+                            non_overlapping = True
+                            escape_dir = 'decrease'  # Must decrease to get below target_max
+                        elif target_max < orig_min + (orig_max - orig_min if orig_max else 1):
+                            escape_dir = 'decrease'  # Prefer decreasing
+                    
+                    # Case 2: Target has lower bound, Original has upper bound
+                    # Example: target_min=5, orig_max=4 -> must INCREASE to escape
+                    # Use strict inequality
+                    if target_min is not None and orig_max is not None:
+                        if target_min > orig_max:
+                            non_overlapping = True
+                            escape_dir = 'increase'  # Must increase to get above target_min
+                        elif target_min > orig_min if orig_min else 0:
+                            escape_dir = 'increase'  # Prefer increasing
+                    
+                    # Case 3: Both have same type of bound - compare values
+                    if target_min is not None and orig_min is not None and target_max is None and orig_max is None:
+                        if target_min > orig_min:
+                            escape_dir = 'increase'  # Target requires higher minimum
+                        elif target_min < orig_min:
+                            escape_dir = 'decrease'  # Target allows lower values
+                            
+                    if target_max is not None and orig_max is not None and target_min is None and orig_min is None:
+                        if target_max < orig_max:
+                            escape_dir = 'decrease'  # Target requires lower maximum
+                        elif target_max > orig_max:
+                            escape_dir = 'increase'  # Target allows higher values
                 
                 if non_overlapping:
                     analysis['non_overlapping'].append(feature)
@@ -178,15 +191,19 @@ class CounterFactualModel:
         self._boundary_analysis_cache[cache_key] = analysis
         return analysis
 
-    def _calculate_original_escape_penalty(self, individual, sample, original_class):
+    def _calculate_original_escape_penalty(self, individual, sample, original_class, target_class=None):
         """
         Calculate penalty for features still within original class bounds.
         Penalizes individuals that haven't escaped the original class boundaries.
+        
+        Enhanced: Only penalizes non-overlapping features where escaping is meaningful.
+        For overlapping features, being within both class bounds is acceptable.
         
         Args:
             individual (dict): The individual to evaluate.
             sample (dict): Original sample.
             original_class (int): The original class of the sample.
+            target_class (int, optional): The target class for overlap analysis.
             
         Returns:
             float: Penalty score (higher = worse, more features still in original bounds).
@@ -195,9 +212,25 @@ class CounterFactualModel:
         if not original_constraints:
             return 0.0
         
+        # Get non-overlapping features if target_class is provided
+        non_overlapping_features = set()
+        if target_class is not None:
+            boundary_analysis = self._analyze_boundary_overlap(original_class, target_class)
+            non_overlapping_features = set(
+                self._normalize_feature_name(f) for f in boundary_analysis.get('non_overlapping', [])
+            )
+        
         penalty = 0.0
+        features_checked = 0
         
         for feature, value in individual.items():
+            norm_feature = self._normalize_feature_name(feature)
+            
+            # Only apply escape penalty for non-overlapping features
+            # For overlapping features, being within original bounds is OK if also in target bounds
+            if target_class is not None and norm_feature not in non_overlapping_features:
+                continue
+            
             original_value = sample.get(feature, value)
             
             # Find matching original constraint
@@ -413,7 +446,7 @@ class CounterFactualModel:
         """
         return self._normalize_feature_name(feature1) == self._normalize_feature_name(feature2)
 
-    def validate_constraints(self, S_prime, sample, target_class):
+    def validate_constraints(self, S_prime, sample, target_class, original_class=None, strict_mode=True):
         """
         Validate if the modified sample S_prime meets all constraints for the specified target class.
 
@@ -421,6 +454,9 @@ class CounterFactualModel:
             S_prime (dict): Modified sample with feature values.
             sample (dict): The original sample with feature values.
             target_class (int): The target class for filtering constraints.
+            original_class (int, optional): The original class (for overlap analysis).
+            strict_mode (bool): If True, penalize values in non-target class bounds.
+                               If False (relaxed mode), only check target class constraints.
 
         Returns:
             (bool, float): Tuple of whether the changes are valid and a penalty score.
@@ -456,6 +492,19 @@ class CounterFactualModel:
                         valid_change = False
                         penalty += abs(new_value - max_val)
 
+        # In relaxed mode, skip non-target class penalty (used when constraints overlap significantly)
+        if not strict_mode:
+            return valid_change, penalty
+
+        # Get boundary overlap analysis to identify non-overlapping features
+        # Only penalize non-target class violations for NON-OVERLAPPING features
+        non_overlapping_features = set()
+        if original_class is not None:
+            boundary_analysis = self._analyze_boundary_overlap(original_class, target_class)
+            non_overlapping_features = set(
+                self._normalize_feature_name(f) for f in boundary_analysis.get('non_overlapping', [])
+            )
+
         # Collect all constraints that are NOT related to the target class
         non_target_class_constraints = [
             condition
@@ -466,9 +515,16 @@ class CounterFactualModel:
 
         for feature, new_value in S_prime.items():
             original_value = sample.get(feature)
+            norm_feature = self._normalize_feature_name(feature)
 
             # Check if the feature value has changed
             if new_value != original_value:
+                # Only apply non-target penalty for NON-OVERLAPPING features
+                # For overlapping features, being within both class constraints is acceptable
+                if original_class is not None and norm_feature not in non_overlapping_features:
+                    # This feature has overlapping constraints - skip non-target penalty
+                    continue
+                
                 # Validate numerical constraints NOT related to the target class
                 matching_constraint = next(
                     (condition for condition in non_target_class_constraints if self._features_match(condition["feature"], feature)),
@@ -730,8 +786,10 @@ class CounterFactualModel:
             if np.array_equal(features.flatten(), original_features.flatten()):
                 return INVALID_FITNESS
 
-            # Check the constraints
-            is_valid_constraint, penalty_constraints = self.validate_constraints(individual, sample, target_class)
+            # Check the constraints (pass original_class for smart overlap handling)
+            is_valid_constraint, penalty_constraints = self.validate_constraints(
+                individual, sample, target_class, original_class=original_class
+            )
             
             # Calculate class prediction probability for soft penalty
             # This provides gradient information even when not yet in target class
@@ -773,8 +831,11 @@ class CounterFactualModel:
             
             # DUAL-BOUNDARY: Add original class escape penalty
             # This penalizes individuals that haven't escaped the original class boundaries
+            # Only for non-overlapping features where escaping is meaningful
             if original_class is not None and self.original_escape_weight > 0:
-                escape_penalty = self._calculate_original_escape_penalty(individual, sample, original_class)
+                escape_penalty = self._calculate_original_escape_penalty(
+                    individual, sample, original_class, target_class=target_class
+                )
                 base_fitness += self.original_escape_weight * escape_penalty
             
             # If population is provided, add diversity and repulsion bonuses
@@ -1432,12 +1493,16 @@ class CounterFactualModel:
         
         return best_individual
 
-    def generate_counterfactual(self, sample, target_class, population_size=100, generations=100, mutation_rate=0.8, n_jobs=-1):
+    def generate_counterfactual(self, sample, target_class, population_size=100, generations=100, 
+                                  mutation_rate=0.8, n_jobs=-1, allow_relaxation=True, relaxation_factor=2.0):
         """
         Generate a counterfactual for the given sample and target class using a genetic algorithm.
         
         Enhanced with dual-boundary support: the GA uses both original and target class
         constraints to guide evolution, escaping original bounds while approaching target bounds.
+        
+        If allow_relaxation=True and strict constraints fail, automatically retries with
+        progressively relaxed constraints to ensure a valid counterfactual is found.
 
         Args:
             sample (dict): The original sample with feature values.
@@ -1446,6 +1511,8 @@ class CounterFactualModel:
             generations (int): Number of generations to run.
             mutation_rate (float): Per-feature mutation probability.
             n_jobs (int): Number of parallel jobs. -1=all CPUs (default), 1=sequential.
+            allow_relaxation (bool): If True, retry with relaxed constraints on failure.
+            relaxation_factor (float): Factor to expand constraint bounds by (2.0 = double range).
 
         Returns:
             dict: A modified sample representing the counterfactual or None if not found.
@@ -1460,4 +1527,187 @@ class CounterFactualModel:
             sample, target_class, population_size, generations, 
             mutation_rate=mutation_rate, n_jobs=n_jobs, original_class=sample_class
         )
+        
+        # If strict constraints failed and relaxation is allowed, try with relaxed constraints
+        if counterfactual is None and allow_relaxation and self.constraints:
+            if self.verbose:
+                print("\nStrict constraints failed. Attempting with relaxed constraints...")
+            
+            # Store original constraints
+            original_constraints = self.constraints
+            
+            # Try progressively relaxed constraints
+            for relax_level in [relaxation_factor, relaxation_factor * 2, None]:
+                if relax_level is None:
+                    # Final attempt: no constraints (pure model optimization)
+                    if self.verbose:
+                        print("  Attempting without DPG constraints (pure classification optimization)...")
+                    self.constraints = {}
+                else:
+                    if self.verbose:
+                        print(f"  Attempting with {relax_level}x relaxed constraints...")
+                    self.constraints = self._relax_constraints(original_constraints, relax_level)
+                
+                counterfactual = self.genetic_algorithm(
+                    sample, target_class, population_size, generations, 
+                    mutation_rate=mutation_rate, n_jobs=n_jobs, original_class=sample_class
+                )
+                
+                if counterfactual is not None:
+                    if self.verbose:
+                        # Check constraint validity with original constraints
+                        is_valid, penalty = self.validate_constraints(
+                            counterfactual, sample, target_class, 
+                            original_class=sample_class, strict_mode=True
+                        )
+                        print(f"  Found counterfactual (original constraint valid: {is_valid}, penalty: {penalty:.2f})")
+                    break
+            
+            # Restore original constraints
+            self.constraints = original_constraints
+        
+        # Ultimate fallback: use nearest neighbor from training data
+        if counterfactual is None and allow_relaxation:
+            if self.verbose:
+                print("\nGA methods failed. Attempting nearest neighbor fallback...")
+            counterfactual = self.find_nearest_counterfactual(
+                sample, target_class, validate_prediction=True
+            )
+            if counterfactual is not None and self.verbose:
+                print("  Nearest neighbor fallback succeeded!")
+        
         return counterfactual
+    
+    def _relax_constraints(self, constraints, factor=2.0):
+        """
+        Relax constraints by expanding their bounds by a factor.
+        
+        Args:
+            constraints: Original constraint dictionary
+            factor: Factor to expand bounds by (e.g., 2.0 doubles the range)
+            
+        Returns:
+            dict: Relaxed constraints
+        """
+        relaxed = {}
+        for class_key, class_constraints in constraints.items():
+            relaxed[class_key] = []
+            for c in class_constraints:
+                feature = c.get('feature', '')
+                min_val = c.get('min')
+                max_val = c.get('max')
+                
+                if min_val is not None and max_val is not None:
+                    # Expand the range by factor
+                    center = (min_val + max_val) / 2
+                    half_range = (max_val - min_val) / 2
+                    new_min = center - half_range * factor
+                    new_max = center + half_range * factor
+                    relaxed[class_key].append({
+                        'feature': feature,
+                        'min': new_min,
+                        'max': new_max
+                    })
+                else:
+                    # Keep as-is if no bounds
+                    relaxed[class_key].append(c.copy())
+        return relaxed
+
+    def find_nearest_counterfactual(self, sample, target_class, X_train=None, y_train=None, 
+                                    metric='euclidean', validate_prediction=True):
+        """
+        Find the nearest training sample that is predicted as the target class.
+        This is a simple but effective fallback when GA-based search fails.
+        
+        Args:
+            sample (dict): The original sample with feature values
+            target_class (int): The target class for counterfactual
+            X_train (DataFrame): Training data features (optional, uses model's training data if available)
+            y_train (Series): Training data labels (optional)
+            metric (str): Distance metric to use
+            validate_prediction (bool): If True, only return samples that model predicts as target_class
+            
+        Returns:
+            dict: The nearest valid counterfactual or None
+        """
+        from scipy.spatial.distance import cdist
+        
+        feature_names = list(sample.keys())
+        sample_array = np.array([sample[f] for f in feature_names]).reshape(1, -1)
+        
+        # Try to get training data from the model if not provided
+        if X_train is None:
+            # Try to access training data if stored
+            X_train = getattr(self, 'X_train', None)
+        if y_train is None:
+            y_train = getattr(self, 'y_train', None)
+            
+        if X_train is None or y_train is None:
+            if self.verbose:
+                print("Warning: No training data available for nearest neighbor search")
+            return None
+        
+        # Ensure consistent format
+        if isinstance(X_train, pd.DataFrame):
+            X_train_array = X_train.values
+            feature_names = list(X_train.columns)
+        else:
+            X_train_array = np.array(X_train)
+            
+        y_train_array = np.array(y_train)
+        
+        # Get samples of the target class
+        target_mask = y_train_array == target_class
+        target_samples = X_train_array[target_mask]
+        target_indices = np.where(target_mask)[0]
+        
+        if len(target_samples) == 0:
+            if self.verbose:
+                print(f"No samples of target class {target_class} in training data")
+            return None
+        
+        # Compute distances to all target class samples
+        distances = cdist(sample_array, target_samples, metric=metric)[0]
+        
+        # Sort by distance
+        sorted_indices = np.argsort(distances)
+        
+        # Find the nearest sample that is predicted as target class
+        for idx in sorted_indices:
+            candidate = target_samples[idx].reshape(1, -1)
+            
+            if validate_prediction:
+                # Check that the model predicts this as target class
+                try:
+                    if self.feature_names is not None:
+                        candidate_df = pd.DataFrame(candidate, columns=self.feature_names)
+                        pred = self.model.predict(candidate_df)[0]
+                    else:
+                        pred = self.model.predict(candidate)[0]
+                    
+                    if pred != target_class:
+                        continue  # Skip samples misclassified by model
+                except Exception as e:
+                    if self.verbose:
+                        print(f"Prediction failed: {e}")
+                    continue
+            
+            # Convert to dict
+            candidate_dict = {feature_names[i]: candidate[0][i] for i in range(len(feature_names))}
+            
+            if self.verbose:
+                print(f"Found nearest counterfactual at distance {distances[idx]:.2f}")
+                # Check constraint validity
+                if self.constraints:
+                    original_class = self.model.predict(pd.DataFrame([sample]))[0]
+                    is_valid, penalty = self.validate_constraints(
+                        candidate_dict, sample, target_class, original_class=original_class
+                    )
+                    print(f"  DPG constraint valid: {is_valid}, penalty: {penalty:.2f}")
+            
+            return candidate_dict
+        
+        if self.verbose:
+            print(f"No valid counterfactual found among {len(target_samples)} target class samples")
+        return None
+
