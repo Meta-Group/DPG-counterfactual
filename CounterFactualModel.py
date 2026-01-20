@@ -14,7 +14,7 @@ class CounterFactualModel:
                  diversity_weight=0.5, repulsion_weight=4.0, boundary_weight=15.0, 
                  distance_factor=2.0, sparsity_factor=1.0, constraints_factor=3.0,
                  original_escape_weight=2.0, escape_pressure=0.5, prioritize_non_overlapping=True,
-                 max_bonus_cap=50.0, X_train=None, y_train=None, min_probability_margin=0.05):
+                 max_bonus_cap=50.0, X_train=None, y_train=None, min_probability_margin=0.001):
         """
         Initialize the CounterFactualDPG object.
 
@@ -39,7 +39,7 @@ class CounterFactualModel:
             y_train (Series): Training data labels for nearest neighbor fallback.
             min_probability_margin (float): Minimum margin the target class probability must exceed the 
                 second-highest class probability by. Prevents accepting weak counterfactuals where
-                the prediction is essentially a tie. Default 0.05 (5% margin).
+                the prediction is essentially a tie. Default 0.001 (0.1% margin).
         """
         self.model = model
         self.constraints = constraints
