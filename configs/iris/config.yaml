@@ -35,13 +35,3 @@ methods:
     - none
   dpg:
     diversity_weight: 1.5
-    # DPG configuration parameters (optional, overrides defaults from configs/config.yaml)
-    config:
-      perc_var: 0.0000001
-      decimal_threshold: 3
-      n_jobs: -1
-      visualization:
-        class_node:
-          fillcolor: "#a4c2f4"
-          shape: "box"
-          style: "rounded, filled"
