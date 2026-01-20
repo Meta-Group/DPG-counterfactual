@@ -1,3 +1,7 @@
+import warnings
+# Suppress matplotlib tight_layout warnings which occur with complex multi-panel figures
+warnings.filterwarnings('ignore', message='.*tight_layout.*')
+
 def plot_explainer_summary(explainer, original_sample, counterfactual):
     """
     Display a text summary of the counterfactual explanation inside a matplotlib figure, styled like other plots.
@@ -1155,10 +1159,13 @@ def plot_pairwise_with_counterfactual_df(model, dataset, target, sample, counter
     # Add legends and adjust layout
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='upper right')
-    try:
-        plt.tight_layout()
-    except:
-        pass  # Ignore tight_layout warnings for complex plots
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            plt.tight_layout()
+        except:
+            pass  # Ignore tight_layout errors for complex plots
     plt.close(fig)
     return fig
 
