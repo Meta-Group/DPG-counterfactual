@@ -14,3 +14,6 @@ experiment:
   tags:
   - oil
   name: oil
+output:
+  save_visualizations: true
+  save_visualization_images: true
