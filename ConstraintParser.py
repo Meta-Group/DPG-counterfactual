@@ -222,9 +222,9 @@ class ConstraintParser:
     @staticmethod
     def extract_constraints_from_dataset(model, train_features, train_labels, feature_names, dpg_config=None):
         """
-        Extract constraints from the dataset using Decision Predicate Graph (DPG).
+        Extract constraints and communities from the dataset using Decision Predicate Graph (DPG).
         Uses DPG's graph-based boundary extraction to determine decision boundaries
-        from the ensemble model's decision paths.
+        and community detection from the ensemble model's decision paths.
         
         Args:
             model: Trained sklearn model
@@ -234,7 +234,9 @@ class ConstraintParser:
             dpg_config: Optional DPG config dict (from main config's counterfactual.dpg.config)
             
         Returns:
-            Dictionary mapping class labels to feature constraints (min/max format)
+            Dictionary with keys:
+                - 'constraints': Dict mapping class labels to feature constraints (min/max format)
+                - 'communities': List of sets, where each set contains node labels belonging to a community
         """
         # Convert OmegaConf DictConfig to regular dict if needed
         if dpg_config is not None and HAS_OMEGACONF and isinstance(dpg_config, DictConfig):
@@ -260,13 +262,16 @@ class ConstraintParser:
             # Fallback: if DPG extraction fails, return empty constraints
             return {}
         
-        # Extract graph metrics which includes Class Bounds
+        # Extract graph metrics which includes Class Bounds and Communities
         target_names = [str(c) for c in np.unique(train_labels)]
         df_dpg = GraphMetrics.extract_graph_metrics(
-            dpg_model, 
+            dpg_model,
             nodes_list,
             target_names=target_names
         )
+        
+        # Extract communities from DPG graph
+        communities = df_dpg.get("Communities", [])
         
         # Parse Class Bounds into expected format
         parsed_constraints = {}
@@ -308,4 +313,7 @@ class ConstraintParser:
                 else:
                     parsed_constraints[f"Class {class_name}"] = parsed_list
         
-        return parsed_constraints
+        return {
+            'constraints': parsed_constraints,
+            'communities': communities
+        }

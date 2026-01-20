@@ -1899,10 +1899,12 @@ def run_experiment(config: DictConfig, wandb_run=None):
             }
         }
     
-    constraints = ConstraintParser.extract_constraints_from_dataset(
+    dpg_result = ConstraintParser.extract_constraints_from_dataset(
         model, TRAIN_FEATURES.values, TRAIN_LABELS, FEATURE_NAMES,
         dpg_config=dpg_config
     )
+    constraints = dpg_result['constraints']
+    communities = dpg_result.get('communities', [])
 
     # --- DPG: send extracted boundaries to WandB under a new 'dpg' section ---
     normalized_constraints = None  # Will store normalized constraints for sample folders
@@ -1920,11 +1922,12 @@ def run_experiment(config: DictConfig, wandb_run=None):
                 # Store for saving in sample folders
                 normalized_constraints = normalized
 
-                # Put normalized constraints and dpg config into config so they appear under the Config tab
+                # Put normalized constraints, communities, and dpg config into config so they appear under the Config tab
                 try:
                     dpg_wandb_data = {
                         'constraints': normalized,
-                        'config': dpg_config.get('dpg', {}) if dpg_config else {}
+                        'config': dpg_config.get('dpg', {}) if dpg_config else {},
+                        'communities': communities
                     }
                     try:
                         wandb_run.config['dpg'] = dpg_wandb_data
