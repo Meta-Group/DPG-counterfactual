@@ -4,6 +4,18 @@
 This script fetches all runs from WandB, aggregates metrics by dataset and technique,
 and generates visualizations for easy comparison.
 
+Functions:
+- fetch_all_runs(): Fetch runs from WandB
+- filter_to_latest_run_per_combo(): Filter to keep only most recent run per dataset X technique combo
+- aggregate_by_dataset_technique(): Aggregate metrics by dataset and technique
+- create_comparison_table(): Create side-by-side comparison table
+- create_method_metrics_table(): Create table with methods as rows and metrics as columns
+- print_comparison_summary(): Print formatted comparison summary to console
+- plot_grouped_bar_chart(): Create grouped bar chart comparing DPG vs DiCE
+- plot_radar_chart(): Create radar/spider chart for a single dataset
+- plot_heatmap_winners(): Create heatmap showing which technique wins per dataset-metric pair
+- generate_html_report(): Generate interactive HTML report using Plotly
+
 Usage:
     # Generate comparison report (default: prints summary table)
     python scripts/compare_techniques.py --project CounterFactualDPG
