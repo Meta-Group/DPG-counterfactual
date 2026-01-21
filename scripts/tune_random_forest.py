@@ -22,6 +22,7 @@ sys.path.insert(0, str(REPO_ROOT))
 import argparse
 import json
 import os
+import yaml
 from datetime import datetime
 
 import numpy as np
@@ -212,6 +213,59 @@ def get_dataset_config_path(dataset_name: str) -> str:
     return str(config_path)
 
 
+def save_config(config_path: str, config) -> None:
+    """Save configuration dictionary to a YAML file.
+    
+    Args:
+        config_path: Path to the YAML file to write
+        config: Configuration dictionary or DictConfig to save
+    """
+    # Convert DictConfig to regular dict if needed
+    try:
+        from omegaconf import DictConfig, OmegaConf
+        if isinstance(config, DictConfig):
+            config = OmegaConf.to_container(config, resolve=True)
+    except ImportError:
+        # If omegaconf is not available, try to convert to dict directly
+        if hasattr(config, '__dict__'):
+            config = dict(config)
+        elif not isinstance(config, dict):
+            config = dict(config)
+    
+    with open(config_path, 'w') as f:
+        yaml.dump(config, f, default_flow_style=False, indent=2, sort_keys=False, allow_unicode=True)
+
+
+def update_config_with_model_params(config_path: str, best_params: dict) -> None:
+    """Update the config file's model section with best hyperparameters.
+    
+    This function ONLY modifies the 'model' section of the config file and
+    preserves ALL other sections (data, experiment, experiment_params, output,
+    methods, etc.) exactly as they were loaded.
+    
+    Args:
+        config_path: Path to the config.yaml file
+        best_params: Dictionary of best parameters from RandomizedSearchCV
+    """
+    # Load the dataset-specific config directly (without merging with base config)
+    # This ensures we only modify the dataset-specific file and preserve its structure
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f) or {}
+    
+    # Ensure model section exists
+    if 'model' not in config:
+        config['model'] = {}
+    
+    # Update ONLY the model section with type and best parameters
+    config['model']['type'] = 'RandomForestClassifier'
+    for param, value in best_params.items():
+        # Handle None values properly (written as null in YAML)
+        config['model'][param] = value
+    
+    # Save the updated config back to the file (only model section is modified)
+    save_config(config_path, config)
+
+
 def evaluate_model(model, X_test, y_test, multiclass: bool = False) -> dict:
     """Evaluate model performance on test set."""
     y_pred = model.predict(X_test)
@@ -400,6 +454,10 @@ def main():
     cv_results_file = output_path / f"cv_results_{timestamp}.csv"
     cv_results_df.to_csv(cv_results_file, index=False)
     print(f"CV results saved to: {cv_results_file}")
+    
+    # Update the dataset's config.yaml file with best parameters
+    update_config_with_model_params(config_path, random_search.best_params_)
+    print(f"Config file updated with best parameters: {config_path}")
     
     # Print config snippet for easy copy-paste
     print("\n" + "=" * 70)
