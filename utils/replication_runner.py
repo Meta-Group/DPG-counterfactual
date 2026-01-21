@@ -202,8 +202,9 @@ def _run_single_replication_dice(args):
             else:
                 permitted_range = dict(permitted_range_config) if permitted_range_config else {}
         
-        # Build feature_weights from config if specified
-        feature_weights = None
+        # Build feature_weights from config if specified, otherwise use equal weights
+        # This prevents DICE's "invalid value encountered in divide" warning when sum(feature_weights) is 0
+        feature_weights = {}
         if hasattr(config.counterfactual, 'feature_weights') and config.counterfactual.feature_weights:
             feature_weights_config = config.counterfactual.feature_weights
             if hasattr(feature_weights_config, '_config'):
@@ -211,7 +212,12 @@ def _run_single_replication_dice(args):
             elif hasattr(feature_weights_config, 'to_dict'):
                 feature_weights = feature_weights_config.to_dict()
             else:
-                feature_weights = dict(feature_weights_config) if feature_weights_config else None
+                feature_weights = dict(feature_weights_config) if feature_weights_config else {}
+        
+        # If no feature_weights specified, use equal weights for all features
+        # This prevents DICE from using internal zero weights that cause division by zero
+        if not feature_weights:
+            feature_weights = {feat: 1.0 for feat in FEATURES_NAMES}
         
         # Create DiCE data interface
         # DiCE needs a DataFrame with the outcome column
@@ -265,6 +271,7 @@ def _run_single_replication_dice(args):
             permitted_range=permitted_range if permitted_range else None,
             proximity_weight=proximity_weight,
             diversity_weight=diversity_weight,
+            feature_weights=feature_weights,  # Pass feature_weights to avoid division by zero warning
         )
         
         # Extract results
