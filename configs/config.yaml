@@ -8,11 +8,11 @@
 
 # Excluded datasets (will be skipped by run_all_experiments.py)
 excluded_datasets:
-  - car_eval_4
-  - german_credit
-  - abalone
-  - abalone_19
-  - breast_cancer_wisconsin
+  # - car_eval_4
+  # - german_credit
+  # - abalone
+  # - abalone_19
+  # - breast_cancer_wisconsin
 
 # Data defaults
 data:
