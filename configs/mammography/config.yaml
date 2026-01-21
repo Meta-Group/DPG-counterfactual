@@ -1,11 +1,3 @@
-# Configuration for mammography dataset
-# Only dataset-specific overrides are included here.
-# Base defaults are loaded from configs/config.yaml
-#
-# Usage:
-#   python scripts/run_experiment.py --dataset mammography --method dpg
-#   python scripts/run_experiment.py --dataset mammography --method dice
-
 data:
   dataset: mammography
   dataset_path: configs/mammography/dataset.csv
@@ -14,3 +6,11 @@ experiment:
   tags:
   - mammography
   name: mammography
+model:
+  type: RandomForestClassifier
+  n_estimators: 15
+  min_samples_split: 3
+  min_impurity_decrease: 0.0
+  max_features: 0.7
+  max_depth: 8
+  criterion: entropy
