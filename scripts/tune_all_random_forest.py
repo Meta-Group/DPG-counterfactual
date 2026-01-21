@@ -8,6 +8,7 @@ Usage:
     python scripts/tune_all_random_forest.py
     python scripts/tune_all_random_forest.py --n-iter 50
     python scripts/tune_all_random_forest.py --cv 10 --scoring f1_weighted
+    python scripts/tune_all_random_forest.py --start-from iris
 """
 
 from __future__ import annotations
@@ -50,7 +51,14 @@ Examples:
     python scripts/tune_all_random_forest.py --n-iter 50
     python scripts/tune_all_random_forest.py --cv 10 --scoring f1_weighted
     python scripts/tune_all_random_forest.py --n-iter 100 --cv 5 --scoring accuracy --n-jobs -1
+    python scripts/tune_all_random_forest.py --start-from iris
         """
+    )
+    
+    parser.add_argument(
+        '--start-from',
+        type=str,
+        help='Start processing from the specified dataset (alphabetically sorted)'
     )
     
     parser.add_argument(
@@ -151,6 +159,16 @@ def main() -> int:
     if not datasets:
         print("No datasets found in configs/ directory!")
         return 1
+    
+    # Filter datasets if --start-from is provided
+    if args.start_from is not None:
+        if args.start_from not in datasets:
+            print(f"Error: Dataset '{args.start_from}' not found in available datasets!")
+            print(f"Available datasets: {', '.join(datasets)}")
+            return 1
+        start_index = datasets.index(args.start_from)
+        datasets = datasets[start_index:]
+        print(f"Starting from dataset: {args.start_from}")
     
     print("=" * 70)
     print("RandomForest Hyperparameter Tuning - All Datasets")
