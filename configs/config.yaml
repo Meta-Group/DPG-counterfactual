@@ -12,6 +12,7 @@ excluded_datasets:
   - german_credit
   - abalone
   - abalone_19
+  - breast_cancer_wisconsin
 
 # Data defaults
 data:
