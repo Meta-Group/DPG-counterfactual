@@ -1495,7 +1495,17 @@ class CounterFactualModel:
                 return None
             
             # Check probability margin - target class should be clearly higher than second-best
-            target_prob = proba[target_class]
+            # NOTE: proba is indexed by position, not by class label.
+            # Use model.classes_ to find the correct index for target_class
+            if hasattr(self.model, 'classes_'):
+                class_list = list(self.model.classes_)
+                if target_class in class_list:
+                    target_idx = class_list.index(target_class)
+                else:
+                    target_idx = target_class  # Fallback to direct indexing
+            else:
+                target_idx = target_class
+            target_prob = proba[target_idx]
             sorted_probs = np.sort(proba)[::-1]  # Descending order
             second_best_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0.0
             margin = target_prob - second_best_prob
@@ -1604,34 +1614,55 @@ class CounterFactualModel:
         Relax constraints by expanding their bounds by a factor.
         
         Args:
-            constraints: Original constraint dictionary
+            constraints: Original constraint dictionary in format:
+                {class_key: {feature_name: {'min': ..., 'max': ...}, ...}, ...}
             factor: Factor to expand bounds by (e.g., 2.0 doubles the range)
             
         Returns:
-            dict: Relaxed constraints
+            dict: Relaxed constraints in same format
         """
         relaxed = {}
         for class_key, class_constraints in constraints.items():
-            relaxed[class_key] = []
-            for c in class_constraints:
-                feature = c.get('feature', '')
-                min_val = c.get('min')
-                max_val = c.get('max')
-                
-                if min_val is not None and max_val is not None:
-                    # Expand the range by factor
-                    center = (min_val + max_val) / 2
-                    half_range = (max_val - min_val) / 2
-                    new_min = center - half_range * factor
-                    new_max = center + half_range * factor
-                    relaxed[class_key].append({
-                        'feature': feature,
-                        'min': new_min,
-                        'max': new_max
-                    })
-                else:
-                    # Keep as-is if no bounds
-                    relaxed[class_key].append(c.copy())
+            relaxed[class_key] = {}
+            
+            # Handle both dict and list formats
+            if isinstance(class_constraints, dict):
+                # Format: {feature_name: {'min': ..., 'max': ...}, ...}
+                for feature, bounds in class_constraints.items():
+                    if isinstance(bounds, dict):
+                        min_val = bounds.get('min')
+                        max_val = bounds.get('max')
+                        
+                        if min_val is not None and max_val is not None:
+                            # Expand the range by factor
+                            center = (min_val + max_val) / 2
+                            half_range = (max_val - min_val) / 2
+                            relaxed[class_key][feature] = {
+                                'min': center - half_range * factor,
+                                'max': center + half_range * factor
+                            }
+                        else:
+                            relaxed[class_key][feature] = bounds.copy()
+                    else:
+                        relaxed[class_key][feature] = bounds
+            elif isinstance(class_constraints, list):
+                # Legacy format: [{'feature': ..., 'min': ..., 'max': ...}, ...]
+                relaxed[class_key] = []
+                for c in class_constraints:
+                    feature = c.get('feature', '')
+                    min_val = c.get('min')
+                    max_val = c.get('max')
+                    
+                    if min_val is not None and max_val is not None:
+                        center = (min_val + max_val) / 2
+                        half_range = (max_val - min_val) / 2
+                        relaxed[class_key].append({
+                            'feature': feature,
+                            'min': center - half_range * factor,
+                            'max': center + half_range * factor
+                        })
+                    else:
+                        relaxed[class_key].append(c.copy())
         return relaxed
 
     def find_nearest_counterfactual(self, sample, target_class, X_train=None, y_train=None, 
@@ -1712,7 +1743,17 @@ class CounterFactualModel:
                         continue  # Skip samples misclassified by model
                     
                     # Check probability margin
-                    target_prob = proba[target_class]
+                    # NOTE: proba is indexed by position, not by class label.
+                    # Use model.classes_ to find the correct index for target_class
+                    if hasattr(self.model, 'classes_'):
+                        class_list = list(self.model.classes_)
+                        if target_class in class_list:
+                            target_idx = class_list.index(target_class)
+                        else:
+                            target_idx = target_class  # Fallback to direct indexing
+                    else:
+                        target_idx = target_class
+                    target_prob = proba[target_idx]
                     sorted_probs = np.sort(proba)[::-1]
                     second_best_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0.0
                     margin = target_prob - second_best_prob
