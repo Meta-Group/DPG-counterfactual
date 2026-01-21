@@ -1850,13 +1850,9 @@ def run_experiment(config: DictConfig, wandb_run=None):
     # Train model
     print("INFO: Training model...")
     if config.model.type == "RandomForestClassifier":
-        model_params = {
-            'n_estimators': config.model.n_estimators,
-            'random_state': config.model.random_state
-        }
-        # Add optional parameters if they exist in config
-        if hasattr(config.model, 'max_depth') and config.model.max_depth is not None:
-            model_params['max_depth'] = config.model.max_depth
+        # Extract all model parameters from config (exclude 'type' which is used for model selection)
+        model_config = config.model.to_dict() if hasattr(config.model, 'to_dict') else dict(config.model)
+        model_params = {k: v for k, v in model_config.items() if k != 'type' and v is not None}
         
         model = RandomForestClassifier(**model_params)
     else:
