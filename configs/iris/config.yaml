@@ -12,8 +12,14 @@ data:
   target_column: target
 
 model:
-  n_estimators: 5
-
+  type: RandomForestClassifier
+  criterion: gini
+  max_depth: 8
+  max_features: 0.5
+  min_impurity_decrease: 0.1
+  min_samples_split: 5
+  n_estimators: 7
+  
 experiment:
   tags:
   - iris
@@ -38,6 +44,7 @@ methods:
     boundary_weight: 12.0
     distance_factor: 1.5
     max_bonus_cap: 50.0
+    patience: 5
     rules:
     - none
   dpg:
