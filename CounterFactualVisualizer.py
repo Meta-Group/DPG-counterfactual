@@ -279,7 +279,7 @@ def plot_dpg_constraints_overview(
             tick_label.set_weight('bold')
     
     ax.set_xlim(x_min, x_max)
-    ax.set_xlabel('Feature Value', fontsize=12)
+    ax.set_xlabel('Feature Value', fontsize=12, loc='left')
     ax.axvline(x=0, color='gray', linestyle=':', alpha=0.5, zorder=1)
     ax.grid(True, axis='x', linestyle='--', alpha=0.3)
     
