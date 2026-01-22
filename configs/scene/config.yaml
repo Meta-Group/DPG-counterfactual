@@ -1,11 +1,3 @@
-# Configuration for scene dataset
-# Only dataset-specific overrides are included here.
-# Base defaults are loaded from configs/config.yaml
-#
-# Usage:
-#   python scripts/run_experiment.py --dataset scene --method dpg
-#   python scripts/run_experiment.py --dataset scene --method dice
-
 data:
   dataset: scene
   dataset_path: configs/scene/dataset.csv
@@ -14,3 +6,11 @@ experiment:
   tags:
   - scene
   name: scene
+model:
+  type: RandomForestClassifier
+  n_estimators: 12
+  min_samples_split: 12
+  min_impurity_decrease: 0.0
+  max_features: 0.3
+  max_depth: 8
+  criterion: entropy
