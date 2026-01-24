@@ -4,11 +4,10 @@ data:
   target_column: target
 model:
   type: RandomForestClassifier
-  max_depth: 3
-  n_estimators: 5
+  max_depth: 4
+  n_estimators: 7
   max_features: 0.5
   min_impurity_decrease: 0.1
-  
 experiment:
   tags:
   - iris
@@ -17,7 +16,7 @@ experiment:
   entity: mllab-ts-universit-di-trieste
   notes: Initial baseline run with default parameters
 experiment_params:
-  num_replications: 5
+  num_best_results: 5
   num_samples: 1
   sample_indices:
   - 2
