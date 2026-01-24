@@ -51,6 +51,13 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
 
 try:
+    from DPG.dpg import plot_dpg_constraints_overview
+    DPG_PKG_AVAILABLE = True
+except ImportError:
+    DPG_PKG_AVAILABLE = False
+    print("Warning: DPG package not available. Install with requirements in DPG/")
+
+try:
     import wandb
     WANDB_AVAILABLE = True
 except ImportError:
@@ -94,7 +101,6 @@ from CounterFactualVisualizer import (
     plot_pairwise_with_counterfactual_df,
     plot_pca_with_counterfactuals,
     plot_pca_loadings,
-    plot_dpg_constraints_overview,
 )
 
 from utils.notebooks.experiment_storage import (
