@@ -966,6 +966,12 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
     if not isinstance(counterfactuals_df, pd.DataFrame):
         raise ValueError("counterfactuals_df must be a pandas DataFrame")
 
+    print(f"DEBUG plot_pca: counterfactuals DataFrame shape: {counterfactuals_df.shape}")
+    print(f"DEBUG plot_pca: counterfactuals DataFrame columns: {counterfactuals_df.columns.tolist()}")
+    print(f"DEBUG plot_pca: counterfactuals DataFrame dtypes:\n{counterfactuals_df.dtypes}")
+    print( f"DEBUG plot_pca: counterfactuals DataFrame head:\n{counterfactuals_df.head()}")
+    print( f"DEBUG plot_pca: counterfactuals DataFrame numeric columns:\n{counterfactuals_df.select_dtypes(include=[np.number]).columns.tolist()}")
+
     numeric_cf_df = counterfactuals_df.select_dtypes(include=[np.number])
     numeric_cf_df_scaled = scaler.transform(numeric_cf_df)
 
