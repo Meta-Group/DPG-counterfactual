@@ -47,9 +47,8 @@ CONFIG_TEMPLATE = {
     'experiment_params': {
         'seed': 42,
         'num_samples': 5,
-        'num_replications': 3,
+        'num_best_results': 5,
         'num_combinations_to_test': 1,
-        'parallel_replications': True,
         'compute_comprehensive_metrics': True,
     },
     'output': {
