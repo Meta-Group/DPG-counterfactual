@@ -1037,12 +1037,18 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
                     zorder=5
                 )
 
-                # Add generation number as text inside the circle
+                # Add generation number as text offset from the point
+                # Offset position diagonally up-right to avoid overlap
+                text_offset_x = 0.15
+                text_offset_y = 0.15
+                text_fontsize = 10 if gen_idx < num_generations - 1 else 12
                 plt.text(
-                    coords[0], coords[1], str(gen_idx + 1),
-                    ha='center', va='center', fontsize=7 if gen_idx < num_generations - 1 else 9,
-                    color=color, alpha=alpha, weight='bold',
-                    zorder=6
+                    coords[0] + text_offset_x, coords[1] + text_offset_y, str(gen_idx + 1),
+                    ha='left', va='bottom', fontsize=text_fontsize,
+                    color=color, alpha=min(alpha + 0.2, 1.0), weight='bold',
+                    zorder=15,
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
+                              edgecolor=color, alpha=0.8, linewidth=1)
                 )
 
                 # Add thicker circle around final generation
