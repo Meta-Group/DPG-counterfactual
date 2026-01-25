@@ -1016,18 +1016,37 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
             history_df = pd.DataFrame(history)
             if history_df.empty:
                 continue
-                
-            history_numeric = history_df.select_dtypes(include=[np.number])
+            
+            # Extract fitness values if available (stored with '_fitness' key)
+            fitness_values = None
+            if '_fitness' in history_df.columns:
+                fitness_values = history_df['_fitness'].values
+                history_numeric = history_df.drop(columns=['_fitness']).select_dtypes(include=[np.number])
+            else:
+                history_numeric = history_df.select_dtypes(include=[np.number])
+            
             history_scaled = scaler.transform(history_numeric)
             history_pca = pca.transform(history_scaled)
             
             # Predict classes for each generation
             history_classes = model.predict(history_numeric)
             
+            # Compute opacity based on fitness (lower fitness = better = higher opacity)
             num_generations = len(history)
+            if fitness_values is not None and len(fitness_values) > 0:
+                min_fit = np.min(fitness_values)
+                max_fit = np.max(fitness_values)
+                fit_range = max_fit - min_fit if max_fit > min_fit else 1.0
+            
             for gen_idx, (coords, gen_class) in enumerate(zip(history_pca, history_classes)):
-                # Opacity increases from ~0.1 to 1.0
-                alpha = 0.1 + (0.9 * gen_idx / max(1, num_generations - 1))
+                # Opacity based on fitness: better fitness (lower) -> higher opacity
+                if fitness_values is not None and len(fitness_values) > 0:
+                    # Normalize: 0 = worst fitness -> 0.1 alpha, 1 = best fitness -> 1.0 alpha
+                    normalized_fit = (max_fit - fitness_values[gen_idx]) / fit_range
+                    alpha = 0.1 + 0.9 * normalized_fit
+                else:
+                    # Fallback to generation-based if no fitness available
+                    alpha = 0.1 + (0.9 * gen_idx / max(1, num_generations - 1))
                 # Clamp alpha to [0, 1] to avoid floating-point precision errors
                 alpha = np.clip(alpha, 0.0, 1.0)
                 # Size for circle outline

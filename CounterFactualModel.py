@@ -1328,7 +1328,9 @@ class CounterFactualModel:
             # Store best individual for this generation (deep copy to preserve state)
             # This is the shared evolution_history (tracking hof[0])
             if hof[0].fitness.values[0] != np.inf:
-                self.evolution_history.append(dict(hof[0]))
+                entry = dict(hof[0])
+                entry['_fitness'] = hof[0].fitness.values[0]  # Store fitness for visualization
+                self.evolution_history.append(entry)
             
             # Track evolution history per HOF entry
             # For each HOF position, append the current best individual's state
