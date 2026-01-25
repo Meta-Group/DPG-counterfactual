@@ -407,6 +407,12 @@ def plot_fitness(cf_model, figsize=(10, 6), title='Fitness Over Generations'):
 
     best = getattr(cf_model, 'best_fitness_list', []) or []
     avg = getattr(cf_model, 'average_fitness_list', []) or []
+    
+    print(f"DEBUG plot_fitness: best list length = {len(best)}, avg list length = {len(avg)}")
+    if len(best) > 0:
+        print(f"DEBUG plot_fitness: first 3 best values: {best[:3]}")
+    if len(avg) > 0:
+        print(f"DEBUG plot_fitness: first 3 avg values: {avg[:3]}")
 
     # Plot best fitness and average fitness on the same graph
     ax.plot(best, label='Best Fitness', color='blue')
@@ -993,9 +999,12 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
 
     # Plot evolution histories if provided
     if evolution_histories:
+        print(f"DEBUG plot_pca: Received {len(evolution_histories)} evolution histories")
         for history in evolution_histories:
             if not history:
                 continue
+            
+            print(f"DEBUG plot_pca: Processing history with {len(history)} generations")
             
             # Convert evolution history to DataFrame and transform
             history_df = pd.DataFrame(history)

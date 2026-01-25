@@ -124,6 +124,8 @@ def _run_single_replication_dpg(args):
         best_fitness_list = getattr(cf_model, 'best_fitness_list', [])
         average_fitness_list = getattr(cf_model, 'average_fitness_list', [])
         
+        print(f"DEBUG replication_runner: best_fitness_list length = {len(best_fitness_list)}, avg_fitness_list length = {len(average_fitness_list)}, evolution_history length = {len(evolution_history)}")
+        
         return {
             'replication_num': replication_num,
             'counterfactual': counterfactual,

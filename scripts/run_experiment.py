@@ -108,6 +108,7 @@ from CounterFactualVisualizer import (
     plot_pairwise_with_counterfactual_df,
     plot_pca_with_counterfactuals,
     plot_pca_loadings,
+    plot_fitness,
 )
 
 from utils.notebooks.experiment_storage import (
@@ -462,6 +463,8 @@ def run_single_sample(
             average_fitness_list = result["average_fitness_list"]
             replication_num = result["replication_num"]
             result_method = result.get("method", "dpg")
+            
+            print(f"DEBUG run_experiment: Processing result for replication {replication_num}, method={result_method}, best_fitness_list length={len(best_fitness_list)}, avg_fitness_list length={len(average_fitness_list)}, evolution_history length={len(evolution_history)}")
 
             # Get all counterfactuals from this replication (num_best_results for DPG)
             all_counterfactuals = result.get("all_counterfactuals", [])
@@ -986,11 +989,7 @@ def run_single_sample(
                         class_colors_list,
                     )
 
-                    fitness_fig = (
-                        cf_model.plot_fitness()
-                        if hasattr(cf_model, "plot_fitness")
-                        else None
-                    )
+                    fitness_fig = plot_fitness(cf_model) if cf_model else None
 
                     # Store visualizations
                     replication_viz["visualizations"] = [
@@ -1138,6 +1137,10 @@ Final Results
                         rep.get("evolution_history", [])
                         for rep in combination_viz["replication"]
                     ]
+                    
+                    # Debug: Check if evolution histories have data
+                    total_gens = sum(len(h) for h in evolution_histories)
+                    print(f"DEBUG: Evolution histories - {len(evolution_histories)} reps, {total_gens} total generations")
 
                     # Create combination-level visualizations
                     pairwise_fig = plot_pairwise_with_counterfactual_df(
