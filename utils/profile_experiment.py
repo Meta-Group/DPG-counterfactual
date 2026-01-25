@@ -121,7 +121,7 @@ def run_profiled_experiment():
                 plot_sample_and_counterfactual_comparison(
                     MODEL, ORIGINAL_SAMPLE, SAMPLE_DATAFRAME, counterfactual, CLASS_COLORS_LIST
                 ),
-                cf_dpg.plot_fitness()
+                CounterFactualVisualizer.plot_fitness(cf_dpg)
             ]
             combination_viz['replication'].append(replication_viz)
             
