@@ -134,6 +134,24 @@ from utils.experiment_status import (
     clear_log,
 )
 
+# Bring back specific replication runner functions for simplified use
+from utils.replication_runner import (
+    _run_single_replication_dpg,
+    _run_single_replication_dice,
+)
+
+# Simplified single-run function (no replication loop - just runs once)
+def _single_run(args):
+    """Run counterfactual generation once (no replications)."""
+    config_dict = args[5]
+    config = DictConfig(config_dict)
+    method = getattr(config.counterfactual, 'method', 'dpg').lower()
+    
+    if method == 'dice':
+        return _run_single_replication_dice(args)
+    else:
+        return _run_single_replication_dpg(args)
+
 
 def run_single_sample(
     sample_index: int,
@@ -334,11 +352,11 @@ def run_single_sample(
         if not all_counterfactuals:
             skip_combination = True
         else:
-            # Process metrics for the first counterfactual as representative
-            counterfactuals_to_model = all_counterfactuals
-            # Process each counterfactual in all_counterfactuals
-            for cf_idx, counterfactual in enumerate(all_counterfactuals):
-                valid_counterfactuals += 1
+            # Use first counterfactual for metrics computation (representative)
+            counterfactual_first = all_counterfactuals[0] if all_counterfactuals else None
+            
+            # Count valid counterfactuals (all CFs from single run are considered valid)
+            valid_counterfactuals += len(all_counterfactuals)
             
             # Calculate final best fitness
             best_fitness = best_fitness_list[-1] if best_fitness_list else 0.0
@@ -382,11 +400,28 @@ def run_single_sample(
                 cf_model.average_fitness_list = average_fitness_list
                 cf_model.evolution_history = evolution_history
             
-            # Store result data with evolution history
+            # Compute metrics for first counterfactual (representative)
+            metrics = None
+            cf_for_metrics = counterfactual_first if counterfactual_first else all_counterfactuals[0]
+            if cf_for_metrics:
+                cf_pred_class = int(model.predict(pd.DataFrame([cf_for_metrics]))[0])
+                explainer = CounterFactualExplainer(cf_model, ORIGINAL_SAMPLE, cf_for_metrics, TARGET_CLASS)
+                metrics = explainer.get_all_metrics(
+                    X_train=X_TRAIN,
+                    X_test=X_TEST,
+                    variable_features=variable_features_for_metrics,
+                    continuous_features=CONTINUOUS_INDICES,
+                    categorical_features=CATEGORICAL_INDICES,
+                    compute_comprehensive=getattr(config.experiment_params, 'compute_comprehensive_metrics', True) and COMPREHENSIVE_METRICS_AVAILABLE
+                )
+                metrics['predicted_class'] = cf_pred_class
+            
+            # Store result data with metrics
             result_viz = {
                 'all_counterfactuals': all_counterfactuals,
                 'cf_model': cf_model,
                 'evolution_history': evolution_history,
+                'metrics': metrics,  # Store metrics for later use
                 'visualizations': [],
                 'explanations': {},
                 'success': True,
@@ -428,7 +463,7 @@ def run_single_sample(
                 log_data = {
                     "replication/sample_id": SAMPLE_ID,
                     "replication/combination": get_combination_label(combination, dict_non_actionable),
-                    "replication/replication_num": replication_num,
+                    "replication/run_num": combination_num,  # Changed from replication_num to combination_num
                     "replication/success": True,
                     "replication/final_fitness": best_fitness,
                     "replication/generations_to_converge": len(cf_model.best_fitness_list),
@@ -438,9 +473,10 @@ def run_single_sample(
                 }
                 
                 # Add all metrics from explainer (per-counterfactual level)
-                for key, value in metrics.items():
-                    if isinstance(value, (int, float, bool)):
-                        log_data[f"metrics/per_counterfactual/{key}"] = value
+                if metrics:
+                    for key, value in metrics.items():
+                        if isinstance(value, (int, float, bool)):
+                            log_data[f"metrics/per_counterfactual/{key}"] = value
                 
                 # Add cf_eval metrics
                 log_data.update(cf_eval_metrics)
@@ -476,7 +512,7 @@ def run_single_sample(
                                 'average_fitness': avg
                             })
                         fitness_df = pd.DataFrame(fitness_data)
-                        fitness_csv_path = os.path.join(sample_dir, f'fitness_combo_{combination_num}_rep_{replication_num}.csv')
+                        fitness_csv_path = os.path.join(sample_dir, f'fitness_combo_{combination_num}.csv')
                         fitness_df.to_csv(fitness_csv_path, index=False)
         
         if counterfactuals_df_results:
@@ -647,9 +683,6 @@ def run_single_sample(
                     )
                     
                     fitness_fig = CounterFactualVisualizer.plot_fitness(cf_model) if hasattr(cf_model, 'best_fitness_list') else None
-                    
-                    # Store visualizations in result_viz
-                    result_viz['visualizations'] = []
                 
                 except Exception as exc:
                     print(f"WARNING: Visualization generation failed for CF {cf_idx}: {exc}")
@@ -746,9 +779,6 @@ Final Results
                             "expl/combination": str(combination_viz['label']),
                             "expl/cf_idx": cf_idx,
                         })
-                    
-                except Exception as exc:
-                    print(f"WARNING: Visualization generation failed for CF {cf_idx}: {exc}")
             
             # Combination-level visualizations (after processing all CFs)
             try:
@@ -814,8 +844,9 @@ Final Results
                                     sample_scaled = scaler.transform(sample_df_local)
                                     sample_coords = pca_local.transform(sample_scaled)
 
-                                    # Counterfactual coords
-                                    cf_list_local = [rep['counterfactual'] for rep in combination_viz['replication']]
+                                    # Counterfactual coords - use results array
+                                    all_cfs = combination_viz['results'][0].get('all_counterfactuals', [])
+                                    cf_list_local = all_cfs if all_cfs else []
                                     cf_df_local = pd.DataFrame(cf_list_local)[FEATURE_NAMES_LOCAL].select_dtypes(include=[np.number])
                                     cf_scaled = scaler.transform(cf_df_local)
                                     cf_coords = pca_local.transform(cf_scaled)
@@ -829,21 +860,22 @@ Final Results
                                     coords_df = pd.DataFrame(coords_rows)
                                     coords_df.to_csv(os.path.join(sample_dir, f'pca_coords_combo_{combination_idx}.csv'), index=False)
 
-                                    # Save all generations evolution data
+                                    # Save all generations evolution data - get from results array
                                     gen_rows = []
                                     gen_rows.append({'replication': 'original', 'generation': 0, 'pc1': float(sample_coords[0,0]), 'pc2': float(sample_coords[0,1])})
                                     
-                                    for rep_idx, rep in enumerate(combination_viz['replication']):
-                                        evolution_history = rep.get('evolution_history', [])
-                                        if evolution_history:
-                                            history_df = pd.DataFrame(evolution_history)
-                                            history_numeric = history_df[FEATURE_NAMES_LOCAL].select_dtypes(include=[np.number])
-                                            history_scaled = scaler.transform(history_numeric)
-                                            history_pca = pca_local.transform(history_scaled)
-                                            
-                                            for gen_idx, coords in enumerate(history_pca):
-                                                gen_rows.append({
-                                                    'replication': rep_idx,
+                                    # Get evolution history from single run in results
+                                    result_viz = combination_viz['results'][0]
+                                    evolution_history = result_viz.get('evolution_history', [])
+                                    if evolution_history:
+                                        history_df = pd.DataFrame(evolution_history)
+                                        history_numeric = history_df[FEATURE_NAMES_LOCAL].select_dtypes(include=[np.number])
+                                        history_scaled = scaler.transform(history_numeric)
+                                        history_pca = pca_local.transform(history_scaled)
+                                        
+                                        for gen_idx, coords in enumerate(history_pca):
+                                            gen_rows.append({
+                                                    'replication': 'run',
                                                     'generation': gen_idx + 1,
                                                     'pc1': float(coords[0]),
                                                     'pc2': float(coords[1])
@@ -1139,10 +1171,10 @@ Final Results
                                         traceback.print_exc()
 
                                     # Calculate feature changes and filter for visualization
-                                    # 1. Get final counterfactual from last generation of first replication
+                                    # 1. Get final counterfactual from last generation
                                     final_cf = None
-                                    if combination_viz['replication']:
-                                        evolution_history = combination_viz['replication'][0].get('evolution_history', [])
+                                    if combination_viz['results']:
+                                        evolution_history = combination_viz['results'][0].get('evolution_history', [])
                                         if evolution_history:
                                             final_cf = evolution_history[-1]
                                     
@@ -1249,24 +1281,24 @@ Final Results
                                                                 # Predict class for this generation
                                                                 gen_sample_df = pd.DataFrame([gen_sample])[FEATURE_NAMES_LOCAL]
                                                                 gen_pred_class = int(model.predict(gen_sample_df)[0])
-                                                                    gen_color = class_colors_list[gen_pred_class % len(class_colors_list)]
+                                                                gen_color = class_colors_list[gen_pred_class % len(class_colors_list)]
                                                                     
-                                                                    # Determine if this is the last generation (final counterfactual)
-                                                                    is_final = (gen_idx == len(evolution_history) - 1)
-                                                                    marker_size = 120 if is_final else 80
-                                                                    alpha_val = 1.0 if is_final else 0.3 + (0.5 * gen_idx / max(1, len(evolution_history) - 1))
-                                                                    # Clamp alpha to [0, 1] to avoid floating-point precision errors
-                                                                    alpha_val = np.clip(alpha_val, 0.0, 1.0)
+                                                                # Determine if this is the last generation (final counterfactual)
+                                                                is_final = (gen_idx == len(evolution_history) - 1)
+                                                                marker_size = 120 if is_final else 80
+                                                                alpha_val = 1.0 if is_final else 0.3 + (0.5 * gen_idx / max(1, len(evolution_history) - 1))
+                                                                # Clamp alpha to [0, 1] to avoid floating-point precision errors
+                                                                alpha_val = np.clip(alpha_val, 0.0, 1.0)
                                                                     
-                                                                    ax.scatter(x_val, y_val, marker='o', s=marker_size, 
-                                                                             c='none', edgecolors=gen_color, linewidths=1.5 if is_final else 1, 
-                                                                             alpha=alpha_val, zorder=5)
+                                                                ax.scatter(x_val, y_val, marker='o', s=marker_size, 
+                                                                         c='none', edgecolors=gen_color, linewidths=1.5 if is_final else 1, 
+                                                                         alpha=alpha_val, zorder=5)
                                                                     
-                                                                    # Add label
-                                                                    label = 'C' if is_final else str(gen_idx + 1)
-                                                                    ax.text(x_val, y_val, label, ha='center', va='center',
-                                                                           fontsize=7 if is_final else 6, color=gen_color, 
-                                                                           weight='bold', zorder=6, alpha=alpha_val)
+                                                                # Add label
+                                                                label = 'C' if is_final else str(gen_idx + 1)
+                                                                ax.text(x_val, y_val, label, ha='center', va='center',
+                                                                       fontsize=7 if is_final else 6, color=gen_color, 
+                                                                       weight='bold', zorder=6, alpha=alpha_val)
                                                         
                                                         # Now add constraint boundaries with labels (after data is plotted)
                                                         # Plot constraint lines/regions
@@ -2000,7 +2032,7 @@ def run_experiment(config: DictConfig, wandb_run=None):
     print("Experiment Complete!")
     print(f"{'='*60}")
     print(f"Samples processed: {len(results)}")
-    print(f"Total valid counterfactuals: {total_valid}/{total_replications}")
+    print(f"Total valid counterfactuals: {total_valid}/{total_attempts}")
     print(f"Overall success rate: {total_success_rate:.2%}")
     print(f"{'='*60}\n")
     
@@ -2008,7 +2040,7 @@ def run_experiment(config: DictConfig, wandb_run=None):
         # Log experiment-level summary (single values for the entire run)
         wandb.run.summary["experiment/total_samples"] = len(results)
         wandb.run.summary["experiment/total_valid_counterfactuals"] = total_valid
-        wandb.run.summary["experiment/total_replications"] = total_replications
+        wandb.run.summary["experiment/total_attempts"] = total_attempts
         wandb.run.summary["experiment/overall_success_rate"] = total_success_rate
         
         # Create summary table
