@@ -1,7 +1,7 @@
-"""Replication worker functions for parallel counterfactual generation.
+"""Counterfactual generation worker functions.
 
-This module provides worker functions for running DPG and DiCE replications
-in parallel, supporting both methods with unified interface.
+This module provides worker functions for running DPG and DiCE counterfactual
+generation, supporting both methods with unified interface.
 """
 
 import traceback
@@ -18,19 +18,18 @@ from CounterFactualModel import CounterFactualModel
 from utils.config_manager import DictConfig
 
 
-def _run_single_replication_dpg(args):
-    """Helper function to run a single DPG replication in parallel.
+def run_counterfactual_generation_dpg(args):
+    """Run DPG counterfactual generation to produce requested counterfactuals.
     
     Args:
-        args: Tuple containing (replication_num, ORIGINAL_SAMPLE, TARGET_CLASS, 
+        args: Tuple containing (ORIGINAL_SAMPLE, TARGET_CLASS, 
               FEATURES_NAMES, dict_non_actionable, config_dict, model, constraints,
               train_df, continuous_features, categorical_features)
     
     Returns:
-        Dict with replication results or None if failed
+        Dict with generation results or None if failed
     """
     (
-        replication_num,
         ORIGINAL_SAMPLE,
         TARGET_CLASS,
         FEATURES_NAMES,
@@ -86,7 +85,8 @@ def _run_single_replication_dpg(args):
         allow_relaxation = getattr(config.counterfactual, 'allow_relaxation', True)
         relaxation_factor = getattr(config.counterfactual, 'relaxation_factor', 2.0)
         
-        num_best_results = getattr(config.experiment_params, 'num_best_results', 1)
+        # Get the number of counterfactuals to generate
+        requested_counterfactuals = getattr(config.experiment_params, 'requested_counterfactuals', 5)
         
         counterfactuals = cf_model.generate_counterfactual(
             ORIGINAL_SAMPLE, 
@@ -96,14 +96,14 @@ def _run_single_replication_dpg(args):
             mutation_rate=config.counterfactual.mutation_rate,
             allow_relaxation=allow_relaxation,
             relaxation_factor=relaxation_factor,
-            num_best_results=num_best_results
+            num_best_results=requested_counterfactuals
         )
         
         # Handle list return from generate_counterfactual
         if counterfactuals is None or len(counterfactuals) == 0:
             return None
         
-        # First counterfactual is the best one (for backward compatibility)
+        # First counterfactual is the best one
         counterfactual = counterfactuals[0]
         
         if counterfactual is None:
@@ -118,18 +118,15 @@ def _run_single_replication_dpg(args):
                 pass
         
         # Extract data needed for later processing
-        # Note: We return serializable data, but also keep a reference to constraints and model
-        # for validate_constraints to work
         evolution_history = getattr(cf_model, 'evolution_history', [])
         best_fitness_list = getattr(cf_model, 'best_fitness_list', [])
         average_fitness_list = getattr(cf_model, 'average_fitness_list', [])
         
-        print(f"DEBUG replication_runner: best_fitness_list length = {len(best_fitness_list)}, avg_fitness_list length = {len(average_fitness_list)}, evolution_history length = {len(evolution_history)}")
+        print(f"DEBUG counterfactual_runner: Generated {len(counterfactuals)} counterfactuals, best_fitness_list length = {len(best_fitness_list)}, avg_fitness_list length = {len(average_fitness_list)}, evolution_history length = {len(evolution_history)}")
         
         return {
-            'replication_num': replication_num,
             'counterfactual': counterfactual,
-            'all_counterfactuals': counterfactuals,  # DPG returns multiple CFs (num_best_results)
+            'all_counterfactuals': counterfactuals,  # All requested counterfactuals from single GA run
             'evolution_history': evolution_history,
             'best_fitness_list': best_fitness_list,
             'average_fitness_list': average_fitness_list,
@@ -151,28 +148,27 @@ def _run_single_replication_dpg(args):
         }
         
     except Exception as exc:
-        print(f"WARNING: DPG Replication {replication_num} failed: {exc}")
+        print(f"WARNING: DPG counterfactual generation failed: {exc}")
         traceback.print_exc()
         return None
 
 
-def _run_single_replication_dice(args):
-    """Helper function to run a single DiCE replication in parallel.
+def run_counterfactual_generation_dice(args):
+    """Run DiCE counterfactual generation to produce requested counterfactuals.
     
     Args:
-        args: Tuple containing (replication_num, ORIGINAL_SAMPLE, TARGET_CLASS, 
+        args: Tuple containing (ORIGINAL_SAMPLE, TARGET_CLASS, 
               FEATURES_NAMES, dict_non_actionable, config_dict, model, constraints,
               train_df, continuous_features, categorical_features)
     
     Returns:
-        Dict with replication results or None if failed
+        Dict with generation results or None if failed
     """
     if not DICE_AVAILABLE:
         print("ERROR: dice-ml not available. Install with: pip install dice-ml")
         return None
     
     (
-        replication_num,
         ORIGINAL_SAMPLE,
         TARGET_CLASS,
         FEATURES_NAMES,
@@ -200,7 +196,7 @@ def _run_single_replication_dice(args):
         if len(features_to_vary) == len(FEATURES_NAMES):
             features_to_vary = 'all'
         elif len(features_to_vary) == 0:
-            print(f"WARNING: DiCE replication {replication_num}: No actionable features!")
+            print(f"WARNING: DiCE generation: No actionable features!")
             return None
         
         # Build permitted_range from config if specified
@@ -263,8 +259,10 @@ def _run_single_replication_dice(args):
         # Create DiCE Model object
         m = dice_ml.Model(model=model, backend='sklearn')
         
+        # Get the number of counterfactuals to generate
+        requested_counterfactuals = getattr(config.experiment_params, 'requested_counterfactuals', 5)
+        
         # Get DiCE parameters from config
-        total_CFs = getattr(config.counterfactual, 'total_CFs', 4)
         proximity_weight = getattr(config.counterfactual, 'proximity_weight', 0.5)
         diversity_weight = getattr(config.counterfactual, 'diversity_weight', 1.0)
         generation_method = getattr(config.counterfactual, 'generation_method', 'genetic')
@@ -283,7 +281,7 @@ def _run_single_replication_dice(args):
         # Note: For high-dimensional datasets, consider reducing maxiterations or using 'random' method
         dice_exp = exp.generate_counterfactuals(
             query_df,
-            total_CFs=total_CFs,
+            total_CFs=requested_counterfactuals,
             desired_class=int(TARGET_CLASS),
             features_to_vary=features_to_vary,
             permitted_range=permitted_range if permitted_range else None,
@@ -300,7 +298,7 @@ def _run_single_replication_dice(args):
             cf_df = dice_exp.cf_examples_list[0].final_cfs_df
             
             if cf_df is None or len(cf_df) == 0:
-                print(f"WARNING: DiCE replication {replication_num}: No counterfactuals generated")
+                print(f"WARNING: DiCE generation: No counterfactuals generated")
                 return None
             
             # Remove the outcome column if present
@@ -316,29 +314,35 @@ def _run_single_replication_dice(args):
             if not all_counterfactuals:
                 return None
             
-            # Select the "best" counterfactual (closest to original that reaches target)
-            # Use L2 distance to pick the best one
-            best_cf = None
-            best_distance = float('inf')
-            
+            # Sort counterfactuals by distance to original (closest first)
+            # Use L2 distance to order them
+            sorted_cfs = []
             for cf in all_counterfactuals:
                 # Verify it predicts the target class
                 cf_pred = model.predict(pd.DataFrame([cf]))[0]
                 if cf_pred == TARGET_CLASS:
                     distance = sum((ORIGINAL_SAMPLE[f] - cf[f])**2 for f in FEATURES_NAMES)**0.5
-                    if distance < best_distance:
-                        best_distance = distance
-                        best_cf = cf
+                    sorted_cfs.append((distance, cf))
             
-            # If no CF reaches target, take the first one anyway
-            if best_cf is None:
-                best_cf = all_counterfactuals[0]
+            # Sort by distance and extract just the counterfactuals
+            sorted_cfs.sort(key=lambda x: x[0])
+            all_counterfactuals = [cf for _, cf in sorted_cfs]
+            
+            # If no CF reaches target, use original list
+            if not all_counterfactuals:
+                all_counterfactuals = []
+                for _, row in cf_df.iterrows():
+                    cf_dict = {feat: float(row[feat]) for feat in FEATURES_NAMES if feat in row}
+                    all_counterfactuals.append(cf_dict)
+            
+            best_cf = all_counterfactuals[0] if all_counterfactuals else None
+            
+            print(f"DEBUG counterfactual_runner: DiCE generated {len(all_counterfactuals)} counterfactuals")
             
             return {
-                'replication_num': replication_num,
                 'counterfactual': best_cf,
                 'all_counterfactuals': all_counterfactuals,
-                'evolution_history': [best_cf],  # DiCE doesn't have evolution history
+                'evolution_history': [best_cf] if best_cf else [],  # DiCE doesn't have evolution history
                 'best_fitness_list': [],  # DiCE doesn't track fitness
                 'average_fitness_list': [],
                 'dict_non_actionable': dict_non_actionable,
@@ -346,7 +350,7 @@ def _run_single_replication_dice(args):
                 # Store DiCE-specific params
                 'constraints': constraints,
                 'feature_names': FEATURES_NAMES,
-                'total_CFs': total_CFs,
+                'requested_counterfactuals': requested_counterfactuals,
                 'proximity_weight': proximity_weight,
                 'diversity_weight': diversity_weight,
                 'generation_method': generation_method,
@@ -361,30 +365,30 @@ def _run_single_replication_dice(args):
                 'prioritize_non_overlapping': False,
             }
         else:
-            print(f"WARNING: DiCE replication {replication_num}: No counterfactuals in result")
+            print(f"WARNING: DiCE generation: No counterfactuals in result")
             return None
         
     except Exception as exc:
-        print(f"WARNING: DiCE Replication {replication_num} failed: {exc}")
+        print(f"WARNING: DiCE counterfactual generation failed: {exc}")
         traceback.print_exc()
         return None
 
 
-def _run_single_replication(args):
-    """Dispatcher for running a single replication - routes to DPG or DiCE.
+def run_counterfactual_generation(args):
+    """Dispatcher for running counterfactual generation - routes to DPG or DiCE.
     
     Args:
-        args: Tuple containing replication parameters including method config
+        args: Tuple containing generation parameters including method config
     
     Returns:
-        Dict with replication results or None if failed
+        Dict with generation results or None if failed
     """
     # Extract config to determine method
-    config_dict = args[5]  # config_dict is at index 5
+    config_dict = args[4]  # config_dict is at index 4 (after removing replication_num)
     config = DictConfig(config_dict)
     method = getattr(config.counterfactual, 'method', 'dpg').lower()
     
     if method == 'dice':
-        return _run_single_replication_dice(args)
+        return run_counterfactual_generation_dice(args)
     else:
-        return _run_single_replication_dpg(args)
+        return run_counterfactual_generation_dpg(args)

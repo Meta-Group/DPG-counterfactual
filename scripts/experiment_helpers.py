@@ -180,7 +180,7 @@ def log_experiment_summary_to_wandb(
     wandb_run: Any,
     results: List[Dict[str, Any]],
     total_valid: int,
-    total_replications: int,
+    total_requested: int,
     total_success_rate: float,
 ) -> None:
     """Log experiment summary statistics and table to WandB.
@@ -189,7 +189,7 @@ def log_experiment_summary_to_wandb(
         wandb_run: WandB run object
         results: List of per-sample result dictionaries
         total_valid: Total number of valid counterfactuals
-        total_replications: Total number of replication attempts
+        total_requested: Total number of requested counterfactuals
         total_success_rate: Overall success rate (0-1)
     """
     if wandb_run:
@@ -199,21 +199,21 @@ def log_experiment_summary_to_wandb(
             # Log experiment-level summary (single values for the entire run)
             wandb.run.summary["experiment/total_samples"] = len(results)
             wandb.run.summary["experiment/total_valid_counterfactuals"] = total_valid
-            wandb.run.summary["experiment/total_replications"] = total_replications
+            wandb.run.summary["experiment/total_requested_counterfactuals"] = total_requested
             wandb.run.summary["experiment/overall_success_rate"] = total_success_rate
             
             summary_data = [
                 [
                     r["sample_id"],
                     r["valid_counterfactuals"],
-                    r["total_replications"],
+                    r["requested_counterfactuals"],
                     f"{r['success_rate']:.2%}",
                 ]
                 for r in results
             ]
 
             summary_table = wandb.Table(
-                columns=["Sample ID", "Valid CFs", "Total Attempts", "Success Rate"],
+                columns=["Sample ID", "Valid CFs", "Requested CFs", "Success Rate"],
                 data=summary_data,
             )
             wandb.log({"experiment/summary_table": summary_table})
