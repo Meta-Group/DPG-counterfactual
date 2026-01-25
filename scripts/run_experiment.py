@@ -651,19 +651,76 @@ def run_single_sample(
             print(f"WARNING: Failed to save DPG constraints to sample folder: {exc}")
     
     # Generate visualizations if enabled
+    print(f"DEBUG: Starting visualization generation for {len(visualizations)} combinations")
     if getattr(config.output, 'save_visualizations', True) if hasattr(config, 'output') else True:
         for combination_idx, combination_viz in enumerate(visualizations):
+            print(f"DEBUG: Processing combination {combination_idx}")
+            
+            # Check if results exist
+            if not combination_viz.get('results'):
+                print(f"WARNING: No results for combination {combination_idx}, skipping visualizations")
+                continue
+            
             # dict_non_actionable is now stored directly in combination_viz['label']
             dict_non_actionable = combination_viz['label']
             
             # Per-CF visualizations - process each counterfactual from result
             result_viz = combination_viz['results'][0]
-            all_counterfactuals = result_viz['all_counterfactuals']
+            all_counterfactuals = result_viz.get('all_counterfactuals', [])
+            if not all_counterfactuals:
+                print(f"WARNING: No counterfactuals in results for combination {combination_idx}")
+                continue
+                
             cf_model = result_viz['cf_model']
+            print(f"DEBUG: Found {len(all_counterfactuals)} counterfactuals to visualize")
             
+            # Create fitness visualization once per combination (shared across all CFs from same GA run)
+            fitness_fig = None
+            try:
+                if hasattr(cf_model, 'plot_fitness'):
+                    fitness_fig = cf_model.plot_fitness()
+                elif hasattr(cf_model, 'best_fitness_list') and cf_model.best_fitness_list:
+                    # Fallback: create fitness plot manually
+                    import matplotlib.pyplot as plt
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    ax.plot(cf_model.best_fitness_list, label='Best Fitness', linewidth=2)
+                    if hasattr(cf_model, 'average_fitness_list') and cf_model.average_fitness_list:
+                        ax.plot(cf_model.average_fitness_list, label='Average Fitness', linewidth=2, alpha=0.7)
+                    ax.set_xlabel('Generation')
+                    ax.set_ylabel('Fitness')
+                    ax.set_title('Fitness Evolution')
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
+                    fitness_fig = fig
+            except Exception as exc:
+                print(f"WARNING: Fitness visualization creation failed: {exc}")
+                fitness_fig = None
+            
+            # Save fitness visualization and data once per combination
+            if getattr(config.output, 'save_visualization_images', False) and fitness_fig:
+                os.makedirs(sample_dir, exist_ok=True)
+                fitness_path = os.path.join(sample_dir, f'fitness_combo_{combination_idx}.png')
+                fitness_fig.savefig(fitness_path, bbox_inches='tight', dpi=150)
+                
+                # Save fitness CSV data
+                if hasattr(cf_model, 'best_fitness_list') and cf_model.best_fitness_list:
+                    fitness_data = []
+                    for gen, best in enumerate(cf_model.best_fitness_list):
+                        row = {'generation': gen, 'best_fitness': best}
+                        if hasattr(cf_model, 'average_fitness_list') and gen < len(cf_model.average_fitness_list):
+                            row['average_fitness'] = cf_model.average_fitness_list[gen]
+                        fitness_data.append(row)
+                    fitness_df = pd.DataFrame(fitness_data)
+                    fitness_csv_path = os.path.join(sample_dir, f'fitness_combo_{combination_idx}.csv')
+                    fitness_df.to_csv(fitness_csv_path, index=False)
+            
+            print(f"DEBUG: Creating per-CF visualizations for {len(all_counterfactuals)} counterfactuals")
             for cf_idx, counterfactual in enumerate(all_counterfactuals):
                 cf_pred_class = int(model.predict(pd.DataFrame([counterfactual]))[0])
+                print(f"DEBUG: Creating visualizations for CF {cf_idx}...")
                     
+                heatmap_fig = None
+                comparison_fig = None
                 try:
                     heatmap_fig = plot_sample_and_counterfactual_heatmap(
                         ORIGINAL_SAMPLE, 
@@ -672,7 +729,13 @@ def run_single_sample(
                         cf_pred_class,
                         dict_non_actionable
                     )
-                    
+                    print(f"DEBUG: Heatmap created for CF {cf_idx}")
+                except Exception as exc:
+                    print(f"WARNING: Heatmap generation failed for CF {cf_idx}: {exc}")
+                    import traceback
+                    traceback.print_exc()
+                
+                try:
                     comparison_fig = plot_sample_and_counterfactual_comparison(
                         model,
                         ORIGINAL_SAMPLE,
@@ -681,14 +744,11 @@ def run_single_sample(
                         constraints,
                         class_colors_list
                     )
-                    
-                    fitness_fig = CounterFactualVisualizer.plot_fitness(cf_model) if hasattr(cf_model, 'best_fitness_list') else None
-                
+                    print(f"DEBUG: Comparison plot created for CF {cf_idx}")
                 except Exception as exc:
-                    print(f"WARNING: Visualization generation failed for CF {cf_idx}: {exc}")
-                    heatmap_fig = None
-                    comparison_fig = None
-                    fitness_fig = None
+                    print(f"WARNING: Comparison plot generation failed for CF {cf_idx}: {exc}")
+                    import traceback
+                    traceback.print_exc()
                 
                 # Save per-CF visualizations locally
                 if getattr(config.output, 'save_visualization_images', False):
@@ -697,16 +757,14 @@ def run_single_sample(
                     if heatmap_fig:
                         heatmap_path = os.path.join(sample_dir, f'heatmap_combo_{combination_idx}_cf_{cf_idx}.png')
                         heatmap_fig.savefig(heatmap_path, bbox_inches='tight', dpi=150)
+                        print(f"DEBUG: Saved heatmap to {heatmap_path}")
                     
                     if comparison_fig:
                         comparison_path = os.path.join(sample_dir, f'comparison_combo_{combination_idx}_cf_{cf_idx}.png')
                         comparison_fig.savefig(comparison_path, bbox_inches='tight', dpi=150)
-                    
-                    if fitness_fig:
-                        fitness_path = os.path.join(sample_dir, f'fitness_combo_{combination_idx}_cf_{cf_idx}.png')
-                        fitness_fig.savefig(fitness_path, bbox_inches='tight', dpi=150)
+                        print(f"DEBUG: Saved comparison to {comparison_path}")
                 
-                # Log to WandB
+                # Log to WandB (include fitness only on first CF to avoid duplicates)
                 if wandb_run:
                     log_dict = {
                         "viz/sample_id": SAMPLE_ID,
@@ -718,7 +776,8 @@ def run_single_sample(
                         log_dict["visualizations/heatmap"] = wandb.Image(heatmap_fig)
                     if comparison_fig:
                         log_dict["visualizations/comparison"] = wandb.Image(comparison_fig)
-                    if fitness_fig:
+                    # Log fitness curve only once (on first CF)
+                    if fitness_fig and cf_idx == 0:
                         log_dict["visualizations/fitness_curve"] = wandb.Image(fitness_fig)
                     
                     wandb.log(log_dict)
@@ -781,15 +840,21 @@ Final Results
                         })
             
             # Combination-level visualizations (after processing all CFs)
+            print(f"DEBUG: Creating combination-level visualizations for combo {combination_idx}")
             try:
                 if combination_viz['results']:
                     result_viz = combination_viz['results'][0]
-                    counterfactuals_list = result_viz['all_counterfactuals']
+                    counterfactuals_list = result_viz.get('all_counterfactuals', [])
+                    if not counterfactuals_list:
+                        print(f"WARNING: No counterfactuals in result_viz for combo {combination_idx}")
+                        raise ValueError("No counterfactuals to visualize")
+                        
                     cf_features_df = pd.DataFrame(counterfactuals_list)
                     
                     # Get evolution history for visualization
                     evolution_histories = [result_viz.get('evolution_history', [])]
                     
+                    print(f"DEBUG: Creating pairwise plot...")
                     # Create combination-level visualizations
                     pairwise_fig = plot_pairwise_with_counterfactual_df(
                         model,
@@ -799,6 +864,7 @@ Final Results
                         cf_features_df
                     )
                     
+                    print(f"DEBUG: Creating PCA plot...")
                     pca_fig = plot_pca_with_counterfactuals(
                         model,
                         pd.DataFrame(FEATURES, columns=FEATURE_NAMES),
@@ -810,10 +876,10 @@ Final Results
                     
                     combination_viz['pairwise'] = pairwise_fig
                     combination_viz['pca'] = pca_fig
+                    print(f"DEBUG: Combination-level visualizations created successfully")
                     
                     # Optionally save images and CSVs locally
-                    try:
-                        if getattr(config.output, 'save_visualization_images', False):
+                    if getattr(config.output, 'save_visualization_images', False):
                             # Ensure sample_dir exists
                             os.makedirs(sample_dir, exist_ok=True)
 
@@ -1650,11 +1716,12 @@ Final Results
                                 except Exception as exc:
                                     print(f"ERROR: Failed to save PCA numeric data: {exc}")
                                     traceback.print_exc()
-                    except Exception as exc:
-                        print(f"ERROR: Failed saving visualization images: {exc}")
-                        traceback.print_exc()
-
-                    # Log to WandB
+                            except Exception as exc:
+                                print(f"ERROR: Failed saving visualization images: {exc}")
+                                traceback.print_exc()
+                    
+                    # Log to WandB (outside of save_visualization_images check)
+                    print(f"DEBUG: Logging combination-level visualizations to WandB...")
                     if wandb_run:
                         log_dict = {
                             "viz_combo/sample_id": SAMPLE_ID,
@@ -1663,8 +1730,10 @@ Final Results
                         
                         if pairwise_fig:
                             log_dict["visualizations/pairwise"] = wandb.Image(pairwise_fig)
+                            print(f"DEBUG: Added pairwise to WandB log")
                         if pca_fig:
                             log_dict["visualizations/pca"] = wandb.Image(pca_fig)
+                            print(f"DEBUG: Added PCA to WandB log")
                         
                         # Log 4D feature evolution plot
                         feature_4d_path = os.path.join(sample_dir, f'feature_evolution_4d_combo_{combination_idx}.png')
@@ -1708,6 +1777,7 @@ Final Results
                             log_dict["data/pca_loadings"] = pca_loadings_table
                         
                         wandb.log(log_dict)
+                        print(f"DEBUG: Logged combination visualizations to WandB with {len(log_dict)} items")
                         
             except Exception as exc:
                 print(f"WARNING: Combination-level visualization generation failed: {exc}")
