@@ -1302,7 +1302,14 @@ class CounterFactualModel:
         
         self.best_fitness_list = []
         self.average_fitness_list = []
-        self.evolution_history = []  # Reset evolution history for this run
+        self.evolution_history = []  # Reset evolution history for this run (best individual per gen)
+        
+        # Track evolution history per HOF entry for visualization
+        # Each HOF position gets its own history: snapshots of best individual at each generation
+        # until that HOF entry was discovered/established
+        hof_evolution_histories = {i: [] for i in range(num_best_results)}
+        previous_hof_items = [None] * num_best_results  # Track previous HOF entries to detect changes
+        
         previous_best_fitness = float('inf')
         stable_generations = 0
         current_mutation_rate = mutation_rate
@@ -1319,8 +1326,39 @@ class CounterFactualModel:
             hof.update(population)
             
             # Store best individual for this generation (deep copy to preserve state)
+            # This is the shared evolution_history (tracking hof[0])
             if hof[0].fitness.values[0] != np.inf:
                 self.evolution_history.append(dict(hof[0]))
+            
+            # Track evolution history per HOF entry
+            # For each HOF position, append the current best individual's state
+            # This creates a history path that each CF can use for visualization
+            for hof_idx in range(min(len(hof), num_best_results)):
+                current_hof_item = hof[hof_idx]
+                current_hof_dict = dict(current_hof_item)
+                current_fitness = current_hof_item.fitness.values[0]
+                
+                # Skip invalid entries
+                if current_fitness == np.inf or current_fitness >= INVALID_FITNESS:
+                    continue
+                
+                # Check if this HOF position has a new/different individual
+                prev_item = previous_hof_items[hof_idx]
+                is_new_entry = (prev_item is None or 
+                               dict(prev_item) != current_hof_dict or
+                               prev_item.fitness.values[0] != current_fitness)
+                
+                if is_new_entry:
+                    # New individual entered this HOF position
+                    # Copy the current shared evolution_history as its lineage up to this point
+                    # (minus the last entry since that's the current generation)
+                    if len(self.evolution_history) > 1:
+                        hof_evolution_histories[hof_idx] = list(self.evolution_history[:-1])
+                    else:
+                        hof_evolution_histories[hof_idx] = []
+                    
+                    # Store reference to track changes
+                    previous_hof_items[hof_idx] = toolbox.clone(current_hof_item)
             
             best_fitness = record["min"]
             average_fitness = record["avg"]
@@ -1443,10 +1481,14 @@ class CounterFactualModel:
             pool.close()
             pool.join()
         
+        # Store per-HOF evolution histories on model instance for later access
+        self.hof_evolution_histories = hof_evolution_histories
+        
         # Return the best individuals found
         # Check for both np.inf and INVALID_FITNESS (1e6) to detect failed counterfactuals
         INVALID_FITNESS = 1e6
         valid_counterfactuals = []
+        valid_cf_hof_indices = []  # Track which HOF indices correspond to valid CFs
         
         for i in range(len(hof)):
             best_fitness = hof[i].fitness.values[0]
@@ -1503,8 +1545,20 @@ class CounterFactualModel:
                 continue
             
             valid_counterfactuals.append(best_individual)
+            valid_cf_hof_indices.append(i)  # Track which HOF index this CF came from
             if len(valid_counterfactuals) >= num_best_results:
                 break
+        
+        # Build per-CF evolution histories for valid counterfactuals
+        # Each valid CF gets the evolution history from its corresponding HOF position
+        self.per_cf_evolution_histories = []
+        for hof_idx in valid_cf_hof_indices:
+            # Get the evolution history for this HOF position
+            cf_history = hof_evolution_histories.get(hof_idx, [])
+            # If no specific history, fall back to shared evolution_history
+            if not cf_history:
+                cf_history = list(self.evolution_history)
+            self.per_cf_evolution_histories.append(cf_history)
         
         # Return None if no valid counterfactuals found, otherwise return the list
         if not valid_counterfactuals:
