@@ -1106,6 +1106,24 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
             color=cf_color, marker='x', s=100,
             linewidths=2.5, zorder=8
         )
+        
+        # Add generation number label (same style as evolution nodes)
+        # Determine generation number from evolution history
+        if evolution_histories and idx < len(evolution_histories) and evolution_histories[idx]:
+            gen_num = len(evolution_histories[idx]) + 1  # Final CF is one after last recorded generation
+            gen_label = str(gen_num)
+        else:
+            gen_label = '?'  # No history available
+            
+        plt.text(
+            counterfactuals_pca[idx, 0] + 0.15, counterfactuals_pca[idx, 1] + 0.15,
+            gen_label,
+            ha='left', va='bottom', fontsize=12,
+            color=cf_color, alpha=1.0, weight='bold',
+            zorder=16,
+            bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
+                      edgecolor=cf_color, alpha=0.8, linewidth=1)
+        )
 
     plt.xlabel('PCA Component 1')
     plt.ylabel('PCA Component 2')

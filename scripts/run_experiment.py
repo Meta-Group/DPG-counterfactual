@@ -363,6 +363,9 @@ def run_single_sample(
         average_fitness_list = result["average_fitness_list"]
         result_method = result.get("method", "dpg")
         
+        # Get per-CF evolution histories (each CF has its own path from original)
+        per_cf_evolution_histories = result.get("per_cf_evolution_histories", None)
+        
         print(f"DEBUG run_experiment: Processing result, method={result_method}, best_fitness_list length={len(best_fitness_list)}, avg_fitness_list length={len(average_fitness_list)}, evolution_history length={len(evolution_history)}")
 
         # Get all counterfactuals from this generation
@@ -375,6 +378,13 @@ def run_single_sample(
 
                 # Calculate final best fitness
                 best_fitness = best_fitness_list[-1] if best_fitness_list else 0.0
+                
+                # Get the evolution history specific to this CF
+                # Falls back to shared history if per-CF histories not available
+                if per_cf_evolution_histories and cf_idx < len(per_cf_evolution_histories):
+                    cf_evolution_history = per_cf_evolution_histories[cf_idx]
+                else:
+                    cf_evolution_history = evolution_history
 
                 # Create cf_model based on method
                 if result_method == "dice":
@@ -389,7 +399,7 @@ def run_single_sample(
                     # Set empty fitness lists for DiCE (no evolution tracking)
                     cf_model.best_fitness_list = []
                     cf_model.average_fitness_list = []
-                    cf_model.evolution_history = evolution_history
+                    cf_model.evolution_history = cf_evolution_history
                 else:
                     # Recreate cf_model with stored DPG parameters (including dual-boundary parameters)
                     cf_model = CounterFactualModel(
@@ -415,14 +425,14 @@ def run_single_sample(
                     # Restore fitness history
                     cf_model.best_fitness_list = best_fitness_list
                     cf_model.average_fitness_list = average_fitness_list
-                    cf_model.evolution_history = evolution_history
+                    cf_model.evolution_history = cf_evolution_history
 
                 # Store counterfactual data with evolution history
                 cf_viz = {
                     "counterfactual": counterfactual,
                     "all_counterfactuals": all_counterfactuals,
                     "cf_model": cf_model,
-                    "evolution_history": evolution_history,
+                    "evolution_history": cf_evolution_history,
                     "visualizations": [],
                     "explanations": {},
                     "cf_index": cf_idx,

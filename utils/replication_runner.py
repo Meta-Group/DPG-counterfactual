@@ -122,12 +122,19 @@ def run_counterfactual_generation_dpg(args):
         best_fitness_list = getattr(cf_model, 'best_fitness_list', [])
         average_fitness_list = getattr(cf_model, 'average_fitness_list', [])
         
-        print(f"DEBUG counterfactual_runner: Generated {len(counterfactuals)} counterfactuals, best_fitness_list length = {len(best_fitness_list)}, avg_fitness_list length = {len(average_fitness_list)}, evolution_history length = {len(evolution_history)}")
+        # Get per-CF evolution histories (each CF gets its own history path)
+        per_cf_evolution_histories = getattr(cf_model, 'per_cf_evolution_histories', None)
+        # Fallback: if per-CF histories not available, create list of shared history for each CF
+        if per_cf_evolution_histories is None or len(per_cf_evolution_histories) == 0:
+            per_cf_evolution_histories = [evolution_history] * len(counterfactuals)
+        
+        print(f"DEBUG counterfactual_runner: Generated {len(counterfactuals)} counterfactuals, best_fitness_list length = {len(best_fitness_list)}, avg_fitness_list length = {len(average_fitness_list)}, evolution_history length = {len(evolution_history)}, per_cf_histories = {len(per_cf_evolution_histories)}")
         
         return {
             'counterfactual': counterfactual,
             'all_counterfactuals': counterfactuals,  # All requested counterfactuals from single GA run
-            'evolution_history': evolution_history,
+            'evolution_history': evolution_history,  # Shared best-per-generation history
+            'per_cf_evolution_histories': per_cf_evolution_histories,  # Per-CF evolution paths
             'best_fitness_list': best_fitness_list,
             'average_fitness_list': average_fitness_list,
             'dict_non_actionable': dict_non_actionable,
