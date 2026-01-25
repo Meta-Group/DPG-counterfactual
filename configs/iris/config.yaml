@@ -26,7 +26,7 @@ output:
   save_visualization_images: true
 methods:
   _default:
-    max_generations: 60
+    max_generations: 50
     mutation_rate: 0.3
     repulsion_weight: 2.0
     boundary_weight: 12.0
