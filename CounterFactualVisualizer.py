@@ -1006,11 +1006,11 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
     # Plot evolution histories if provided
     if evolution_histories:
         print(f"DEBUG plot_pca: Received {len(evolution_histories)} evolution histories")
-        for history in evolution_histories:
+        for cf_idx, history in enumerate(evolution_histories):
             if not history:
                 continue
             
-            print(f"DEBUG plot_pca: Processing history with {len(history)} generations")
+            print(f"DEBUG plot_pca: Processing history {cf_idx} with {len(history)} generations")
             
             # Convert evolution history to DataFrame and transform
             history_df = pd.DataFrame(history)
@@ -1066,26 +1066,46 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
                         zorder=6
                     )
 
-            # Draw a line connecting all generations in sequence (first to last)
+            # Draw a line connecting original sample → all generations → final counterfactual
             try:
-                if len(history_pca) > 1:
-                    final_class = history_classes[-1]
-                    line_color = colors[final_class % len(colors)]
-                    # Extract all x and y coordinates for the path
-                    x_coords = history_pca[:, 0]
-                    y_coords = history_pca[:, 1]
-                    plt.plot(x_coords, y_coords,
-                             color=line_color, linewidth=1.0, alpha=0.6, zorder=4)
-            except Exception:
-                pass
-    else:
-        # Fallback: plot final counterfactuals only (original behavior)
-        for idx, cf_class in enumerate(counterfactual_classes):
-            plt.scatter(
-                counterfactuals_pca[idx, 0], counterfactuals_pca[idx, 1],
-                color=colors[cf_class % len(colors)], marker='x', s=100,
-                linewidths=1.5, zorder=5
-            )
+                if len(history_pca) >= 1:
+                    # Get the corresponding final counterfactual coordinates
+                    if cf_idx < len(counterfactuals_pca):
+                        final_cf_coords = counterfactuals_pca[cf_idx]
+                        final_class = counterfactual_classes[cf_idx]
+                        line_color = colors[final_class % len(colors)]
+                        
+                        # Build complete path: original → evolution generations → final counterfactual
+                        x_coords = np.concatenate([
+                            [original_sample_pca[0, 0]], 
+                            history_pca[:, 0],
+                            [final_cf_coords[0]]
+                        ])
+                        y_coords = np.concatenate([
+                            [original_sample_pca[0, 1]], 
+                            history_pca[:, 1],
+                            [final_cf_coords[1]]
+                        ])
+                        plt.plot(x_coords, y_coords,
+                                 color=line_color, linewidth=1.0, alpha=0.6, zorder=4)
+            except Exception as e:
+                print(f"WARNING: Failed to draw evolution line for cf_idx {cf_idx}: {e}")
+    
+    # Always plot final counterfactuals with X inside circle marker
+    for idx, cf_class in enumerate(counterfactual_classes):
+        cf_color = colors[cf_class % len(colors)]
+        # Plot circle outline
+        plt.scatter(
+            counterfactuals_pca[idx, 0], counterfactuals_pca[idx, 1],
+            facecolors='none', edgecolors=cf_color, marker='o', s=200,
+            linewidths=2.5, alpha=1.0, zorder=7
+        )
+        # Plot X marker inside the circle
+        plt.scatter(
+            counterfactuals_pca[idx, 0], counterfactuals_pca[idx, 1],
+            color=cf_color, marker='x', s=100,
+            linewidths=2.5, zorder=8
+        )
 
     plt.xlabel('PCA Component 1')
     plt.ylabel('PCA Component 2')
@@ -1096,7 +1116,9 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
         Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[original_class % len(colors)], markersize=10, 
                markeredgecolor='black', markeredgewidth=1.5, label='Original Sample'),
         Line2D([0], [0], marker='o', color='w', markerfacecolor='none', markersize=8,
-               markeredgecolor='gray', markeredgewidth=1.5, label='GA Evolution (faint→solid)')
+               markeredgecolor='gray', markeredgewidth=1.5, label='GA Evolution (faint→solid)'),
+        Line2D([0], [0], marker='X', color='w', markerfacecolor='gray', markersize=10,
+               markeredgecolor='gray', markeredgewidth=1.5, label='Final Counterfactuals')
     ]
     plt.legend(handles=legend_elements, loc='best')
     plt.close(fig)
