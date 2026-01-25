@@ -11,7 +11,7 @@ def test_visualization_exports_summary():
 
     try:
         # Generate a tiny experiment in tmpdir
-        result = run_experiment(seed=0, sample_index=2, output_dir=tmpdir, num_combinations_to_test=1, num_replications=1, initial_population_size=5, max_generations=5, verbose=False)
+        result = run_experiment(seed=0, sample_index=2, output_dir=tmpdir, num_replications=1, initial_population_size=5, max_generations=5, verbose=False)
         sample_id = result['sample_id']
 
         viz_result = run_visualization(sample_id=sample_id, output_dir=tmpdir, export_plots=False, save_summary=True, save_metrics=False, verbose=False)

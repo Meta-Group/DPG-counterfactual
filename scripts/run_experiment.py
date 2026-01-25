@@ -222,34 +222,11 @@ def run_single_sample(
     # Prepare CF parameters
     FEATURES_NAMES = list(ORIGINAL_SAMPLE.keys())
 
-    # Check if using per-feature rules (preferred) or legacy rule combinations
-    has_actionability = (
-        hasattr(config.counterfactual, "actionability")
-        and config.counterfactual.actionability
+    # Build dict_non_actionable from per-feature actionability rules in config
+    dict_non_actionable = build_dict_non_actionable(
+        config, FEATURES_NAMES, VARIABLE_INDICES
     )
-    has_feature_rules = (
-        hasattr(config.counterfactual, "feature_rules")
-        and config.counterfactual.feature_rules
-    )
-    use_feature_rules = has_actionability or has_feature_rules
-
-    if use_feature_rules:
-        # Use per-feature rules directly (no combination testing)
-        RULES_COMBINATIONS = [None]  # Single run
-        num_combinations_to_test = 1
-        print(f"INFO: Using per-feature actionability rules from config")
-    else:
-        # Legacy: test combinations of rules across all features
-        RULES = config.counterfactual.rules
-        RULES_COMBINATIONS = list(
-            __import__("itertools").product(RULES, repeat=len(FEATURES_NAMES))
-        )
-        num_combinations_to_test = config.experiment_params.num_combinations_to_test
-        if num_combinations_to_test is None:
-            num_combinations_to_test = int(len(RULES_COMBINATIONS) / 2)
-        print(
-            f"INFO: Testing {num_combinations_to_test} rule combinations (legacy mode)"
-        )
+    print(f"INFO: Using per-feature actionability rules from config")
 
     # Choose target class
     # NOTE: Cannot assume classes are 0, 1, 2... - use actual unique class labels
@@ -280,7 +257,7 @@ def run_single_sample(
 
     print(f"INFO: Processing Sample ID: {SAMPLE_ID} (dataset index: {sample_index})")
     print(
-        f"INFO: Original Predicted Class: {ORIGINAL_SAMPLE_PREDICTED_CLASS}, Target Class: {TARGET_CLASS}, combinations to test: {num_combinations_to_test}/{len(RULES_COMBINATIONS)}"
+        f"INFO: Original Predicted Class: {ORIGINAL_SAMPLE_PREDICTED_CLASS}, Target Class: {TARGET_CLASS}"
     )
 
     # Log sample info to WandB as summary (these are single values per sample, not time series)
@@ -290,9 +267,6 @@ def run_single_sample(
             ORIGINAL_SAMPLE_PREDICTED_CLASS
         )
         wandb.run.summary[f"sample_{SAMPLE_ID}/target_class"] = TARGET_CLASS
-        wandb.run.summary[f"sample_{SAMPLE_ID}/num_combinations_tested"] = (
-            num_combinations_to_test
-        )
 
     counterfactuals_df_combinations = []
     visualizations = []
@@ -307,79 +281,58 @@ def run_single_sample(
         max_workers = max(1, multiprocessing.cpu_count() - 1)
 
     # Helper to get a descriptive label for logging
-    def get_combination_label(combination, dict_non_actionable):
+    def get_combination_label(dict_non_actionable):
         """Get a descriptive label for logging purposes."""
-        if combination is not None:
-            return str(combination)
-        # For per-feature rules, create a concise summary
+        # Create a concise summary of actionability rules
         non_none_rules = {f: r for f, r in dict_non_actionable.items() if r != "none"}
         return f"per_feature_rules:{len(non_none_rules)}_constraints"
 
-    # Loop through combinations
-    for combination_num, combination in enumerate(
-        RULES_COMBINATIONS[:num_combinations_to_test]
-    ):
-        # Build dict_non_actionable based on config (per-feature rules or combination)
-        if use_feature_rules:
-            # Use per-feature rules from config
-            dict_non_actionable = build_dict_non_actionable(
-                config, FEATURES_NAMES, VARIABLE_INDICES
-            )
-        else:
-            # Legacy: build from rule combination
-            dict_non_actionable = dict(zip(FEATURES_NAMES, combination))
-            # Force non-actionable features (not in VARIABLE_INDICES) to "no_change"
-            for idx, feature_name in enumerate(FEATURES_NAMES):
-                if idx not in VARIABLE_INDICES:
-                    dict_non_actionable[feature_name] = "no_change"
+    # Process single run with per-feature actionability rules from config
 
-        # Compute variable_features for metrics based on dict_non_actionable
-        # Features are actionable if their rule is NOT "no_change"
-        variable_features_for_metrics = [
-            idx
-            for idx, feature_name in enumerate(FEATURES_NAMES)
-            if dict_non_actionable.get(feature_name, "none") != "no_change"
-        ]
+    # Compute variable_features for metrics based on dict_non_actionable
+    # Features are actionable if their rule is NOT "no_change"
+    variable_features_for_metrics = [
+        idx
+        for idx, feature_name in enumerate(FEATURES_NAMES)
+        if dict_non_actionable.get(feature_name, "none") != "no_change"
+    ]
 
-        # Log actionability rules on first iteration
-        if combination_num == 0:
-            frozen_features = [
-                f for f, rule in dict_non_actionable.items() if rule == "no_change"
-            ]
-            directional_features = {
-                f: rule
-                for f, rule in dict_non_actionable.items()
-                if rule in ["non_increasing", "non_decreasing"]
-            }
-            if frozen_features:
-                print(
-                    f"INFO: Freezing {len(frozen_features)} non-actionable features: {frozen_features}"
-                )
-            if directional_features:
-                print(f"INFO: Directional constraints: {directional_features}")
-
-        counterfactuals_df_replications = []
-        # Store dict_non_actionable directly for visualization (works for both per-feature rules and legacy mode)
-        combination_viz = {
-            "label": dict_non_actionable,
-            "pairwise": None,
-            "pca": None,
-            "replication": [],
-        }
-
-        skip_combination = False
-
-        # Prepare training DataFrame with target for DiCE
-        # DiCE needs a DataFrame with features + outcome column
-        train_df_for_dice = (
-            TRAIN_FEATURES.copy()
-            if hasattr(TRAIN_FEATURES, "copy")
-            else pd.DataFrame(TRAIN_FEATURES, columns=FEATURE_NAMES)
+    # Log actionability rules
+    frozen_features = [
+        f for f, rule in dict_non_actionable.items() if rule == "no_change"
+    ]
+    directional_features = {
+        f: rule
+        for f, rule in dict_non_actionable.items()
+        if rule in ["non_increasing", "non_decreasing"]
+    }
+    if frozen_features:
+        print(
+            f"INFO: Freezing {len(frozen_features)} non-actionable features: {frozen_features}"
         )
-        train_df_for_dice["_target_"] = TRAIN_LABELS
+    if directional_features:
+        print(f"INFO: Directional constraints: {directional_features}")
 
-        # Prepare arguments for parallel execution
-        replication_args = [
+    counterfactuals_df_replications = []
+    # Store dict_non_actionable directly for visualization
+    combination_viz = {
+        "label": dict_non_actionable,
+        "pairwise": None,
+        "pca": None,
+        "replication": [],
+    }
+
+    # Prepare training DataFrame with target for DiCE
+    # DiCE needs a DataFrame with features + outcome column
+    train_df_for_dice = (
+        TRAIN_FEATURES.copy()
+        if hasattr(TRAIN_FEATURES, "copy")
+        else pd.DataFrame(TRAIN_FEATURES, columns=FEATURE_NAMES)
+    )
+    train_df_for_dice["_target_"] = TRAIN_LABELS
+
+    # Prepare arguments for parallel execution
+    replication_args = [
             (
                 replication,
                 ORIGINAL_SAMPLE,
@@ -396,85 +349,82 @@ def run_single_sample(
             for replication in range(config.experiment_params.num_replications)
         ]
 
-        # Run replications in parallel or sequential based on config
-        replication_results = []
-        if use_parallel and config.experiment_params.num_replications > 1:
-            print(
-                f"INFO: Running {config.experiment_params.num_replications} replications in parallel (max_workers={max_workers})"
-            )
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                futures = {
-                    executor.submit(_run_single_replication, args): args[0]
-                    for args in replication_args
-                }
+    # Run replications in parallel or sequential based on config
+    replication_results = []
+    if use_parallel and config.experiment_params.num_replications > 1:
+        print(
+            f"INFO: Running {config.experiment_params.num_replications} replications in parallel (max_workers={max_workers})"
+        )
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_run_single_replication, args): args[0]
+                for args in replication_args
+            }
 
-                for future in as_completed(futures):
-                    replication_num = futures[future]
-                    total_replications += 1
-                    try:
-                        result = future.result()
-                        if result is not None:
-                            replication_results.append(result)
-                    except Exception as exc:
-                        print(
-                            f"WARNING: Replication {replication_num} failed with exception: {exc}"
-                        )
-                        if wandb_run:
-                            wandb.log(
-                                {
-                                    "replication/sample_id": SAMPLE_ID,
-                                    "replication/combination": get_combination_label(
-                                        combination, dict_non_actionable
-                                    ),
-                                    "replication/replication_num": replication_num,
-                                    "replication/success": False,
-                                }
-                            )
-        else:
-            # Sequential execution for backward compatibility or when parallel is disabled
-            for args in replication_args:
-                replication_num = args[0]
+            for future in as_completed(futures):
+                replication_num = futures[future]
                 total_replications += 1
-                result = _run_single_replication(args)
-                if result is not None:
-                    replication_results.append(result)
-                elif wandb_run:
-                    wandb.log(
-                        {
-                            "replication/sample_id": SAMPLE_ID,
-                            "replication/combination": get_combination_label(
-                                combination, dict_non_actionable
-                            ),
-                            "replication/replication_num": replication_num,
-                            "replication/success": False,
-                        }
+                try:
+                    result = future.result()
+                    if result is not None:
+                        replication_results.append(result)
+                except Exception as exc:
+                    print(
+                        f"WARNING: Replication {replication_num} failed with exception: {exc}"
                     )
+                    if wandb_run:
+                        wandb.log(
+                            {
+                                "replication/sample_id": SAMPLE_ID,
+                                "replication/combination": get_combination_label(
+                                    dict_non_actionable
+                                ),
+                                "replication/replication_num": replication_num,
+                                "replication/success": False,
+                            }
+                        )
+    else:
+        # Sequential execution for backward compatibility or when parallel is disabled
+        for args in replication_args:
+            replication_num = args[0]
+            total_replications += 1
+            result = _run_single_replication(args)
+            if result is not None:
+                replication_results.append(result)
+            elif wandb_run:
+                wandb.log(
+                    {
+                        "replication/sample_id": SAMPLE_ID,
+                        "replication/combination": get_combination_label(
+                            dict_non_actionable
+                        ),
+                        "replication/replication_num": replication_num,
+                        "replication/success": False,
+                    }
+                )
 
-        # Process results from all replications
-        if not replication_results:
-            skip_combination = True
+    # Determine method for this run
+    cf_method = getattr(config.counterfactual, "method", "dpg").lower()
 
-        # Determine method for this run
-        cf_method = getattr(config.counterfactual, "method", "dpg").lower()
+    # Process results from all replications
+    for result in replication_results:
+        evolution_history = result["evolution_history"]
+        best_fitness_list = result["best_fitness_list"]
+        average_fitness_list = result["average_fitness_list"]
+        replication_num = result["replication_num"]
+        result_method = result.get("method", "dpg")
+        
+        print(f"DEBUG run_experiment: Processing result for replication {replication_num}, method={result_method}, best_fitness_list length={len(best_fitness_list)}, avg_fitness_list length={len(average_fitness_list)}, evolution_history length={len(evolution_history)}")
 
-        for result in replication_results:
-            evolution_history = result["evolution_history"]
-            best_fitness_list = result["best_fitness_list"]
-            average_fitness_list = result["average_fitness_list"]
-            replication_num = result["replication_num"]
-            result_method = result.get("method", "dpg")
-            
-            print(f"DEBUG run_experiment: Processing result for replication {replication_num}, method={result_method}, best_fitness_list length={len(best_fitness_list)}, avg_fitness_list length={len(average_fitness_list)}, evolution_history length={len(evolution_history)}")
+        # Get all counterfactuals from this replication (num_best_results for DPG)
+        all_counterfactuals = result.get("all_counterfactuals", [])
 
-            # Get all counterfactuals from this replication (num_best_results for DPG)
-            all_counterfactuals = result.get("all_counterfactuals", [])
+        if not all_counterfactuals:
+            continue
 
-            if not all_counterfactuals:
-                continue
-
-            # Process each counterfactual in all_counterfactuals
-            for cf_idx, counterfactual in enumerate(all_counterfactuals):
-                valid_counterfactuals += 1
+        # Process each counterfactual in all_counterfactuals
+        for cf_idx, counterfactual in enumerate(all_counterfactuals):
+            valid_counterfactuals += 1
 
             # Calculate final best fitness
             best_fitness = best_fitness_list[-1] if best_fitness_list else 0.0
@@ -626,7 +576,7 @@ def run_single_sample(
                 log_data = {
                     "replication/sample_id": SAMPLE_ID,
                     "replication/combination": get_combination_label(
-                        combination, dict_non_actionable
+                        dict_non_actionable
                     ),
                     "replication/replication_num": replication_num,
                     "replication/success": True,
@@ -654,9 +604,7 @@ def run_single_sample(
                 # Log fitness evolution with generation as x-axis
                 # Create separate series per replication for better comparison
                 if cf_model.best_fitness_list and cf_model.average_fitness_list:
-                    replication_key = (
-                        f"s{SAMPLE_ID}_c{combination_num}_r{replication_num}"
-                    )
+                    replication_key = f"s{SAMPLE_ID}_r{replication_num}"
                     for gen, (best, avg) in enumerate(
                         zip(cf_model.best_fitness_list, cf_model.average_fitness_list)
                     ):
@@ -674,7 +622,7 @@ def run_single_sample(
                     ] = SAMPLE_ID
                     wandb.run.summary[
                         f"fitness_metadata/{replication_key}/combination"
-                    ] = get_combination_label(combination, dict_non_actionable)
+                    ] = get_combination_label(dict_non_actionable)
                     wandb.run.summary[
                         f"fitness_metadata/{replication_key}/replication"
                     ] = replication_num
@@ -706,147 +654,147 @@ def run_single_sample(
                         fitness_df = pd.DataFrame(fitness_data)
                         fitness_csv_path = os.path.join(
                             sample_dir,
-                            f"fitness_combo_{combination_num}_rep_{replication_num}.csv",
+                            f"fitness_rep_{replication_num}.csv",
                         )
                         fitness_df.to_csv(fitness_csv_path, index=False)
 
-        if counterfactuals_df_replications:
-            counterfactuals_df_replications = pd.DataFrame(
-                counterfactuals_df_replications
+    if counterfactuals_df_replications:
+        counterfactuals_df_replications = pd.DataFrame(
+            counterfactuals_df_replications
+        )
+        counterfactuals_df_combinations.extend(
+            counterfactuals_df_replications.to_dict("records")
+        )
+
+    # Compute combination-level comprehensive metrics
+    combination_comprehensive_metrics = {}
+    if combination_viz["replication"] and COMPREHENSIVE_METRICS_AVAILABLE:
+        try:
+            x_original = np.array(
+                [ORIGINAL_SAMPLE[feat] for feat in FEATURES_NAMES]
             )
-            counterfactuals_df_combinations.extend(
-                counterfactuals_df_replications.to_dict("records")
+            cf_list = [
+                np.array([rep["counterfactual"][feat] for feat in FEATURES_NAMES])
+                for rep in combination_viz["replication"]
+            ]
+            cf_array = np.array(cf_list)
+
+            # Compute comprehensive metrics for this combination
+            combination_comprehensive_metrics = evaluate_cf_list_comprehensive(
+                cf_list=cf_array,
+                x=x_original,
+                model=model,
+                y_val=ORIGINAL_SAMPLE_PREDICTED_CLASS,
+                max_nbr_cf=config.experiment_params.num_replications,
+                variable_features=variable_features_for_metrics,
+                continuous_features_all=CONTINUOUS_INDICES,
+                categorical_features_all=CATEGORICAL_INDICES,
+                X_train=X_TRAIN,
+                X_test=X_TEST,
+                ratio_cont=ratio_cont,
+                nbr_features=nbr_features,
             )
 
-        # Compute combination-level comprehensive metrics
-        combination_comprehensive_metrics = {}
-        if combination_viz["replication"] and COMPREHENSIVE_METRICS_AVAILABLE:
-            try:
-                x_original = np.array(
-                    [ORIGINAL_SAMPLE[feat] for feat in FEATURES_NAMES]
-                )
-                cf_list = [
-                    np.array([rep["counterfactual"][feat] for feat in FEATURES_NAMES])
-                    for rep in combination_viz["replication"]
-                ]
-                cf_array = np.array(cf_list)
+            # Store for later persistence
+            combination_viz["comprehensive_metrics"] = (
+                combination_comprehensive_metrics
+            )
 
-                # Compute comprehensive metrics for this combination
-                combination_comprehensive_metrics = evaluate_cf_list_comprehensive(
-                    cf_list=cf_array,
-                    x=x_original,
-                    model=model,
-                    y_val=ORIGINAL_SAMPLE_PREDICTED_CLASS,
-                    max_nbr_cf=config.experiment_params.num_replications,
-                    variable_features=variable_features_for_metrics,
-                    continuous_features_all=CONTINUOUS_INDICES,
-                    categorical_features_all=CATEGORICAL_INDICES,
-                    X_train=X_TRAIN,
-                    X_test=X_TEST,
-                    ratio_cont=ratio_cont,
-                    nbr_features=nbr_features,
-                )
+            # Log to WandB
+            if wandb_run:
+                combo_log = {
+                    "combo/sample_id": SAMPLE_ID,
+                    "combo/combination": get_combination_label(
+                        dict_non_actionable
+                    ),
+                }
+                for key, value in combination_comprehensive_metrics.items():
+                    if isinstance(value, (int, float, bool)) and not (
+                        isinstance(value, float)
+                        and (np.isnan(value) or np.isinf(value))
+                    ):
+                        combo_log[f"metrics/combination/{key}"] = value
+                wandb.log(combo_log)
 
-                # Store for later persistence
-                combination_viz["comprehensive_metrics"] = (
-                    combination_comprehensive_metrics
-                )
+        except Exception as exc:
+            print(f"WARNING: Combination-level comprehensive metrics failed: {exc}")
 
-                # Log to WandB
-                if wandb_run:
-                    combo_log = {
-                        "combo/sample_id": SAMPLE_ID,
-                        "combo/combination": get_combination_label(
-                            combination, dict_non_actionable
-                        ),
-                    }
-                    for key, value in combination_comprehensive_metrics.items():
-                        if isinstance(value, (int, float, bool)) and not (
-                            isinstance(value, float)
-                            and (np.isnan(value) or np.isinf(value))
-                        ):
-                            combo_log[f"metrics/combination/{key}"] = value
-                    wandb.log(combo_log)
+    # Compute combination-level cf_eval metrics (for backwards compatibility)
+    if combination_viz["replication"] and CF_EVAL_AVAILABLE and wandb_run:
+        try:
+            x_original = np.array(
+                [ORIGINAL_SAMPLE[feat] for feat in FEATURES_NAMES]
+            )
+            cf_list = [
+                np.array([rep["counterfactual"][feat] for feat in FEATURES_NAMES])
+                for rep in combination_viz["replication"]
+            ]
+            cf_array = np.array(cf_list)
+            continuous_features = list(range(len(FEATURES_NAMES)))
 
-            except Exception as exc:
-                print(f"WARNING: Combination-level comprehensive metrics failed: {exc}")
+            num_valid = int(
+                nbr_valid_cf(
+                    cf_array,
+                    model,
+                    ORIGINAL_SAMPLE_PREDICTED_CLASS,
+                    y_desidered=TARGET_CLASS,
+                )
+            )
+            pct_valid = float(
+                perc_valid_cf(
+                    cf_array,
+                    model,
+                    ORIGINAL_SAMPLE_PREDICTED_CLASS,
+                    y_desidered=TARGET_CLASS,
+                )
+            )
+            avg_distance = float(
+                continuous_distance(
+                    x_original, cf_array, continuous_features, metric="euclidean"
+                )
+            )
+            min_distance = float(
+                continuous_distance(
+                    x_original,
+                    cf_array,
+                    continuous_features,
+                    metric="euclidean",
+                    agg="min",
+                )
+            )
+            max_distance = float(
+                continuous_distance(
+                    x_original,
+                    cf_array,
+                    continuous_features,
+                    metric="euclidean",
+                    agg="max",
+                )
+            )
+            avg_changes = float(
+                avg_nbr_changes_per_cf(x_original, cf_array, continuous_features)
+            )
 
-        # Compute combination-level cf_eval metrics (for backwards compatibility)
-        if combination_viz["replication"] and CF_EVAL_AVAILABLE and wandb_run:
-            try:
-                x_original = np.array(
-                    [ORIGINAL_SAMPLE[feat] for feat in FEATURES_NAMES]
-                )
-                cf_list = [
-                    np.array([rep["counterfactual"][feat] for feat in FEATURES_NAMES])
-                    for rep in combination_viz["replication"]
-                ]
-                cf_array = np.array(cf_list)
-                continuous_features = list(range(len(FEATURES_NAMES)))
+            wandb.log(
+                {
+                    "combination/sample_id": SAMPLE_ID,
+                    "combination/combination": get_combination_label(
+                        dict_non_actionable
+                    ),
+                    "combination/num_cfs": len(cf_list),
+                    "combination/valid_cfs": num_valid,
+                    "combination/validity_pct": pct_valid * 100,
+                    "combination/avg_euclidean_distance": avg_distance,
+                    "combination/min_euclidean_distance": min_distance,
+                    "combination/max_euclidean_distance": max_distance,
+                    "combination/avg_num_changes": avg_changes,
+                }
+            )
+        except Exception as exc:
+            print(f"WARNING: Combination-level cf_eval metrics failed: {exc}")
 
-                num_valid = int(
-                    nbr_valid_cf(
-                        cf_array,
-                        model,
-                        ORIGINAL_SAMPLE_PREDICTED_CLASS,
-                        y_desidered=TARGET_CLASS,
-                    )
-                )
-                pct_valid = float(
-                    perc_valid_cf(
-                        cf_array,
-                        model,
-                        ORIGINAL_SAMPLE_PREDICTED_CLASS,
-                        y_desidered=TARGET_CLASS,
-                    )
-                )
-                avg_distance = float(
-                    continuous_distance(
-                        x_original, cf_array, continuous_features, metric="euclidean"
-                    )
-                )
-                min_distance = float(
-                    continuous_distance(
-                        x_original,
-                        cf_array,
-                        continuous_features,
-                        metric="euclidean",
-                        agg="min",
-                    )
-                )
-                max_distance = float(
-                    continuous_distance(
-                        x_original,
-                        cf_array,
-                        continuous_features,
-                        metric="euclidean",
-                        agg="max",
-                    )
-                )
-                avg_changes = float(
-                    avg_nbr_changes_per_cf(x_original, cf_array, continuous_features)
-                )
-
-                wandb.log(
-                    {
-                        "combination/sample_id": SAMPLE_ID,
-                        "combination/combination": get_combination_label(
-                            combination, dict_non_actionable
-                        ),
-                        "combination/num_cfs": len(cf_list),
-                        "combination/valid_cfs": num_valid,
-                        "combination/validity_pct": pct_valid * 100,
-                        "combination/avg_euclidean_distance": avg_distance,
-                        "combination/min_euclidean_distance": min_distance,
-                        "combination/max_euclidean_distance": max_distance,
-                        "combination/avg_num_changes": avg_changes,
-                    }
-                )
-            except Exception as exc:
-                print(f"WARNING: Combination-level cf_eval metrics failed: {exc}")
-
-        if combination_viz["replication"]:
-            visualizations.append(combination_viz)
+    if combination_viz["replication"]:
+        visualizations.append(combination_viz)
 
     # Calculate sample-level metrics
     success_rate = (

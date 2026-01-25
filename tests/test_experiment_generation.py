@@ -11,7 +11,7 @@ def test_run_experiment_saves_files():
 
     try:
         # Run with reduced settings so it's fast
-        result = run_experiment(seed=0, sample_index=1, output_dir=tmpdir, num_combinations_to_test=1, num_replications=1, initial_population_size=5, max_generations=5, verbose=False)
+        result = run_experiment(seed=0, sample_index=1, output_dir=tmpdir, num_replications=1, initial_population_size=5, max_generations=5, verbose=False)
 
         assert os.path.exists(result['raw_filepath'])
         assert os.path.exists(result['viz_filepath'])

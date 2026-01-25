@@ -48,7 +48,6 @@ CONFIG_TEMPLATE = {
         'seed': 42,
         'num_samples': 5,
         'num_best_results': 5,
-        'num_combinations_to_test': 1,
         'compute_comprehensive_metrics': True,
     },
     'output': {
