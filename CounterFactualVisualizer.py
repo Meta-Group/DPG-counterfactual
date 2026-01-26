@@ -944,6 +944,95 @@ def plot_pairwise_with_counterfactual_df(model, dataset, target, sample, counter
 # Assuming you have a trained model, a dataset (as a DataFrame or array), target labels, original sample, and counterfactual_df
 #plot_pairwise_with_counterfactual_df(model, X, y, sample, counterfactuals_df)
 
+def plot_pca_with_counterfactuals_clean(model, dataset, target, sample, counterfactuals_df):
+    """
+    Plot a PCA visualization of the dataset with the original sample and multiple counterfactuals from a DataFrame.
+    This is the CLEAN version without any generation history - only shows original and final counterfactuals.
+    
+    Args:
+        model: Trained model for predictions
+        dataset: Full dataset for PCA
+        target: Target labels
+        sample: Original sample dict
+        counterfactuals_df: DataFrame of final counterfactuals
+    """
+    # Standardize the dataset
+    scaler = StandardScaler()
+    dataset_scaled = scaler.fit_transform(dataset.select_dtypes(include=[np.number]))
+
+    # Perform PCA on the scaled dataset
+    pca = PCA(n_components=2)
+    iris_pca = pca.fit_transform(dataset_scaled)
+
+    # Ensure the sample and counterfactuals are formatted as numeric DataFrame
+    sample_df = pd.DataFrame([sample]).select_dtypes(include=[np.number])
+    sample_df_scaled = scaler.transform(sample_df)
+    if not isinstance(counterfactuals_df, pd.DataFrame):
+        raise ValueError("counterfactuals_df must be a pandas DataFrame")
+
+    numeric_cf_df = counterfactuals_df.select_dtypes(include=[np.number])
+    numeric_cf_df_scaled = scaler.transform(numeric_cf_df)
+
+    # Transform using PCA
+    original_sample_pca = pca.transform(sample_df_scaled)
+    counterfactuals_pca = pca.transform(numeric_cf_df_scaled)
+
+    # Predict classes for counterfactuals
+    counterfactual_classes = model.predict(numeric_cf_df)
+
+    # Plot the PCA results
+    fig = plt.figure(figsize=(10, 6))
+    colors = ['purple', 'green', 'orange']
+    # Determine original sample class for consistent styling
+    original_class = model.predict(pd.DataFrame([sample]))[0]
+
+    for class_value in np.unique(target):
+        plt.scatter(
+            iris_pca[target == class_value, 0],
+            iris_pca[target == class_value, 1],
+            label=f"Class {class_value}",
+            color=colors[class_value % len(colors)],
+            alpha=0.5
+        )
+
+    plt.scatter(
+        original_sample_pca[:, 0], original_sample_pca[:, 1],
+        color=colors[original_class % len(colors)], label='Original Sample',
+        edgecolor='black', linewidths=2.5, s=150, zorder=10
+    )
+    
+    # Plot final counterfactuals with X inside circle marker
+    for idx, cf_class in enumerate(counterfactual_classes):
+        cf_color = colors[cf_class % len(colors)]
+        # Plot circle outline
+        plt.scatter(
+            counterfactuals_pca[idx, 0], counterfactuals_pca[idx, 1],
+            facecolors='none', edgecolors=cf_color, marker='o', s=200,
+            linewidths=2.5, alpha=1.0, zorder=7
+        )
+        # Plot X marker inside the circle
+        plt.scatter(
+            counterfactuals_pca[idx, 0], counterfactuals_pca[idx, 1],
+            color=cf_color, marker='x', s=100,
+            linewidths=2.5, zorder=8
+        )
+
+    plt.xlabel('PCA Component 1')
+    plt.ylabel('PCA Component 2')
+    plt.title('PCA Plot with Original Sample and Counterfactuals')
+    # Create custom legend
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[original_class % len(colors)], markersize=10, 
+               markeredgecolor='black', markeredgewidth=1.5, label='Original Sample'),
+        Line2D([0], [0], marker='X', color='w', markerfacecolor='gray', markersize=10,
+               markeredgecolor='gray', markeredgewidth=1.5, label='Final Counterfactuals')
+    ]
+    plt.legend(handles=legend_elements, loc='best')
+    plt.close(fig)
+    return fig
+
+
 def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactuals_df, evolution_histories=None):
     """
     Plot a PCA visualization of the dataset with the original sample and multiple counterfactuals from a DataFrame.

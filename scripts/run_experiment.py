@@ -107,6 +107,7 @@ from CounterFactualVisualizer import (
     plot_sample_and_counterfactual_comparison,
     plot_pairwise_with_counterfactual_df,
     plot_pca_with_counterfactuals,
+    plot_pca_with_counterfactuals_clean,
     plot_pca_loadings,
     plot_fitness,
 )
@@ -1337,6 +1338,16 @@ Final Results
                         evolution_histories=evolution_histories,
                     )
                     combination_viz["pca"] = pca_fig
+                    
+                    # Generate clean PCA visualization (without generation history)
+                    pca_clean_fig = plot_pca_with_counterfactuals_clean(
+                        model,
+                        pd.DataFrame(FEATURES, columns=FEATURE_NAMES),
+                        LABELS,
+                        ORIGINAL_SAMPLE,
+                        cf_features_df,
+                    )
+                    combination_viz["pca_clean"] = pca_clean_fig
 
                     # Optionally save PCA numeric data and other combination-level CSVs locally
                     try:
@@ -1344,10 +1355,15 @@ Final Results
                             # Ensure sample_dir exists
                             os.makedirs(sample_dir, exist_ok=True)
 
-                            # Save the PCA figure
+                            # Save the PCA figure (with generation history)
                             if pca_fig:
                                 pca_path = os.path.join(sample_dir, "pca.png")
                                 pca_fig.savefig(pca_path, bbox_inches="tight", dpi=150)
+                            
+                            # Save the clean PCA figure (without generation history)
+                            if pca_clean_fig:
+                                pca_clean_path = os.path.join(sample_dir, "pca_clean.png")
+                                pca_clean_fig.savefig(pca_clean_path, bbox_inches="tight", dpi=150)
 
                             # Also compute and save PCA numeric data (coords & loadings)
                             try:
@@ -1627,6 +1643,10 @@ Final Results
                         # Log combination-level PCA visualization (shows all CFs on dataset)
                         if pca_fig:
                             log_dict["visualizations/pca"] = wandb.Image(pca_fig)
+                        
+                        # Log clean PCA visualization (without generation history)
+                        if combination_viz.get("pca_clean"):
+                            log_dict["visualizations/pca_clean"] = wandb.Image(combination_viz["pca_clean"])
 
                         # Note: pairwise, pairplot, and pca_pairplot are now logged per-CF
 
