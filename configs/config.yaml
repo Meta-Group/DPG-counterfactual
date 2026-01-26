@@ -44,6 +44,7 @@ output:
   local_dir: outputs
   save_visualizations: false
   save_visualization_images: false
+  save_visualizations_per_generation: false
 
 # Counterfactual method defaults
 methods:
