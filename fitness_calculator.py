@@ -217,13 +217,13 @@ class FitnessCalculator:
 
                 if norm_feature not in constrained_features:
                     # Feature has no target constraint - apply higher penalty
-                    # Use magnitude of change for smoother gradient
+                    # Multiply by factor here to avoid cancellation in fitness calc
+                    change_magnitude = abs(cf_value - orig_value)
+                    penalty += change_magnitude * self.unconstrained_penalty_factor
+                else:
+                    # Feature has target constraint - standard penalty (no extra weight)
                     change_magnitude = abs(cf_value - orig_value)
                     penalty += change_magnitude
-                else:
-                    # Feature has target constraint - standard penalty
-                    change_magnitude = abs(cf_value - orig_value)
-                    penalty += change_magnitude / self.unconstrained_penalty_factor
 
         # Normalize by number of features to keep penalty scale consistent
         return penalty / total_features if total_features > 0 else 0.0
@@ -420,7 +420,7 @@ class FitnessCalculator:
             self.distance_factor * distance_score
             + self.sparsity_factor * sparsity_score
             + self.constraints_factor * penalty_constraints
-            + self.unconstrained_penalty_factor * unconstrained_penalty
+            + unconstrained_penalty  # Factor already applied in penalty calculation
             + class_penalty
         )
 
