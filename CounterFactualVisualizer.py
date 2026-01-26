@@ -427,7 +427,7 @@ def plot_fitness(cf_model, figsize=(10, 6), title='Fitness Over Generations'):
     return fig
 
 
-def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterfactual, constraints=None, class_colors_list=None):
+def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterfactual, constraints=None, class_colors_list=None, generation=None):
     """
     Enhanced visualization combining original and counterfactual samples with:
     1. Side-by-side feature comparison with arrows showing direction of change
@@ -441,6 +441,7 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
         counterfactual: Counterfactual sample as dictionary
         constraints: Dictionary of constraints per class (optional)
         class_colors_list: List of colors for classes (default: ['purple', 'green', 'orange'])
+        generation: Optional generation number to display in title (for per-generation visualizations)
     """
     if class_colors_list is None:
         class_colors_list = ['purple', 'green', 'orange']
@@ -747,7 +748,11 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
             ax3.text(bar.get_x() + bar.get_width()/2., height,
                     f'{height:.2f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
     
-    plt.suptitle('Counterfactual Explanation Analysis', fontsize=16, fontweight='bold', y=0.98)
+    # Set main title with generation number if provided
+    if generation is not None:
+        plt.suptitle(f'Counterfactual Explanation Analysis - Generation {generation}', fontsize=16, fontweight='bold', y=0.98)
+    else:
+        plt.suptitle('Counterfactual Explanation Analysis', fontsize=16, fontweight='bold', y=0.98)
     plt.tight_layout()
     plt.close(fig)
     return fig

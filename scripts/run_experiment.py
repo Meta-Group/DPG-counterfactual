@@ -1118,14 +1118,18 @@ def run_single_sample(
                             os.makedirs(sample_dir, exist_ok=True)
                             for gen_idx, gen_candidate in enumerate(evolution_history):
                                 try:
+                                    # Filter out non-feature keys like _fitness
+                                    gen_candidate_clean = {k: v for k, v in gen_candidate.items() if k in FEATURE_NAMES}
+                                    
                                     # Create comparison image for this generation's best candidate
                                     gen_comparison_fig = plot_sample_and_counterfactual_comparison(
                                         model,
                                         ORIGINAL_SAMPLE,
                                         SAMPLE_DATAFRAME,
-                                        gen_candidate,
+                                        gen_candidate_clean,
                                         constraints,
                                         class_colors_list,
+                                        generation=gen_idx,  # Pass generation number for title
                                     )
                                     
                                     if gen_comparison_fig:
