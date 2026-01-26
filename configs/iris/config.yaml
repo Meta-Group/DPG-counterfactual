@@ -29,13 +29,13 @@ methods:
   _default:
     max_generations: 50
     mutation_rate: 0.3
-    repulsion_weight: 2.0
+    repulsion_weight: 0.5
     boundary_weight: 12.0
-    distance_factor: 1.5
+    distance_factor: 5.0
     max_bonus_cap: 50.0
     patience: 5
     rules:
     - none
   dpg:
     generation_debugging: true
-    diversity_weight: 1.5
+    diversity_weight: 0.8
