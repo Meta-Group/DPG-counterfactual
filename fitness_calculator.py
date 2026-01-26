@@ -489,8 +489,8 @@ class FitnessCalculator:
             # Dynamic sigma_share: scale with sqrt(n_features) to account for dimensionality
             n_features = len(individual)
             sigma_share = max(
-                FITNESS_SHARING_BASE_SIGMA, np.sqrt(n_features)
-            )  # Scale sharing radius with dimensionality
+                FITNESS_SHARING_BASE_SIGMA, np.sqrt(n_features) * 1.5
+            )  # Scale sharing radius with dimensionality (increased multiplier)
             niche_count = 1.0  # Start at 1 (counting self)
 
             ind_array = np.array([individual[key] for key in sorted(individual.keys())])
@@ -500,12 +500,14 @@ class FitnessCalculator:
                     dist = np.linalg.norm(ind_array - other_array)
 
                     # Triangular sharing function: nearby individuals increase niche count
+                    # Use softer contribution (0.5 multiplier) to reduce aggressiveness
                     if dist < sigma_share:
-                        niche_count += 1.0 - (dist / sigma_share)
+                        niche_count += 0.5 * (1.0 - (dist / sigma_share))
 
-            # Apply fitness sharing: multiply fitness by niche count
-            # This makes crowded regions less attractive (higher fitness = worse for minimization)
-            fitness *= niche_count
+            # Apply fitness sharing: use square root for softer penalty
+            # This allows some clustering near the decision boundary
+            # sqrt(niche_count) is gentler than niche_count directly
+            fitness *= np.sqrt(niche_count)
         else:
             # Without population, just use base fitness
             fitness = base_fitness

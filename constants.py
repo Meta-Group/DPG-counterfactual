@@ -70,7 +70,7 @@ MIN_CLASS_SAMPLES = 1
 # ============================================================================
 
 # Base sigma_share for fitness sharing (scaled with dimensionality)
-FITNESS_SHARING_BASE_SIGMA = 1.0
+FITNESS_SHARING_BASE_SIGMA = 3.0
 
 # ============================================================================
 # Convergence and Evolution Constants
