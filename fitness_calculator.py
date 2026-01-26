@@ -315,7 +315,7 @@ class FitnessCalculator:
         original_features,
         sample,
         target_class,
-        metric="cosine",
+        metric="euclidean",
         population=None,
         original_class=None,
         return_components=False,
