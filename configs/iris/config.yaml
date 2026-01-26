@@ -37,4 +37,5 @@ methods:
     rules:
     - none
   dpg:
+    generation_debugging: true
     diversity_weight: 1.5
