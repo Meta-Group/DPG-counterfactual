@@ -6,6 +6,7 @@ from fitness_calculator import FitnessCalculator
 from mutation_strategy import MutationStrategy
 from sample_generator import SampleGenerator
 from genetic_algorithm_runner import GeneticAlgorithmRunner
+from constants import UNCONSTRAINED_CHANGE_PENALTY_FACTOR
 
 
 class CounterFactualModel:
@@ -25,7 +26,7 @@ class CounterFactualModel:
         escape_pressure=0.5,
         prioritize_non_overlapping=True,
         max_bonus_cap=50.0,
-        unconstrained_penalty_factor=2.0,
+        unconstrained_penalty_factor=UNCONSTRAINED_CHANGE_PENALTY_FACTOR,
         X_train=None,
         y_train=None,
         min_probability_margin=0.001,
