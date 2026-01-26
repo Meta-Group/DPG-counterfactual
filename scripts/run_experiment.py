@@ -1090,6 +1090,7 @@ def run_single_sample(
                     ]
 
                     # Save counterfactual-level visualizations locally
+                    save_per_cf = getattr(config.output, "save_visualizations_per_counterfactual", False)
                     if getattr(config.output, "save_visualization_images", False):
                         os.makedirs(sample_dir, exist_ok=True)
 
@@ -1102,7 +1103,7 @@ def run_single_sample(
                                 heatmap_path, bbox_inches="tight", dpi=150
                             )
 
-                        if comparison_fig:
+                        if comparison_fig and save_per_cf:
                             comparison_path = os.path.join(
                                 sample_dir,
                                 f"comparison_cf_{cf_idx}.png",
@@ -1123,7 +1124,7 @@ def run_single_sample(
                             log_dict["visualizations/heatmap"] = wandb.Image(
                                 heatmap_fig
                             )
-                        if comparison_fig:
+                        if comparison_fig and save_per_cf:
                             log_dict["visualizations/comparison"] = wandb.Image(
                                 comparison_fig
                             )

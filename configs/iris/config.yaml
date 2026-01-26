@@ -24,6 +24,7 @@ experiment_params:
 output:
   save_visualizations: true
   save_visualization_images: true
+  save_visualizations_per_counterfactual: true
 methods:
   _default:
     max_generations: 50
