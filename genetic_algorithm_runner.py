@@ -1,0 +1,722 @@
+"""
+GeneticAlgorithmRunner: Orchestrates the genetic algorithm for counterfactual generation.
+
+Extracted from CounterFactualModel.py to handle DEAP setup, population initialization,
+evolution loop, and result validation in a focused, testable class.
+"""
+
+import numpy as np
+import pandas as pd
+from deap import base, creator, tools
+
+from constants import INVALID_FITNESS
+
+
+class GeneticAlgorithmRunner:
+    """
+    Runs genetic algorithm using DEAP framework for counterfactual generation.
+    
+    Enhanced with dual-boundary support: uses both original and target class constraints
+    to guide evolution. Mutations escape original class bounds while approaching target bounds.
+    """
+
+    def __init__(
+        self,
+        model,
+        constraints,
+        feature_names,
+        verbose=False,
+        min_probability_margin=0.001,
+    ):
+        """
+        Initialize the genetic algorithm runner.
+
+        Args:
+            model: Trained ML model with predict() and predict_proba() methods.
+            constraints (dict): Feature constraints per class.
+            feature_names (list): List of feature names (for DataFrame model input).
+            verbose (bool): Whether to print progress messages.
+            min_probability_margin (float): Minimum probability difference between
+                target class and second-best class for valid counterfactuals.
+        """
+        self.model = model
+        self.constraints = constraints
+        self.feature_names = feature_names
+        self.verbose = verbose
+        self.min_probability_margin = min_probability_margin
+
+        # Evolution tracking
+        self.best_fitness_list = []
+        self.average_fitness_list = []
+        self.evolution_history = []
+        self.hof_evolution_histories = {}
+        self.per_cf_evolution_histories = []
+
+    def run(
+        self,
+        sample,
+        target_class,
+        original_class,
+        population_size,
+        generations,
+        mutation_rate,
+        metric,
+        delta_threshold,
+        patience,
+        n_jobs,
+        num_best_results,
+        boundary_analysis,
+        # Callbacks for CounterFactualModel methods
+        create_individual_func,
+        crossover_func,
+        mutate_func,
+        calculate_fitness_func,
+        get_valid_sample_func,
+        normalize_feature_func,
+        features_match_func,
+    ):
+        """
+        Run the genetic algorithm to find counterfactuals.
+
+        Args:
+            sample (dict): Original sample features.
+            target_class (int): Target class for counterfactual.
+            original_class (int): Original class for escape-aware mutation.
+            population_size (int): Population size for GA.
+            generations (int): Maximum generations to run.
+            mutation_rate (float): Base mutation rate.
+            metric (str): Distance metric for fitness calculation.
+            delta_threshold (float): Convergence threshold.
+            patience (int): Generations without improvement before early stopping.
+            n_jobs (int): Number of parallel jobs (-1=all CPUs, 1=sequential).
+            num_best_results (int): Number of top individuals to return.
+            boundary_analysis (dict): Pre-computed boundary analysis between classes.
+            create_individual_func: Function to create DEAP individual.
+            crossover_func: Function for crossover operation.
+            mutate_func: Function for mutation operation.
+            calculate_fitness_func: Function to calculate fitness.
+            get_valid_sample_func: Function to generate valid sample.
+            normalize_feature_func: Function to normalize feature names.
+            features_match_func: Function to check if features match.
+
+        Returns:
+            list: Valid counterfactuals (or None if none found).
+        """
+        feature_names = list(sample.keys())
+        original_features = np.array([sample[feature] for feature in feature_names])
+
+        # Log dual-boundary info
+        if boundary_analysis and self.verbose:
+            non_overlapping = boundary_analysis.get("non_overlapping", [])
+            print(f"[Dual-Boundary] Non-overlapping features: {non_overlapping}")
+            print(
+                f"[Dual-Boundary] Escape directions: {boundary_analysis.get('escape_direction', {})}"
+            )
+
+        # Reset DEAP classes if they already exist
+        if hasattr(creator, "FitnessMin"):
+            del creator.FitnessMin
+        if hasattr(creator, "Individual"):
+            del creator.Individual
+
+        # Create DEAP types
+        creator.create("FitnessMin", base.Fitness, weights=(-1.0,))  # Minimize fitness
+        creator.create("Individual", dict, fitness=creator.FitnessMin)
+
+        # Initialize toolbox
+        toolbox = base.Toolbox()
+
+        # Enable parallel processing
+        pool = None
+        if n_jobs != 1:
+            from multiprocessing import Pool
+            import os
+
+            if n_jobs == -1:
+                n_jobs = os.cpu_count()
+            pool = Pool(processes=n_jobs)
+            toolbox.register("map", pool.map)
+
+        # Register genetic operators
+        toolbox.register(
+            "individual",
+            create_individual_func,
+            sample_dict=get_valid_sample_func(sample, target_class, original_class),
+            feature_names=feature_names,
+        )
+        toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+        toolbox.register("mate", crossover_func, indpb=0.6, sample=sample)
+        toolbox.register("select", self._select_diverse)
+        toolbox.register(
+            "mutate",
+            mutate_func,
+            sample=sample,
+            feature_names=feature_names,
+            mutation_rate=mutation_rate,
+            target_class=target_class,
+            original_class=original_class,
+            boundary_analysis=boundary_analysis,
+        )
+
+        # Initialize population
+        population = self._initialize_population(
+            sample,
+            target_class,
+            original_class,
+            population_size,
+            feature_names,
+            boundary_analysis,
+            create_individual_func,
+            get_valid_sample_func,
+            normalize_feature_func,
+            features_match_func,
+        )
+
+        # Register evaluate operator (captures population in closure)
+        toolbox.register(
+            "evaluate",
+            lambda ind: (
+                calculate_fitness_func(
+                    ind,
+                    original_features,
+                    sample,
+                    target_class,
+                    metric,
+                    population,
+                    original_class,
+                ),
+            ),
+        )
+
+        # Setup statistics
+        stats = tools.Statistics(lambda ind: ind.fitness.values)
+        stats.register(
+            "avg",
+            lambda x: np.nanmean(
+                [
+                    val[0]
+                    for val in x
+                    if not np.isinf(val[0]) and val[0] < INVALID_FITNESS
+                ]
+            )
+            if any(not np.isinf(val[0]) and val[0] < INVALID_FITNESS for val in x)
+            else np.nan,
+        )
+        stats.register(
+            "min",
+            lambda x: np.nanmin(
+                [
+                    val[0]
+                    for val in x
+                    if not np.isinf(val[0]) and val[0] < INVALID_FITNESS
+                ]
+            )
+            if any(not np.isinf(val[0]) and val[0] < INVALID_FITNESS for val in x)
+            else np.inf,
+        )
+
+        # Setup hall of fame
+        hof = tools.HallOfFame(num_best_results)
+
+        # Reset tracking
+        self.best_fitness_list = []
+        self.average_fitness_list = []
+        self.evolution_history = []
+        self.hof_evolution_histories = {i: [] for i in range(num_best_results)}
+
+        # Run evolution
+        best_individuals = self._evolve(
+            toolbox,
+            population,
+            stats,
+            hof,
+            generations,
+            delta_threshold,
+            patience,
+            mutation_rate,
+            mutate_func,
+            sample,
+            feature_names,
+            target_class,
+            original_class,
+            boundary_analysis,
+            population_size,
+            num_best_results,
+            normalize_feature_func,
+            features_match_func,
+        )
+
+        # Clean up multiprocessing pool
+        if pool is not None:
+            pool.close()
+            pool.join()
+
+        # Validate and return results
+        return self._validate_counterfactuals(
+            best_individuals,
+            hof,
+            sample,
+            target_class,
+            num_best_results,
+        )
+
+    def _select_diverse(self, individuals, k):
+        """
+        Select k individuals balancing fitness quality and diversity.
+        Prevents selection from collapsing to clones of the best individual.
+        """
+        selected = []
+        remaining = list(individuals)
+
+        if not remaining:
+            return selected
+
+        # Always include the best individual first
+        remaining_sorted = sorted(
+            remaining, key=lambda x: x.fitness.values[0] if x.fitness.valid else 1e9
+        )
+        best = remaining_sorted[0]
+        selected.append(best)
+        remaining.remove(best)
+
+        # Select remaining individuals balancing fitness and diversity
+        while len(selected) < k and remaining:
+            best_candidate = None
+            best_score = float("inf")
+
+            for candidate in remaining:
+                # Get fitness (lower is better)
+                fitness_val = (
+                    candidate.fitness.values[0] if candidate.fitness.valid else 1e9
+                )
+
+                # Calculate minimum distance to already selected individuals
+                cand_array = np.array(
+                    [candidate[key] for key in sorted(candidate.keys())]
+                )
+                min_dist = float("inf")
+                for sel in selected:
+                    sel_array = np.array([sel[key] for key in sorted(sel.keys())])
+                    dist = np.linalg.norm(cand_array - sel_array)
+                    min_dist = min(min_dist, dist)
+
+                # Score combines fitness and diversity (lower is better)
+                # Give 30% weight to diversity bonus
+                diversity_bonus = -0.3 * min_dist  # Negative because we want to minimize
+                score = fitness_val + diversity_bonus
+
+                if score < best_score:
+                    best_score = score
+                    best_candidate = candidate
+
+            if best_candidate:
+                selected.append(best_candidate)
+                remaining.remove(best_candidate)
+            else:
+                # If no candidate found, fill with random from remaining
+                if remaining:
+                    selected.append(remaining.pop(0))
+
+        return selected
+
+    def _initialize_population(
+        self,
+        sample,
+        target_class,
+        original_class,
+        population_size,
+        feature_names,
+        boundary_analysis,
+        create_individual_func,
+        get_valid_sample_func,
+        normalize_feature_func,
+        features_match_func,
+    ):
+        """
+        Create initial population with escape-aware perturbations.
+        """
+        # First individual is the original sample adjusted to constraint boundaries
+        base_individual = get_valid_sample_func(sample, target_class, original_class)
+        population = [create_individual_func(base_individual.copy(), feature_names)]
+
+        # Get constraints and escape directions
+        target_constraints = self.constraints.get(f"Class {target_class}", [])
+        escape_directions = (
+            boundary_analysis.get("escape_direction", {}) if boundary_analysis else {}
+        )
+
+        # Create remaining individuals with escape-aware perturbations
+        for _ in range(population_size - 1):
+            perturbed = sample.copy()
+
+            for feature in feature_names:
+                norm_feature = normalize_feature_func(feature)
+                escape_dir = escape_directions.get(norm_feature, "both")
+
+                # Bias perturbation by escape direction
+                if escape_dir == "increase":
+                    perturbation = np.random.uniform(0, 0.4)
+                elif escape_dir == "decrease":
+                    perturbation = np.random.uniform(-0.4, 0)
+                else:
+                    perturbation = np.random.uniform(-0.2, 0.2)
+
+                perturbed[feature] = sample[feature] + perturbation
+
+                # Clip to target constraint boundaries
+                matching_constraint = next(
+                    (
+                        c
+                        for c in target_constraints
+                        if features_match_func(c.get("feature", ""), feature)
+                    ),
+                    None,
+                )
+                if matching_constraint:
+                    feature_min = matching_constraint.get("min")
+                    feature_max = matching_constraint.get("max")
+                    if feature_min is not None:
+                        perturbed[feature] = max(feature_min, perturbed[feature])
+                    if feature_max is not None:
+                        perturbed[feature] = min(feature_max, perturbed[feature])
+
+                # Ensure non-negative and round
+                perturbed[feature] = np.round(max(0, perturbed[feature]), 2)
+
+            population.append(create_individual_func(perturbed, feature_names))
+
+        return population
+
+    def _evolve(
+        self,
+        toolbox,
+        population,
+        stats,
+        hof,
+        generations,
+        delta_threshold,
+        patience,
+        mutation_rate,
+        mutate_func,
+        sample,
+        feature_names,
+        target_class,
+        original_class,
+        boundary_analysis,
+        population_size,
+        num_best_results,
+        normalize_feature_func,
+        features_match_func,
+    ):
+        """
+        Run the evolution loop for the specified number of generations.
+        """
+        previous_hof_items = [None] * num_best_results
+        previous_best_fitness = float("inf")
+        stable_generations = 0
+        current_mutation_rate = mutation_rate
+
+        target_constraints = self.constraints.get(f"Class {target_class}", [])
+        escape_directions = (
+            boundary_analysis.get("escape_direction", {}) if boundary_analysis else {}
+        )
+
+        for generation in range(generations):
+            # Evaluate population
+            fitnesses = list(map(toolbox.evaluate, population))
+            for ind, fit in zip(population, fitnesses):
+                ind.fitness.values = fit
+
+            # Update statistics and hall of fame
+            record = stats.compile(population)
+            hof.update(population)
+
+            # Track evolution history
+            self._update_evolution_history(hof, num_best_results, previous_hof_items)
+
+            best_fitness = record["min"]
+            average_fitness = record["avg"]
+
+            self.best_fitness_list.append(best_fitness)
+            self.average_fitness_list.append(average_fitness)
+
+            # Check for convergence
+            fitness_improvement = previous_best_fitness - best_fitness
+            if fitness_improvement < delta_threshold:
+                stable_generations += 1
+            else:
+                stable_generations = 0
+
+            if self.verbose:
+                print(
+                    f"****** Generation {generation + 1}: Average Fitness = {average_fitness:.4f}, Best Fitness = {best_fitness:.4f}, fitness improvement = {fitness_improvement:.4f}"
+                )
+
+            previous_best_fitness = best_fitness
+
+            # Early stopping
+            if stable_generations >= patience:
+                if self.verbose:
+                    print(f"Convergence reached at generation {generation + 1}")
+                break
+
+            # Selection
+            offspring = toolbox.select(population, len(population))
+            offspring = [toolbox.clone(ind) for ind in offspring]
+
+            # Crossover
+            for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                if np.random.rand() < 0.7:
+                    toolbox.mate(child1, child2)
+                    del child1.fitness.values
+                    del child2.fitness.values
+
+            # Mutation
+            for mutant in offspring:
+                toolbox.mutate(mutant)
+                del mutant.fitness.values
+
+            # Inject random immigrants (10% of population)
+            offspring = self._inject_immigrants(
+                offspring,
+                population_size,
+                sample,
+                feature_names,
+                target_constraints,
+                escape_directions,
+                normalize_feature_func,
+                features_match_func,
+            )
+
+            # Adaptive mutation rate
+            current_mutation_rate *= 0.99
+            toolbox.unregister("mutate")
+            toolbox.register(
+                "mutate",
+                mutate_func,
+                sample=sample,
+                feature_names=feature_names,
+                mutation_rate=current_mutation_rate,
+                target_class=target_class,
+                original_class=original_class,
+                boundary_analysis=boundary_analysis,
+            )
+
+            # Elitism: preserve top individuals
+            elite_size = max(1, min(5, int(0.1 * population_size)))
+            sorted_population = sorted(
+                population, key=lambda ind: ind.fitness.values[0]
+            )
+            elites = sorted_population[:elite_size]
+
+            # Replace population with offspring, keeping elites
+            population[:] = offspring[:-elite_size] + elites
+
+        return hof
+
+    def _update_evolution_history(self, hof, num_best_results, previous_hof_items):
+        """
+        Track evolution history for visualization.
+        """
+        # Store best individual for this generation
+        if hof[0].fitness.values[0] != np.inf:
+            entry = dict(hof[0])
+            entry["_fitness"] = hof[0].fitness.values[0]
+            self.evolution_history.append(entry)
+
+        # Track evolution history per HOF entry
+        for hof_idx in range(min(len(hof), num_best_results)):
+            current_hof_item = hof[hof_idx]
+            current_hof_dict = dict(current_hof_item)
+            current_fitness = current_hof_item.fitness.values[0]
+
+            # Skip invalid entries
+            if current_fitness == np.inf or current_fitness >= INVALID_FITNESS:
+                continue
+
+            # Check if this HOF position has a new individual
+            prev_item = previous_hof_items[hof_idx]
+            is_new_entry = (
+                prev_item is None
+                or dict(prev_item) != current_hof_dict
+                or prev_item.fitness.values[0] != current_fitness
+            )
+
+            if is_new_entry:
+                # Copy shared evolution history as lineage
+                if len(self.evolution_history) > 1:
+                    self.hof_evolution_histories[hof_idx] = list(
+                        self.evolution_history[:-1]
+                    )
+                else:
+                    self.hof_evolution_histories[hof_idx] = []
+
+                # Store reference to track changes
+                from deap import base
+                previous_hof_items[hof_idx] = base.Toolbox().clone(current_hof_item)
+
+    def _inject_immigrants(
+        self,
+        offspring,
+        population_size,
+        sample,
+        feature_names,
+        target_constraints,
+        escape_directions,
+        normalize_feature_func,
+        features_match_func,
+    ):
+        """
+        Inject random immigrants to maintain genetic diversity.
+        """
+        num_immigrants = max(1, int(0.1 * population_size))
+
+        for i in range(num_immigrants):
+            immigrant = {}
+
+            for feature in feature_names:
+                norm_feature = normalize_feature_func(feature)
+                escape_dir = escape_directions.get(norm_feature, "both")
+
+                # Find constraint for this feature
+                matching_constraint = next(
+                    (
+                        c
+                        for c in target_constraints
+                        if features_match_func(c.get("feature", ""), feature)
+                    ),
+                    None,
+                )
+
+                if matching_constraint:
+                    feature_min = matching_constraint.get("min")
+                    feature_max = matching_constraint.get("max")
+
+                    # Generate random value biased by escape direction
+                    if feature_min is not None and feature_max is not None:
+                        if escape_dir == "increase":
+                            mid = (feature_min + feature_max) / 2
+                            immigrant[feature] = np.random.uniform(mid, feature_max)
+                        elif escape_dir == "decrease":
+                            mid = (feature_min + feature_max) / 2
+                            immigrant[feature] = np.random.uniform(feature_min, mid)
+                        else:
+                            immigrant[feature] = np.random.uniform(
+                                feature_min, feature_max
+                            )
+                    elif feature_min is not None:
+                        immigrant[feature] = np.random.uniform(
+                            feature_min, feature_min + 2.0
+                        )
+                    elif feature_max is not None:
+                        immigrant[feature] = np.random.uniform(
+                            max(0, feature_max - 2.0), feature_max
+                        )
+                    else:
+                        immigrant[feature] = sample[feature] + np.random.uniform(
+                            -1.0, 1.0
+                        )
+                else:
+                    immigrant[feature] = sample[feature] + np.random.uniform(
+                        -1.0, 1.0
+                    )
+
+                # Ensure non-negative and round
+                immigrant[feature] = np.round(max(0, immigrant[feature]), 2)
+
+            # Replace one of the worst offspring
+            immigrant_ind = creator.Individual(immigrant)
+            offspring[-(i + 1)] = immigrant_ind
+
+        return offspring
+
+    def _validate_counterfactuals(
+        self, hof, hof_obj, sample, target_class, num_best_results
+    ):
+        """
+        Validate counterfactuals and build evolution histories.
+        """
+        valid_counterfactuals = []
+        valid_cf_hof_indices = []
+
+        for i in range(len(hof_obj)):
+            best_fitness = hof_obj[i].fitness.values[0]
+
+            # Check fitness validity
+            if best_fitness == np.inf or best_fitness >= INVALID_FITNESS:
+                if self.verbose:
+                    print(
+                        f"Counterfactual #{i + 1} generation failed: fitness = {best_fitness}"
+                    )
+                continue
+
+            # Validate prediction and probability margin
+            best_individual = dict(hof_obj[i])
+            features = np.array([best_individual[f] for f in sample.keys()]).reshape(
+                1, -1
+            )
+
+            try:
+                if self.feature_names is not None:
+                    features_df = pd.DataFrame(features, columns=self.feature_names)
+                    predicted_class = self.model.predict(features_df)[0]
+                    proba = self.model.predict_proba(features_df)[0]
+                else:
+                    predicted_class = self.model.predict(features)[0]
+                    proba = self.model.predict_proba(features)[0]
+
+                if predicted_class != target_class:
+                    if self.verbose:
+                        print(
+                            f"Counterfactual #{i + 1} failed: predicts class {predicted_class}, not target {target_class}"
+                        )
+                    continue
+
+                # Check probability margin
+                if hasattr(self.model, "classes_"):
+                    class_list = list(self.model.classes_)
+                    target_idx = (
+                        class_list.index(target_class)
+                        if target_class in class_list
+                        else target_class
+                    )
+                else:
+                    target_idx = target_class
+
+                target_prob = proba[target_idx]
+                sorted_probs = np.sort(proba)[::-1]
+                second_best_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0.0
+                margin = target_prob - second_best_prob
+
+                if margin < self.min_probability_margin:
+                    if self.verbose:
+                        print(
+                            f"Counterfactual #{i + 1} rejected: target class probability ({target_prob:.3f}) "
+                            f"not sufficiently higher than second-best ({second_best_prob:.3f}). "
+                            f"Margin {margin:.3f} < required {self.min_probability_margin:.3f}"
+                        )
+                    continue
+
+            except Exception as e:
+                if self.verbose:
+                    print(f"Counterfactual #{i + 1} validation failed with error: {e}")
+                continue
+
+            valid_counterfactuals.append(best_individual)
+            valid_cf_hof_indices.append(i)
+
+            if len(valid_counterfactuals) >= num_best_results:
+                break
+
+        # Build per-CF evolution histories
+        self.per_cf_evolution_histories = []
+        for hof_idx in valid_cf_hof_indices:
+            cf_history = self.hof_evolution_histories.get(hof_idx, [])
+            if not cf_history:
+                cf_history = list(self.evolution_history)
+            self.per_cf_evolution_histories.append(cf_history)
+
+        # Return None if no valid counterfactuals found
+        if not valid_counterfactuals:
+            return None
+        return valid_counterfactuals
