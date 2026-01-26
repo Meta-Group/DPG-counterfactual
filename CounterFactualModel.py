@@ -411,6 +411,7 @@ class CounterFactualModel:
         self.evolution_history = self.ga_runner.evolution_history
         self.hof_evolution_histories = self.ga_runner.hof_evolution_histories
         self.per_cf_evolution_histories = self.ga_runner.per_cf_evolution_histories
+        self.cf_generation_found = getattr(self.ga_runner, 'cf_generation_found', [])
         self.generation_debug_table = self.ga_runner.generation_debug_table
 
         return result

@@ -582,7 +582,7 @@ class GeneticAlgorithmRunner:
 
             # Track best-minimal valid CFs (closest to original that predict target class)
             self._update_best_minimal_cfs(
-                population, sample, target_class, original_features, num_best_results
+                population, sample, target_class, original_features, num_best_results, generation=generation
             )
 
             # Update statistics and hall of fame
@@ -715,7 +715,7 @@ class GeneticAlgorithmRunner:
 
         return hof
 
-    def _update_best_minimal_cfs(self, population, sample, target_class, original_features, num_best_results):
+    def _update_best_minimal_cfs(self, population, sample, target_class, original_features, num_best_results, generation=0):
         """
         Track the historically closest valid counterfactuals found during evolution.
         A valid CF must predict the target class with sufficient probability margin.
@@ -725,6 +725,9 @@ class GeneticAlgorithmRunner:
         
         AGGRESSIVE TRACKING: Keeps 4x the requested CFs to ensure we have enough
         for the 80% minimal allocation in final selection.
+        
+        Args:
+            generation: Current generation number (0-indexed)
         """
         feature_names = list(sample.keys())
         
@@ -777,6 +780,7 @@ class GeneticAlgorithmRunner:
                 'individual': dict(ind),
                 'distance': distance_to_original,
                 'ga_fitness': ind.fitness.values[0],  # Keep for reference
+                'generation_found': generation,  # Track when this CF was found
             }
             
             # Check if this should be added to best_minimal_cfs
@@ -979,6 +983,7 @@ class GeneticAlgorithmRunner:
                     'cf': cf_dict,
                     'array': cf_array,
                     'distance': minimal_cf['distance'],
+                    'generation_found': minimal_cf.get('generation_found', None),
                 })
         
         if self.verbose:
@@ -1075,6 +1080,23 @@ class GeneticAlgorithmRunner:
         
         # Build per-CF evolution histories (simplified)
         self.per_cf_evolution_histories = [list(self.evolution_history) for _ in final_counterfactuals]
+        
+        # Build list of generation_found values corresponding to final_counterfactuals
+        # Match generation info from original candidates (before they were removed)
+        self.cf_generation_found = []
+        for cf_dict in final_counterfactuals:
+            cf_array = np.array([cf_dict[f] for f in feature_names])
+            # Find matching candidate in original pool to get generation_found
+            gen_found = None
+            
+            # Search in best_minimal_cfs directly (most reliable source)
+            for minimal_cf in self.best_minimal_cfs:
+                minimal_array = np.array([minimal_cf['individual'][f] for f in feature_names])
+                if np.allclose(cf_array, minimal_array, atol=0.01):
+                    gen_found = minimal_cf.get('generation_found')
+                    break
+            
+            self.cf_generation_found.append(gen_found)
         
         # Return None if no valid counterfactuals found
         if not final_counterfactuals:

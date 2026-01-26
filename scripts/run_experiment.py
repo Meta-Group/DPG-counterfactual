@@ -368,6 +368,9 @@ def run_single_sample(
         # Get per-CF evolution histories (each CF has its own path from original)
         per_cf_evolution_histories = result.get("per_cf_evolution_histories", None)
         
+        # Get generation_found info for each CF (which generation each CF was discovered)
+        cf_generation_found_list = result.get("cf_generation_found", None)
+        
         print(f"DEBUG run_experiment: Processing result, method={result_method}, best_fitness_list length={len(best_fitness_list)}, avg_fitness_list length={len(average_fitness_list)}, evolution_history length={len(evolution_history)}, generation_debug_table length={len(generation_debug_table_data)}")
 
         # Log generation debug table to WandB if available and enabled
@@ -470,12 +473,18 @@ def run_single_sample(
                     cf_model.average_fitness_list = average_fitness_list
                     cf_model.evolution_history = cf_evolution_history
 
+                # Get generation where this CF was found
+                generation_found = None
+                if cf_generation_found_list and cf_idx < len(cf_generation_found_list):
+                    generation_found = cf_generation_found_list[cf_idx]
+                
                 # Store counterfactual data with evolution history
                 cf_viz = {
                     "counterfactual": counterfactual,
                     "all_counterfactuals": all_counterfactuals,
                     "cf_model": cf_model,
                     "evolution_history": cf_evolution_history,
+                    "generation_found": generation_found,  # Generation where CF was found
                     "visualizations": [],
                     "explanations": {},
                     "cf_index": cf_idx,
@@ -1327,6 +1336,12 @@ Final Results
                         for cf_data in combination_viz["counterfactuals"]
                     ]
                     
+                    # Collect generation_found for each CF
+                    cf_generations_found = [
+                        cf_data.get("generation_found", None)
+                        for cf_data in combination_viz["counterfactuals"]
+                    ]
+                    
                     # Generate combination-level PCA visualization (shows ALL CFs on dataset)
                     # This is different from per-CF pca_pairplot which shows PC dimensions
                     pca_fig = plot_pca_with_counterfactuals(
@@ -1336,6 +1351,7 @@ Final Results
                         ORIGINAL_SAMPLE,
                         cf_features_df,
                         evolution_histories=evolution_histories,
+                        cf_generations_found=cf_generations_found,
                     )
                     combination_viz["pca"] = pca_fig
                     

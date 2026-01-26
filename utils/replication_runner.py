@@ -131,6 +131,12 @@ def run_counterfactual_generation_dpg(args):
         if per_cf_evolution_histories is None or len(per_cf_evolution_histories) == 0:
             per_cf_evolution_histories = [evolution_history] * len(counterfactuals)
         
+        # Get generation_found info for each CF
+        cf_generation_found = getattr(cf_model, 'cf_generation_found', None)
+        # Fallback: if not available, set to None for each CF
+        if cf_generation_found is None or len(cf_generation_found) == 0:
+            cf_generation_found = [None] * len(counterfactuals)
+        
         print(f"DEBUG counterfactual_runner: Generated {len(counterfactuals)} counterfactuals, best_fitness_list length = {len(best_fitness_list)}, avg_fitness_list length = {len(average_fitness_list)}, evolution_history length = {len(evolution_history)}, per_cf_histories = {len(per_cf_evolution_histories)}, debug_table = {len(generation_debug_table)}")
         
         return {
@@ -138,6 +144,7 @@ def run_counterfactual_generation_dpg(args):
             'all_counterfactuals': counterfactuals,  # All requested counterfactuals from single GA run
             'evolution_history': evolution_history,  # Shared best-per-generation history
             'per_cf_evolution_histories': per_cf_evolution_histories,  # Per-CF evolution paths
+            'cf_generation_found': cf_generation_found,  # Generation where each CF was found
             'best_fitness_list': best_fitness_list,
             'average_fitness_list': average_fitness_list,
             'generation_debug_table': generation_debug_table,  # Per-generation fitness component breakdown

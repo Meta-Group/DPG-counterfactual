@@ -1042,7 +1042,7 @@ def plot_pca_with_counterfactuals_clean(model, dataset, target, sample, counterf
     return fig
 
 
-def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactuals_df, evolution_histories=None):
+def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactuals_df, evolution_histories=None, cf_generations_found=None):
     """
     Plot a PCA visualization of the dataset with the original sample and multiple counterfactuals from a DataFrame.
     Shows the evolutionary process of GA with opacity gradient from initial to final generation.
@@ -1054,6 +1054,7 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
         sample: Original sample dict
         counterfactuals_df: DataFrame of final counterfactuals
         evolution_histories: List of evolution histories (one per replication), each a list of dicts
+        cf_generations_found: List of generation numbers where each CF was found (0-indexed), or None
     """
     # Standardize the dataset
     scaler = StandardScaler()
@@ -1230,12 +1231,17 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
         )
         
         # Add generation number label (same style as evolution nodes)
-        # Determine generation number from evolution history
-        if evolution_histories and idx < len(evolution_histories) and evolution_histories[idx]:
-            gen_num = len(evolution_histories[idx]) + 1  # Final CF is one after last recorded generation
+        # Use actual generation_found if available, otherwise fall back to history length
+        if cf_generations_found and idx < len(cf_generations_found) and cf_generations_found[idx] is not None:
+            # Add 1 because generation_found is 0-indexed but we display from 1
+            gen_num = cf_generations_found[idx] + 1
+            gen_label = str(gen_num)
+        elif evolution_histories and idx < len(evolution_histories) and evolution_histories[idx]:
+            # Fallback: use history length + 1 (final CF is one after last recorded generation)
+            gen_num = len(evolution_histories[idx]) + 1
             gen_label = str(gen_num)
         else:
-            gen_label = '?'  # No history available
+            gen_label = '?'  # No history or generation info available
             
         plt.text(
             counterfactuals_pca[idx, 0] + 0.15, counterfactuals_pca[idx, 1] + 0.15,
