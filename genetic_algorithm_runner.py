@@ -56,6 +56,7 @@ class GeneticAlgorithmRunner:
         self.per_cf_evolution_histories = []
         self.generation_debug_table = []  # Per-generation fitness component breakdown
         self.best_minimal_cfs = []  # Track historically closest valid CFs
+        self._original_features = None  # Stored for proximity-weighted selection
 
     def run(
         self,
@@ -109,6 +110,9 @@ class GeneticAlgorithmRunner:
         """
         feature_names = list(sample.keys())
         original_features = np.array([sample[feature] for feature in feature_names])
+        
+        # Store for proximity-weighted selection
+        self._original_features = original_features
 
         # Log dual-boundary info
         if boundary_analysis and self.verbose:
@@ -272,8 +276,14 @@ class GeneticAlgorithmRunner:
 
     def _select_diverse(self, individuals, k):
         """
-        Select k individuals balancing fitness quality and diversity.
-        Prevents selection from collapsing to clones of the best individual.
+        Select k individuals balancing fitness quality, diversity, and proximity to original.
+        
+        Scoring components (lower is better):
+        - fitness_val: raw fitness from GA
+        - diversity_bonus: negative reward for being different from selected (encourages spread)
+        - proximity_penalty: positive penalty for being far from original (encourages closeness)
+        
+        This prevents population from drifting too far from the original sample.
         """
         selected = []
         remaining = list(individuals)
@@ -289,7 +299,7 @@ class GeneticAlgorithmRunner:
         selected.append(best)
         remaining.remove(best)
 
-        # Select remaining individuals balancing fitness and diversity
+        # Select remaining individuals balancing fitness, diversity, and proximity
         while len(selected) < k and remaining:
             best_candidate = None
             best_score = float("inf")
@@ -310,10 +320,17 @@ class GeneticAlgorithmRunner:
                     dist = np.linalg.norm(cand_array - sel_array)
                     min_dist = min(min_dist, dist)
 
-                # Score combines fitness and diversity (lower is better)
-                # Give 30% weight to diversity bonus
-                diversity_bonus = -0.3 * min_dist  # Negative because we want to minimize
-                score = fitness_val + diversity_bonus
+                # Diversity bonus: reward being different from selected (negative = better)
+                diversity_bonus = -0.2 * min_dist  # Reduced from 0.3 to balance with proximity
+                
+                # Proximity penalty: penalize being far from original (positive = worse)
+                proximity_penalty = 0.0
+                if self._original_features is not None:
+                    dist_to_original = np.linalg.norm(cand_array - self._original_features)
+                    proximity_penalty = 0.4 * dist_to_original  # 40% weight on proximity
+                
+                # Combined score (lower is better)
+                score = fitness_val + diversity_bonus + proximity_penalty
 
                 if score < best_score:
                     best_score = score
