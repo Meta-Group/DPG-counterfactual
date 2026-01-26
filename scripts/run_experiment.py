@@ -1090,7 +1090,6 @@ def run_single_sample(
                     ]
 
                     # Save counterfactual-level visualizations locally
-                    save_per_cf = getattr(config.output, "save_visualizations_per_counterfactual", False)
                     if getattr(config.output, "save_visualization_images", False):
                         os.makedirs(sample_dir, exist_ok=True)
 
@@ -1103,7 +1102,7 @@ def run_single_sample(
                                 heatmap_path, bbox_inches="tight", dpi=150
                             )
 
-                        if comparison_fig and save_per_cf:
+                        if comparison_fig:
                             comparison_path = os.path.join(
                                 sample_dir,
                                 f"comparison_cf_{cf_idx}.png",
@@ -1111,6 +1110,36 @@ def run_single_sample(
                             comparison_fig.savefig(
                                 comparison_path, bbox_inches="tight", dpi=150
                             )
+                            
+                    # Generate per-generation comparison images if enabled
+                    if getattr(config.output, "save_visualizations_per_generation", False):
+                        evolution_history = cf_viz.get("evolution_history", [])
+                        if evolution_history:
+                            os.makedirs(sample_dir, exist_ok=True)
+                            for gen_idx, gen_candidate in enumerate(evolution_history):
+                                try:
+                                    # Create comparison image for this generation's best candidate
+                                    gen_comparison_fig = plot_sample_and_counterfactual_comparison(
+                                        model,
+                                        ORIGINAL_SAMPLE,
+                                        SAMPLE_DATAFRAME,
+                                        gen_candidate,
+                                        constraints,
+                                        class_colors_list,
+                                    )
+                                    
+                                    if gen_comparison_fig:
+                                        gen_comparison_path = os.path.join(
+                                            sample_dir,
+                                            f"comparison_gen_{gen_idx}_cf_{cf_idx}.png",
+                                        )
+                                        gen_comparison_fig.savefig(
+                                            gen_comparison_path, bbox_inches="tight", dpi=150
+                                        )
+                                        plt.close(gen_comparison_fig)
+                                        
+                                except Exception as exc:
+                                    print(f"WARNING: Failed to create comparison for generation {gen_idx}, CF {cf_idx}: {exc}")
 
                     # Log per-CF visualizations to WandB (fitness_curve already logged before loop)
                     if wandb_run:
@@ -1124,10 +1153,27 @@ def run_single_sample(
                             log_dict["visualizations/heatmap"] = wandb.Image(
                                 heatmap_fig
                             )
-                        if comparison_fig and save_per_cf:
+                        if comparison_fig:
                             log_dict["visualizations/comparison"] = wandb.Image(
                                 comparison_fig
                             )
+                            
+                        # Log per-generation comparison images if enabled
+                        if getattr(config.output, "save_visualizations_per_generation", False):
+                            evolution_history = cf_viz.get("evolution_history", [])
+                            if evolution_history:
+                                for gen_idx in range(len(evolution_history)):
+                                    gen_comparison_path = os.path.join(
+                                        sample_dir,
+                                        f"comparison_gen_{gen_idx}_cf_{cf_idx}.png",
+                                    )
+                                    if os.path.exists(gen_comparison_path):
+                                        wandb.log({
+                                            "viz_gen/sample_id": SAMPLE_ID,
+                                            "viz_gen/cf_index": cf_idx,
+                                            "viz_gen/generation": gen_idx,
+                                            "visualizations/comparison_generation": wandb.Image(gen_comparison_path),
+                                        })
                         if radar_fig and os.path.exists(radar_fig):
                             log_dict["visualizations/feature_changes_radar"] = wandb.Image(
                                 radar_fig
