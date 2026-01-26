@@ -1189,7 +1189,7 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
                         zorder=6
                     )
 
-            # Draw a line connecting original sample → all generations → final counterfactual
+            # Draw a line connecting original sample → generations up to CF discovery → final counterfactual
             try:
                 if len(history_pca) >= 1:
                     # Get the corresponding final counterfactual coordinates
@@ -1198,17 +1198,35 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
                         final_class = counterfactual_classes[cf_idx]
                         line_color = colors[final_class % len(colors)]
                         
-                        # Build complete path: original → evolution generations → final counterfactual
-                        x_coords = np.concatenate([
-                            [original_sample_pca[0, 0]], 
-                            history_pca[:, 0],
-                            [final_cf_coords[0]]
-                        ])
-                        y_coords = np.concatenate([
-                            [original_sample_pca[0, 1]], 
-                            history_pca[:, 1],
-                            [final_cf_coords[1]]
-                        ])
+                        # Determine how many generations to include in the path
+                        # cf_generations_found is 0-indexed (gen 0 = first generation)
+                        # So if CF was found at gen 5, we include history_pca[0:5] (gens 0-4)
+                        if cf_generations_found and cf_idx < len(cf_generations_found) and cf_generations_found[cf_idx] is not None:
+                            gen_found = cf_generations_found[cf_idx]
+                            # Include generations from 0 to gen_found-1 (the ones before CF was found)
+                            # If gen_found is 0, no intermediate generations (CF found in first gen after original)
+                            history_slice = history_pca[:gen_found] if gen_found > 0 else np.array([]).reshape(0, 2)
+                        else:
+                            # Fallback: use all history
+                            history_slice = history_pca
+                        
+                        # Build path: original → evolution generations up to discovery → final counterfactual
+                        if len(history_slice) > 0:
+                            x_coords = np.concatenate([
+                                [original_sample_pca[0, 0]], 
+                                history_slice[:, 0],
+                                [final_cf_coords[0]]
+                            ])
+                            y_coords = np.concatenate([
+                                [original_sample_pca[0, 1]], 
+                                history_slice[:, 1],
+                                [final_cf_coords[1]]
+                            ])
+                        else:
+                            # Direct connection from original to CF (no intermediate gens)
+                            x_coords = np.array([original_sample_pca[0, 0], final_cf_coords[0]])
+                            y_coords = np.array([original_sample_pca[0, 1], final_cf_coords[1]])
+                        
                         plt.plot(x_coords, y_coords,
                                  color=line_color, linewidth=1.0, alpha=0.6, zorder=4)
             except Exception as e:
