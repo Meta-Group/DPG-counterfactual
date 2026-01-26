@@ -12,118 +12,6 @@ from deap import base, creator, tools
 from constants import INVALID_FITNESS
 
 
-class DistanceBasedHOF:
-    """
-    Custom Hall of Fame that ranks individuals by distance to original sample,
-    NOT by total fitness (which includes diversity/repulsion bonuses).
-    
-    This ensures the HOF contains the truly closest valid counterfactuals,
-    preventing the drift-away problem where bonuses make far CFs appear "better".
-    """
-    
-    def __init__(self, maxsize, original_features, feature_names, model, 
-                 target_class, min_probability_margin=0.001, model_feature_names=None):
-        """
-        Args:
-            maxsize: Maximum number of individuals to keep.
-            original_features: numpy array of original sample feature values.
-            feature_names: List of feature names (dict keys).
-            model: ML model for prediction validation.
-            target_class: Target class to validate against.
-            min_probability_margin: Minimum margin for valid predictions.
-            model_feature_names: Feature names expected by model (for DataFrame creation).
-        """
-        self.maxsize = maxsize
-        self.original_features = original_features
-        self.feature_names = feature_names
-        self.model = model
-        self.target_class = target_class
-        self.min_probability_margin = min_probability_margin
-        self.model_feature_names = model_feature_names
-        self.items = []  # List of (distance, fitness, individual) tuples
-    
-    def update(self, population):
-        """
-        Update HOF with individuals from population, ranked by distance to original.
-        Uses fitness as secondary criteria when distances are similar.
-        Only includes individuals that predict target class with sufficient margin.
-        """
-        for ind in population:
-            # Skip if invalid fitness
-            if not ind.fitness.valid or ind.fitness.values[0] >= INVALID_FITNESS:
-                continue
-            
-            # Calculate distance to original
-            ind_array = np.array([ind[f] for f in self.feature_names])
-            distance = np.linalg.norm(ind_array - self.original_features)
-            
-            # Get fitness for secondary ranking
-            fitness = ind.fitness.values[0]
-            
-            # Validate prediction
-            features = ind_array.reshape(1, -1)
-            try:
-                if self.model_feature_names is not None:
-                    features_df = pd.DataFrame(features, columns=self.model_feature_names)
-                    predicted_class = self.model.predict(features_df)[0]
-                    proba = self.model.predict_proba(features_df)[0]
-                else:
-                    predicted_class = self.model.predict(features)[0]
-                    proba = self.model.predict_proba(features)[0]
-                
-                if predicted_class != self.target_class:
-                    continue
-                
-                # Check probability margin
-                if hasattr(self.model, "classes_"):
-                    class_list = list(self.model.classes_)
-                    target_idx = class_list.index(self.target_class) if self.target_class in class_list else self.target_class
-                else:
-                    target_idx = self.target_class
-                
-                target_prob = proba[target_idx]
-                sorted_probs = np.sort(proba)[::-1]
-                second_best_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0.0
-                margin = target_prob - second_best_prob
-                
-                if margin < self.min_probability_margin:
-                    continue
-                    
-            except Exception:
-                continue
-            
-            # Check if this individual is essentially a duplicate
-            is_duplicate = False
-            for existing_dist, existing_fitness, existing_ind in self.items:
-                existing_array = np.array([existing_ind[f] for f in self.feature_names])
-                if np.allclose(ind_array, existing_array, atol=0.01):
-                    # Keep the closer one
-                    if distance < existing_dist:
-                        self.items.remove((existing_dist, existing_fitness, existing_ind))
-                    else:
-                        is_duplicate = True
-                    break
-            
-            if not is_duplicate:
-                # Clone the individual to preserve it
-                ind_copy = creator.Individual(dict(ind))
-                ind_copy.fitness = ind.fitness
-                # Store (distance, fitness, individual) - fitness is tiebreaker
-                self.items.append((distance, fitness, ind_copy))
-                # Sort by distance first, then fitness as tiebreaker
-                self.items.sort(key=lambda x: (x[0], x[1]))
-                self.items = self.items[:self.maxsize * 2]  # Keep extra for diversity
-    
-    def __len__(self):
-        return len(self.items)
-    
-    def __getitem__(self, idx):
-        return self.items[idx][2]  # Return individual (index 2 in 3-tuple)
-    
-    def __iter__(self):
-        return (item[2] for item in self.items)  # Return individual (index 2 in 3-tuple)
-
-
 class GeneticAlgorithmRunner:
     """
     Runs genetic algorithm using DEAP framework for counterfactual generation.
@@ -348,19 +236,8 @@ class GeneticAlgorithmRunner:
             else np.nan,
         )
 
-        # Setup hall of fame - use DistanceBasedHOF for minimal distance tracking
-        # Standard HOF is still used internally for evolution, but DistanceBasedHOF
-        # ensures final selection prioritizes closest valid CFs
+        # Setup hall of fame
         hof = tools.HallOfFame(num_best_results)
-        distance_hof = DistanceBasedHOF(
-            maxsize=num_best_results * 4,  # Keep extra candidates for diversity
-            original_features=original_features,
-            feature_names=feature_names,
-            model=self.model,
-            target_class=target_class,
-            min_probability_margin=self.min_probability_margin,
-            model_feature_names=self.feature_names,
-        )
 
         # Reset tracking
         self.best_fitness_list = []
@@ -372,7 +249,7 @@ class GeneticAlgorithmRunner:
         self.best_minimal_cfs = []  # Track historically closest valid CFs
 
         # Run evolution
-        best_individuals = self._evolve(
+        self._evolve(
             toolbox,
             population,
             stats,
@@ -394,7 +271,6 @@ class GeneticAlgorithmRunner:
             calculate_fitness_func,
             original_features,
             metric,
-            distance_hof,  # Pass distance-based HOF
         )
 
         # Clean up multiprocessing pool
@@ -402,10 +278,9 @@ class GeneticAlgorithmRunner:
             pool.close()
             pool.join()
 
-        # Validate and return results - use distance_hof for final selection
+        # Validate and return results
         return self._validate_counterfactuals(
-            best_individuals,
-            distance_hof,  # Use distance-based HOF instead of standard HOF
+            hof,
             sample,
             target_class,
             num_best_results,
@@ -574,13 +449,9 @@ class GeneticAlgorithmRunner:
         calculate_fitness_func,
         original_features,
         metric,
-        distance_hof=None,
     ):
         """
         Run the evolution loop for the specified number of generations.
-        
-        Args:
-            distance_hof: DistanceBasedHOF instance for tracking closest valid CFs by distance.
         """
         previous_hof_items = [None] * num_best_results
         previous_best_fitness = float("inf")
@@ -606,11 +477,6 @@ class GeneticAlgorithmRunner:
             # Update statistics and hall of fame
             record = stats.compile(population)
             hof.update(population)
-            
-            # Update distance-based HOF (ranks by distance, not total fitness with bonuses)
-            # This ensures we track the truly closest valid CFs
-            if distance_hof is not None:
-                distance_hof.update(population)
 
             # Track evolution history
             self._update_evolution_history(hof, num_best_results, previous_hof_items)
@@ -946,7 +812,7 @@ class GeneticAlgorithmRunner:
         return offspring
 
     def _validate_counterfactuals(
-        self, hof, hof_obj, sample, target_class, num_best_results
+        self, hof, sample, target_class, num_best_results
     ):
         """
         Validate counterfactuals and build evolution histories.
@@ -973,14 +839,16 @@ class GeneticAlgorithmRunner:
         if self.verbose:
             print("\n=== CF Selection (Greedy Diverse) ===")
             print(f"Requested: {num_best_results} CFs")
-            print(f"Available in DistanceBasedHOF: {len(hof_obj)}")
+            print(f"Available in HOF: {len(hof)}")
             print(f"Diversity lambda: {diversity_lambda}")
         
-        # Build candidate pool from DistanceBasedHOF
+        # Build candidate pool from HOF
         candidates = []
-        for distance, fitness, ind in hof_obj.items:
+        for ind in hof:
             cf_dict = dict(ind)
             cf_array = np.array([cf_dict[f] for f in feature_names])
+            distance = np.linalg.norm(cf_array - original_features)
+            fitness = ind.fitness.values[0] if ind.fitness.valid else float('inf')
             candidates.append({
                 'cf': cf_dict,
                 'array': cf_array,
