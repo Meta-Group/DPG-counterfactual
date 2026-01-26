@@ -903,4 +903,62 @@ class GeneticAlgorithmRunner:
         # Return None if no valid counterfactuals found
         if not valid_counterfactuals:
             return None
-        return valid_counterfactuals
+        
+        # HYBRID FINAL SELECTION: closest first, then diverse alternatives
+        # Calculate distance to original for all valid CFs
+        original_features = self._original_features
+        cf_with_distances = []
+        for cf in valid_counterfactuals:
+            cf_array = np.array([cf[f] for f in feature_names])
+            dist = np.linalg.norm(cf_array - original_features)
+            cf_with_distances.append({'cf': cf, 'distance': dist})
+        
+        # Sort by distance (closest first)
+        cf_with_distances.sort(key=lambda x: x['distance'])
+        
+        # Build final list: closest CF + diverse alternatives
+        final_counterfactuals = []
+        
+        # Always include the closest CF first
+        if cf_with_distances:
+            closest = cf_with_distances[0]
+            final_counterfactuals.append(closest['cf'])
+            if self.verbose:
+                print(f"Final selection - Closest CF: distance={closest['distance']:.4f}")
+            remaining = cf_with_distances[1:]
+        else:
+            remaining = []
+        
+        # Select remaining CFs balancing diversity and proximity
+        # Use greedy selection: pick CF that maximizes (min_dist_to_selected - 0.3*dist_to_original)
+        while len(final_counterfactuals) < num_best_results and remaining:
+            best_candidate = None
+            best_score = float('-inf')
+            
+            for candidate in remaining:
+                # Calculate minimum distance to already selected CFs
+                cand_array = np.array([candidate['cf'][f] for f in feature_names])
+                min_dist_to_selected = float('inf')
+                for selected_cf in final_counterfactuals:
+                    sel_array = np.array([selected_cf[f] for f in feature_names])
+                    dist = np.linalg.norm(cand_array - sel_array)
+                    min_dist_to_selected = min(min_dist_to_selected, dist)
+                
+                # Score: diversity bonus minus proximity penalty
+                # Higher diversity (distance to selected) is good
+                # Lower distance to original is good (so we subtract it)
+                score = min_dist_to_selected - 0.3 * candidate['distance']
+                
+                if score > best_score:
+                    best_score = score
+                    best_candidate = candidate
+            
+            if best_candidate:
+                final_counterfactuals.append(best_candidate['cf'])
+                remaining.remove(best_candidate)
+                if self.verbose:
+                    print(f"Final selection - Alternative CF: distance={best_candidate['distance']:.4f}, diversity_score={best_score:.4f}")
+            else:
+                break
+        
+        return final_counterfactuals
