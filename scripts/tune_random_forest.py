@@ -239,9 +239,10 @@ def save_config(config_path: str, config) -> None:
 def update_config_with_model_params(config_path: str, best_params: dict) -> None:
     """Update the config file's model section with best hyperparameters.
     
-    This function ONLY modifies the 'model' section of the config file and
-    preserves ALL other sections (data, experiment, experiment_params, output,
-    methods, etc.) exactly as they were loaded.
+    This function REPLACES the entire 'model' section of the config file with
+    the new tuned parameters, removing any old parameters that are not present
+    in best_params. All other sections (data, experiment, experiment_params,
+    output, methods, etc.) are preserved exactly as they were loaded.
     
     Args:
         config_path: Path to the config.yaml file
@@ -252,12 +253,9 @@ def update_config_with_model_params(config_path: str, best_params: dict) -> None
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f) or {}
     
-    # Ensure model section exists
-    if 'model' not in config:
-        config['model'] = {}
-    
-    # Update ONLY the model section with type and best parameters
-    config['model']['type'] = 'RandomForestClassifier'
+    # Replace the entire model section with only the new parameters
+    # This ensures old parameters (like criterion) are removed if not in best_params
+    config['model'] = {'type': 'RandomForestClassifier'}
     for param, value in best_params.items():
         # Handle None values properly (written as null in YAML)
         config['model'][param] = value
