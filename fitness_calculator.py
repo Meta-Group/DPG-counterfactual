@@ -318,6 +318,7 @@ class FitnessCalculator:
         metric="cosine",
         population=None,
         original_class=None,
+        return_components=False,
     ):
         """
         Calculate the fitness score for an individual sample using weighted components.
@@ -337,9 +338,12 @@ class FitnessCalculator:
             metric (str): The distance metric to use for calculating distance.
             population (list): The current population for diversity calculations.
             original_class (int): The original class of the sample for escape penalty.
+            return_components (bool): If True, return (fitness, components_dict) instead of just fitness.
 
         Returns:
-            float: The fitness score for the individual (lower is better).
+            float or tuple: The fitness score (lower is better), or if return_components=True,
+                a tuple of (fitness, components_dict) where components_dict contains all individual
+                fitness component values for debugging/analysis.
         """
         # Convert individual feature values to a numpy array
         features = np.array([individual[feature] for feature in sample.keys()]).reshape(
@@ -427,6 +431,7 @@ class FitnessCalculator:
         # DUAL-BOUNDARY: Add original class escape penalty
         # This penalizes individuals that haven't escaped the original class boundaries
         # Only for non-overlapping features where escaping is meaningful
+        escape_penalty = 0.0
         if (
             original_class is not None
             and self.original_escape_weight > 0
@@ -436,6 +441,13 @@ class FitnessCalculator:
                 individual, sample, original_class, target_class=target_class
             )
             base_fitness += self.original_escape_weight * escape_penalty
+
+        # Initialize bonus/penalty variables for component tracking
+        div_bonus = 0.0
+        rep_bonus = 0.0
+        line_bonus = 0.0
+        boundary_penalty = 0.0
+        niche_count = 1.0
 
         # If population is provided, add diversity and repulsion bonuses
         if population is not None and len(population) > 1:
@@ -499,7 +511,29 @@ class FitnessCalculator:
             fitness = base_fitness
 
         # Additional penalty for constraint violations
+        constraint_violation_multiplier = 1.0
         if not is_valid_constraint:
             fitness *= CONSTRAINT_VIOLATION_MULTIPLIER
+            constraint_violation_multiplier = CONSTRAINT_VIOLATION_MULTIPLIER
+
+        # If component breakdown requested, build and return it
+        if return_components:
+            components = {
+                'distance_score': float(distance_score),
+                'sparsity_score': float(sparsity_score),
+                'penalty_constraints': float(penalty_constraints),
+                'unconstrained_penalty': float(unconstrained_penalty),
+                'class_penalty': float(class_penalty),
+                'escape_penalty': float(escape_penalty),
+                'div_bonus': float(div_bonus),
+                'rep_bonus': float(rep_bonus),
+                'line_bonus': float(line_bonus),
+                'boundary_penalty': float(boundary_penalty),
+                'niche_count': float(niche_count),
+                'constraint_violation_multiplier': float(constraint_violation_multiplier),
+                'base_fitness': float(base_fitness),
+                'total_fitness': float(fitness),
+            }
+            return fitness, components
 
         return fitness

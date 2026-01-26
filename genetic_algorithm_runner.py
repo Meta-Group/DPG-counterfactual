@@ -27,6 +27,7 @@ class GeneticAlgorithmRunner:
         feature_names,
         verbose=False,
         min_probability_margin=0.001,
+        generation_debugging=False,
     ):
         """
         Initialize the genetic algorithm runner.
@@ -38,12 +39,14 @@ class GeneticAlgorithmRunner:
             verbose (bool): Whether to print progress messages.
             min_probability_margin (float): Minimum probability difference between
                 target class and second-best class for valid counterfactuals.
+            generation_debugging (bool): Enable detailed per-generation fitness tracking.
         """
         self.model = model
         self.constraints = constraints
         self.feature_names = feature_names
         self.verbose = verbose
         self.min_probability_margin = min_probability_margin
+        self.generation_debugging = generation_debugging
 
         # Evolution tracking
         self.best_fitness_list = []
@@ -51,6 +54,7 @@ class GeneticAlgorithmRunner:
         self.evolution_history = []
         self.hof_evolution_histories = {}
         self.per_cf_evolution_histories = []
+        self.generation_debug_table = []  # Per-generation fitness component breakdown
 
     def run(
         self,
@@ -223,6 +227,7 @@ class GeneticAlgorithmRunner:
         self.average_fitness_list = []
         self.evolution_history = []
         self.hof_evolution_histories = {i: [] for i in range(num_best_results)}
+        self.generation_debug_table = []
 
         # Run evolution
         best_individuals = self._evolve(
@@ -244,6 +249,9 @@ class GeneticAlgorithmRunner:
             num_best_results,
             normalize_feature_func,
             features_match_func,
+            calculate_fitness_func,
+            original_features,
+            metric,
         )
 
         # Clean up multiprocessing pool
@@ -407,6 +415,9 @@ class GeneticAlgorithmRunner:
         num_best_results,
         normalize_feature_func,
         features_match_func,
+        calculate_fitness_func,
+        original_features,
+        metric,
     ):
         """
         Run the evolution loop for the specified number of generations.
@@ -439,6 +450,42 @@ class GeneticAlgorithmRunner:
 
             self.best_fitness_list.append(best_fitness)
             self.average_fitness_list.append(average_fitness)
+
+            # Collect detailed fitness component breakdown for generation debugging
+            if self.generation_debugging and len(hof) > 0:
+                best_ind = hof[0]
+                if best_ind.fitness.values[0] != np.inf and best_ind.fitness.values[0] < INVALID_FITNESS:
+                    try:
+                        # Call fitness function with return_components=True to get breakdown
+                        _, components = calculate_fitness_func(
+                            best_ind,
+                            original_features,
+                            sample,
+                            target_class,
+                            metric,
+                            population,
+                            original_class,
+                            return_components=True
+                        )
+                        
+                        # Build debug row with generation, features, and all fitness components
+                        debug_row = {
+                            'generation': generation + 1,
+                            'feature_values': {k: float(v) for k, v in best_ind.items()},
+                            # Fitness components
+                            **components  # Unpack all component values
+                        }
+                        self.generation_debug_table.append(debug_row)
+                    except Exception as e:
+                        # If component extraction fails, just store basics
+                        if self.verbose:
+                            print(f"Warning: Failed to extract fitness components for generation {generation + 1}: {e}")
+                        debug_row = {
+                            'generation': generation + 1,
+                            'total_fitness': float(best_ind.fitness.values[0]),
+                            'feature_values': {k: float(v) for k, v in best_ind.items()},
+                        }
+                        self.generation_debug_table.append(debug_row)
 
             # Check for convergence
             fitness_improvement = previous_best_fitness - best_fitness
