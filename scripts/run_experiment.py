@@ -362,11 +362,46 @@ def run_single_sample(
         best_fitness_list = result["best_fitness_list"]
         average_fitness_list = result["average_fitness_list"]
         result_method = result.get("method", "dpg")
+        generation_debug_table_data = result.get("generation_debug_table", [])
         
         # Get per-CF evolution histories (each CF has its own path from original)
         per_cf_evolution_histories = result.get("per_cf_evolution_histories", None)
         
-        print(f"DEBUG run_experiment: Processing result, method={result_method}, best_fitness_list length={len(best_fitness_list)}, avg_fitness_list length={len(average_fitness_list)}, evolution_history length={len(evolution_history)}")
+        print(f"DEBUG run_experiment: Processing result, method={result_method}, best_fitness_list length={len(best_fitness_list)}, avg_fitness_list length={len(average_fitness_list)}, evolution_history length={len(evolution_history)}, generation_debug_table length={len(generation_debug_table_data)}")
+
+        # Log generation debug table to WandB if available and enabled
+        if wandb_run and generation_debug_table_data and WANDB_AVAILABLE:
+            try:
+                # Convert generation_debug_table to WandB Table
+                # Columns: generation, feature_values (JSON), and all fitness components
+                debug_columns = ["generation"]
+                # Add feature_values as a single column (will be stored as JSON string)
+                debug_columns.append("feature_values")
+                # Add all fitness component columns (from first row to get keys)
+                if len(generation_debug_table_data) > 0:
+                    first_row = generation_debug_table_data[0]
+                    component_keys = [k for k in first_row.keys() if k not in ["generation", "feature_values"]]
+                    debug_columns.extend(component_keys)
+                
+                # Build table data
+                debug_table_rows = []
+                for row_data in generation_debug_table_data:
+                    row = [row_data.get("generation", 0)]
+                    # Convert feature_values dict to JSON string for WandB
+                    import json
+                    feature_values_json = json.dumps(row_data.get("feature_values", {}))
+                    row.append(feature_values_json)
+                    # Add component values
+                    for key in component_keys:
+                        row.append(row_data.get(key, 0.0))
+                    debug_table_rows.append(row)
+                
+                # Create and log WandB table
+                debug_table = wandb.Table(columns=debug_columns, data=debug_table_rows)
+                wandb.log({f"sample_{SAMPLE_ID}/generation_debug": debug_table})
+                print(f"INFO: Logged generation debug table with {len(debug_table_rows)} rows to WandB")
+            except Exception as e:
+                print(f"WARNING: Failed to log generation debug table to WandB: {e}")
 
         # Get all counterfactuals from this generation
         all_counterfactuals = result.get("all_counterfactuals", [])

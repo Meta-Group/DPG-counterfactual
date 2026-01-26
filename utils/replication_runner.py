@@ -79,6 +79,8 @@ def run_counterfactual_generation_dpg(args):
             # Training data for nearest neighbor fallback
             X_train=X_train,
             y_train=y_train,
+            # Generation debugging
+            generation_debugging=getattr(config.counterfactual, 'generation_debugging', False),
         )
         
         # Enable relaxation fallback for difficult samples
@@ -121,6 +123,7 @@ def run_counterfactual_generation_dpg(args):
         evolution_history = getattr(cf_model, 'evolution_history', [])
         best_fitness_list = getattr(cf_model, 'best_fitness_list', [])
         average_fitness_list = getattr(cf_model, 'average_fitness_list', [])
+        generation_debug_table = getattr(cf_model, 'generation_debug_table', [])
         
         # Get per-CF evolution histories (each CF gets its own history path)
         per_cf_evolution_histories = getattr(cf_model, 'per_cf_evolution_histories', None)
@@ -128,7 +131,7 @@ def run_counterfactual_generation_dpg(args):
         if per_cf_evolution_histories is None or len(per_cf_evolution_histories) == 0:
             per_cf_evolution_histories = [evolution_history] * len(counterfactuals)
         
-        print(f"DEBUG counterfactual_runner: Generated {len(counterfactuals)} counterfactuals, best_fitness_list length = {len(best_fitness_list)}, avg_fitness_list length = {len(average_fitness_list)}, evolution_history length = {len(evolution_history)}, per_cf_histories = {len(per_cf_evolution_histories)}")
+        print(f"DEBUG counterfactual_runner: Generated {len(counterfactuals)} counterfactuals, best_fitness_list length = {len(best_fitness_list)}, avg_fitness_list length = {len(average_fitness_list)}, evolution_history length = {len(evolution_history)}, per_cf_histories = {len(per_cf_evolution_histories)}, debug_table = {len(generation_debug_table)}")
         
         return {
             'counterfactual': counterfactual,
@@ -137,6 +140,7 @@ def run_counterfactual_generation_dpg(args):
             'per_cf_evolution_histories': per_cf_evolution_histories,  # Per-CF evolution paths
             'best_fitness_list': best_fitness_list,
             'average_fitness_list': average_fitness_list,
+            'generation_debug_table': generation_debug_table,  # Per-generation fitness component breakdown
             'dict_non_actionable': dict_non_actionable,
             'method': 'dpg',
             # Store serializable versions of model properties needed later
