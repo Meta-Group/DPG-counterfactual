@@ -30,6 +30,7 @@ class CounterFactualModel:
         X_train=None,
         y_train=None,
         min_probability_margin=0.001,
+        generation_debugging=False,
     ):
         """
         Initialize the CounterFactualDPG object.
@@ -58,6 +59,9 @@ class CounterFactualModel:
             min_probability_margin (float): Minimum margin the target class probability must exceed the
                 second-highest class probability by. Prevents accepting weak counterfactuals where
                 the prediction is essentially a tie. Default 0.001 (0.1% margin).
+            generation_debugging (bool): Enable detailed per-generation fitness component tracking.
+                When True, collects fitness breakdown (distance, sparsity, penalties, bonuses) for
+                the best individual each generation, exported as a table for WandB logging.
         """
         self.model = model
         self.constraints = constraints
@@ -137,6 +141,7 @@ class CounterFactualModel:
             feature_names=self.feature_names,
             verbose=verbose,
             min_probability_margin=min_probability_margin,
+            generation_debugging=generation_debugging,
         )
         # Store training data for nearest neighbor fallback
         self.X_train = X_train
@@ -404,6 +409,7 @@ class CounterFactualModel:
         self.evolution_history = self.ga_runner.evolution_history
         self.hof_evolution_histories = self.ga_runner.hof_evolution_histories
         self.per_cf_evolution_histories = self.ga_runner.per_cf_evolution_histories
+        self.generation_debug_table = self.ga_runner.generation_debug_table
 
         return result
 
