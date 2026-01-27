@@ -52,15 +52,16 @@ output:
 methods:
   _default:
     actionability: {}
-    # Shared optimization parameters
+    # Number of candidate counterfactuals to generate
     population_size: 100
-    max_generations: 1
+    max_generations: 1  # Unused, kept for API compatibility
 
-    # to be removed
+    # Legacy GA parameters (unused, kept for API compatibility)
     mutation_rate: 0.1
     delta_threshold: 0.01
     patience: 15
-    # Shared fitness weights
+
+    # Fitness weights
     repulsion_weight: 4.0
     boundary_weight: 15.0
     distance_factor: 2.0
