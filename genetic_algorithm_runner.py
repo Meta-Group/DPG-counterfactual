@@ -455,6 +455,7 @@ class GeneticAlgorithmRunner:
         """
         previous_hof_items = [None] * num_best_results
         previous_best_fitness = float("inf")
+        historical_best_fitness = float("inf")  # Track best fitness ever seen (monotonically non-increasing)
         stable_generations = 0
         current_mutation_rate = mutation_rate
 
@@ -464,11 +465,10 @@ class GeneticAlgorithmRunner:
         )
 
         for generation in range(generations):
-            # Evaluate population (skip elites that already have valid fitness)
-            # Elites preserve their fitness to ensure monotonic improvement of best fitness
-            for ind in population:
-                if not ind.fitness.valid:
-                    ind.fitness.values = toolbox.evaluate(ind)
+            # Evaluate population
+            fitnesses = list(map(toolbox.evaluate, population))
+            for ind, fit in zip(population, fitnesses):
+                ind.fitness.values = fit
 
             # Track best-minimal valid CFs (closest to original that predict target class)
             self._update_best_minimal_cfs(
@@ -482,7 +482,10 @@ class GeneticAlgorithmRunner:
             # Track evolution history
             self._update_evolution_history(hof, num_best_results, previous_hof_items)
 
-            best_fitness = record["min"]
+            # Track current generation's best and update historical best
+            current_best = record["min"]
+            historical_best_fitness = min(historical_best_fitness, current_best)
+            best_fitness = historical_best_fitness  # Report historical best for monotonic tracking
             average_fitness = record["avg"]
             std_fitness = record["std"]
 
@@ -590,14 +593,21 @@ class GeneticAlgorithmRunner:
                 boundary_analysis=boundary_analysis,
             )
 
-            # Elitism: preserve top individuals
-            elite_size = max(1, min(5, int(0.1 * population_size)))
-            sorted_population = sorted(
-                population, key=lambda ind: ind.fitness.values[0]
-            )
-            elites = sorted_population[:elite_size]
+            # Evaluate offspring before elitism selection
+            for ind in offspring:
+                if not ind.fitness.valid:
+                    ind.fitness.values = toolbox.evaluate(ind)
 
-            # Replace population with offspring, keeping elites
+            # Elitism: select best individuals from combined pool of population + offspring
+            # This ensures elites are only replaced when truly better individuals exist
+            elite_size = max(1, min(5, int(0.1 * population_size)))
+            combined = population + offspring
+            sorted_combined = sorted(
+                combined, key=lambda ind: ind.fitness.values[0]
+            )
+            elites = [toolbox.clone(ind) for ind in sorted_combined[:elite_size]]
+
+            # Replace population: offspring fills most slots, elites guarantee best are kept
             population[:] = offspring[:-elite_size] + elites
 
         return hof
