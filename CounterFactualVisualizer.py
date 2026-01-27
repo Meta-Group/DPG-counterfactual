@@ -1011,7 +1011,7 @@ def plot_pairwise_with_counterfactual_df(model, dataset, target, sample, counter
 # Assuming you have a trained model, a dataset (as a DataFrame or array), target labels, original sample, and counterfactual_df
 #plot_pairwise_with_counterfactual_df(model, X, y, sample, counterfactuals_df)
 
-def plot_pca_with_counterfactuals_clean(model, dataset, target, sample, counterfactuals_df):
+def plot_pca_with_counterfactuals_clean(model, dataset, target, sample, counterfactuals_df, cf_predicted_classes):
     """
     Plot a PCA visualization of the dataset with the original sample and multiple counterfactuals from a DataFrame.
     This is the CLEAN version without any generation history - only shows original and final counterfactuals.
@@ -1022,6 +1022,7 @@ def plot_pca_with_counterfactuals_clean(model, dataset, target, sample, counterf
         target: Target labels
         sample: Original sample dict
         counterfactuals_df: DataFrame of final counterfactuals
+        cf_predicted_classes: Pre-computed predicted classes for counterfactuals (numpy array or list)
     """
     # Standardize the dataset
     scaler = StandardScaler()
@@ -1044,8 +1045,8 @@ def plot_pca_with_counterfactuals_clean(model, dataset, target, sample, counterf
     original_sample_pca = pca.transform(sample_df_scaled)
     counterfactuals_pca = pca.transform(numeric_cf_df_scaled)
 
-    # Predict classes for counterfactuals
-    counterfactual_classes = model.predict(numeric_cf_df)
+    # Use pre-computed predicted classes
+    counterfactual_classes = cf_predicted_classes
 
     # Plot the PCA results
     fig = plt.figure(figsize=(10, 6))
@@ -1100,7 +1101,7 @@ def plot_pca_with_counterfactuals_clean(model, dataset, target, sample, counterf
     return fig
 
 
-def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactuals_df, evolution_histories=None, cf_generations_found=None):
+def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactuals_df, cf_predicted_classes, evolution_histories=None, cf_generations_found=None):
     """
     Plot a PCA visualization of the dataset with the original sample and multiple counterfactuals from a DataFrame.
     Shows the evolutionary process of GA with opacity gradient from initial to final generation.
@@ -1111,6 +1112,7 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
         target: Target labels
         sample: Original sample dict
         counterfactuals_df: DataFrame of final counterfactuals
+        cf_predicted_classes: Pre-computed predicted classes for counterfactuals (numpy array or list)
         evolution_histories: List of evolution histories (one per replication), each a list of dicts
         cf_generations_found: List of generation numbers where each CF was found (0-indexed), or None
     """
@@ -1141,8 +1143,8 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
     original_sample_pca = pca.transform(sample_df_scaled)
     counterfactuals_pca = pca.transform(numeric_cf_df_scaled)
 
-    # Predict classes for counterfactuals
-    counterfactual_classes = model.predict(numeric_cf_df)
+    # Use pre-computed predicted classes
+    counterfactual_classes = cf_predicted_classes
 
     # Plot the PCA results
     fig = plt.figure(figsize=(10, 6))

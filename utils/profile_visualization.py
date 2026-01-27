@@ -164,11 +164,15 @@ def run_visualization_profiling(visualizations):
         counterfactuals_list = [rep['counterfactual'] for rep in combination_viz['replication']]
         cf_features_df = pd.DataFrame(counterfactuals_list)
         
+        # Predict classes for counterfactuals (for reuse in plots)
+        cf_predicted_classes = MODEL.predict(cf_features_df)
+        
         combination_viz['pairwise'] = plot_pairwise_with_counterfactual_df(
             MODEL, IRIS_FEATURES, IRIS_LABELS, ORIGINAL_SAMPLE, cf_features_df
         )
         combination_viz['pca'] = plot_pca_with_counterfactuals(
-            MODEL, pd.DataFrame(IRIS_FEATURES), IRIS_LABELS, ORIGINAL_SAMPLE, cf_features_df
+            MODEL, pd.DataFrame(IRIS_FEATURES), IRIS_LABELS, ORIGINAL_SAMPLE, cf_features_df,
+            cf_predicted_classes=cf_predicted_classes
         )
         
         print("Done")

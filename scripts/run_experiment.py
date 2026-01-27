@@ -420,9 +420,18 @@ def run_single_sample(
         all_counterfactuals = result.get("all_counterfactuals", [])
 
         if all_counterfactuals:
+            # Predict classifications for all counterfactuals at once (for reuse)
+            cf_df_for_prediction = pd.DataFrame(all_counterfactuals)
+            all_cf_predicted_classes = model.predict(cf_df_for_prediction)
+            
             # Process each counterfactual
             for cf_idx, counterfactual in enumerate(all_counterfactuals):
-                valid_counterfactuals += 1
+                # Get predicted class for this counterfactual
+                cf_predicted_class = int(all_cf_predicted_classes[cf_idx])
+                
+                # Only count as valid if it achieved the target class
+                if cf_predicted_class == TARGET_CLASS:
+                    valid_counterfactuals += 1
 
                 # Calculate final best fitness
                 best_fitness = best_fitness_list[-1] if best_fitness_list else 0.0
@@ -1353,6 +1362,9 @@ Final Results
                         cf_data["counterfactual"] for cf_data in combination_viz["counterfactuals"]
                     ]
                     cf_features_df = pd.DataFrame(counterfactuals_list)
+                    
+                    # Predict all counterfactual classes once (for reuse in both plot functions)
+                    cf_predicted_classes = model.predict(cf_features_df)
 
                     # Collect all evolution histories for visualization
                     evolution_histories = [
@@ -1374,6 +1386,7 @@ Final Results
                         LABELS,
                         ORIGINAL_SAMPLE,
                         cf_features_df,
+                        cf_predicted_classes=cf_predicted_classes,
                         evolution_histories=evolution_histories,
                         cf_generations_found=cf_generations_found,
                     )
@@ -1386,6 +1399,7 @@ Final Results
                         LABELS,
                         ORIGINAL_SAMPLE,
                         cf_features_df,
+                        cf_predicted_classes=cf_predicted_classes,
                     )
                     combination_viz["pca_clean"] = pca_clean_fig
 

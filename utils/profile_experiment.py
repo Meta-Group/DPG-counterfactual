@@ -145,11 +145,15 @@ def run_profiled_experiment():
             ]
             cf_features_only = counterfactuals_df_replications[feature_cols]
             
+            # Predict classes for counterfactuals (for reuse in plots)
+            cf_predicted_classes = MODEL.predict(cf_features_only)
+            
             combination_viz['pairwise'] = plot_pairwise_with_counterfactual_df(
                 MODEL, IRIS_FEATURES, IRIS_LABELS, ORIGINAL_SAMPLE, cf_features_only
             )
             combination_viz['pca'] = plot_pca_with_counterfactuals(
-                MODEL, pd.DataFrame(IRIS_FEATURES), IRIS_LABELS, ORIGINAL_SAMPLE, cf_features_only
+                MODEL, pd.DataFrame(IRIS_FEATURES), IRIS_LABELS, ORIGINAL_SAMPLE, cf_features_only,
+                cf_predicted_classes=cf_predicted_classes
             )
             
             # Add all replications to the overall combinations list
