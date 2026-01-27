@@ -36,20 +36,26 @@ except ImportError:
     print("Warning: DPG package not available. Install with requirements in DPG/")
 
 from ConstraintParser import ConstraintParser
+from constraint_scorer import compute_constraint_score
 from utils.dataset_loader import load_dataset
 from utils.config_manager import load_config
 
 
-def save_constraints_text(constraints, output_path):
+def save_constraints_text(constraints, output_path, constraint_score=None):
     """Save constraints to a text file in a human-readable format.
     
     Args:
         constraints: Dictionary mapping class labels to feature constraints
         output_path: Path to save the text file
+        constraint_score: Optional constraint separation score to include
     """
     with open(output_path, "w") as f:
         f.write("DPG Constraints\n")
         f.write("=" * 80 + "\n\n")
+        
+        if constraint_score is not None:
+            f.write(f"Constraint Separation Score: {constraint_score:.4f}\n")
+            f.write(f"(Score range: 0=complete overlap, 1=perfect separation)\n\n")
         
         if not constraints:
             f.write("No constraints extracted.\n")
@@ -221,10 +227,20 @@ def main():
     # Normalize constraints for visualization and saving
     normalized_constraints = ConstraintParser.normalize_constraints(constraints)
     
+    # Compute constraint separation score
+    constraint_score = None
+    if normalized_constraints:
+        try:
+            score_result = compute_constraint_score(normalized_constraints, verbose=False)
+            constraint_score = score_result["score"]
+            print(f"INFO: Constraint separation score: {constraint_score:.4f}")
+        except Exception as exc:
+            print(f"WARNING: Failed to compute constraint score: {exc}")
+    
     # Save constraints as text file
     text_output_path = output_dir / "constraints.txt"
     print(f"INFO: Saving constraints to {text_output_path}")
-    save_constraints_text(constraints, text_output_path)
+    save_constraints_text(constraints, text_output_path, constraint_score=constraint_score)
     
     # Save constraints as JSON file
     json_output_path = output_dir / "constraints.json"
@@ -257,6 +273,7 @@ def main():
                 class_colors_list=class_colors_list,
                 output_path=str(viz_output_path),
                 title=f"DPG Constraints Overview - {args.dataset}",
+                constraint_score=constraint_score,
             )
             
             if constraints_fig:
