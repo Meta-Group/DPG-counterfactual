@@ -73,7 +73,7 @@ MIN_CLASS_SAMPLES = 1
 FITNESS_SHARING_BASE_SIGMA = 3.0
 
 # ============================================================================
-# Convergence and Evolution Constants
+# Convergence and Evolution Constants (legacy, kept for API compatibility)
 # ============================================================================
 
 # Default convergence threshold for fitness improvement
@@ -82,13 +82,13 @@ DEFAULT_DELTA_THRESHOLD = 0.01
 # Default patience for early stopping
 DEFAULT_PATIENCE = 10
 
-# Default population size for genetic algorithm
+# Default population size (number of candidates to generate)
 DEFAULT_POPULATION_SIZE = 100
 
-# Default number of generations
+# Default number of generations (unused, kept for API compatibility)
 DEFAULT_MAX_GENERATIONS = 100
 
-# Default mutation rate
+# Default mutation rate (unused, kept for API compatibility)
 DEFAULT_MUTATION_RATE = 0.8
 
 # ============================================================================
