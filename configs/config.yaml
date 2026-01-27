@@ -16,6 +16,7 @@ excluded_datasets:
  - thyroid_sick # binary/large
  - spectrometer # large
  - solar_flare_m0 # large
+ - protein_homo # large
   # - german_credit
   # - abalone # hangs on dice
   # - abalone_19
@@ -30,21 +31,17 @@ data:
 # Model defaults
 model:
   type: RandomForestClassifier
-  n_estimators: 20
-  max_depth: 20
   random_state: 42
 
-# Experiment defaults
 experiment:
   project: CounterFactualDPG
 
 experiment_params:
   seed: 42
   num_samples: 1
-  requested_counterfactuals: 10
+  requested_counterfactuals: 5
   compute_comprehensive_metrics: true
 
-# Output defaults
 output:
   local_dir: outputs
   save_visualizations: true
