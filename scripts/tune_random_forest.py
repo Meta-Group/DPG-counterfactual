@@ -165,7 +165,15 @@ def make_dpg_constraint_scorer(feature_names: list, dpg_config: dict = None):
                 return 0.0
             
             # Compute constraint separation score
-            score_result = compute_constraint_score(normalized_constraints, verbose=False)
+            # Pass total features and classes for accurate coverage calculation
+            n_total_features = len(feature_names)
+            n_total_classes = len(np.unique(y))
+            score_result = compute_constraint_score(
+                normalized_constraints,
+                n_total_features=n_total_features,
+                n_total_classes=n_total_classes,
+                verbose=False
+            )
             return score_result['score']
             
         except Exception as e:
