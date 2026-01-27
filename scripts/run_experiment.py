@@ -334,12 +334,8 @@ def run_single_sample(
         CATEGORICAL_INDICES,  # Categorical feature indices
     )
 
-    # Run counterfactual generation once (produces requested_counterfactuals results)
     print(f"INFO: Generating {requested_counterfactuals} counterfactuals...")
     result = run_counterfactual_generation(generation_args)
-
-    # Determine method for this run
-    cf_method = getattr(config.counterfactual, "method", "dpg").lower()
 
     # Process results from counterfactual generation
     if result is not None:
