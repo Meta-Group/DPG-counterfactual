@@ -12,8 +12,6 @@ experiment:
 model:
   type: RandomForestClassifier
   n_estimators: 3
-  min_samples_split: 15
   min_impurity_decrease: 0.0
   max_features: 0.3
   max_depth: 4
-  criterion: entropy

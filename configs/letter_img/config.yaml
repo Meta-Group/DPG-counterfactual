@@ -8,9 +8,7 @@ experiment:
   name: letter_img
 model:
   type: RandomForestClassifier
-  n_estimators: 20
-  min_samples_split: 4
+  n_estimators: 10
   min_impurity_decrease: 0.0
   max_features: 0.5
-  max_depth: 10
-  criterion: entropy
+  max_depth: 5
