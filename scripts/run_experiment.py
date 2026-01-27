@@ -145,7 +145,6 @@ from utils.experiment_status import (
 from scripts.visualization_helpers import (
     create_feature_evolution_pairplot,
     create_pca_pairplot,
-    create_radar_chart,
     create_pairwise_feature_evolution_plot,
 )
 from scripts.experiment_helpers import (
@@ -929,43 +928,6 @@ def run_single_sample(
             # dict_non_actionable is now stored directly in combination_viz['label']
             dict_non_actionable = combination_viz["label"]
 
-            # Generate fitness curve once per combination (shared by all CFs from same GA run)
-            fitness_fig = None
-            fitness_std_fig = None
-            if combination_viz["counterfactuals"]:
-                # All CFs share the same fitness history, so use the first one's cf_model
-                first_cf_model = combination_viz["counterfactuals"][0]["cf_model"]
-                fitness_fig = plot_fitness(first_cf_model) if first_cf_model else None
-                fitness_std_fig = plot_fitness_std(first_cf_model) if first_cf_model else None
-
-            # Save fitness curve locally (once per combination, not per CF)
-            if fitness_fig and getattr(config.output, "save_visualization_images", False):
-                os.makedirs(sample_dir, exist_ok=True)
-                fitness_path = os.path.join(sample_dir, "fitness.png")
-                fitness_fig.savefig(fitness_path, bbox_inches="tight", dpi=150)
-
-            # Save fitness std curve locally (once per combination, not per CF)
-            if fitness_std_fig and getattr(config.output, "save_visualization_images", False):
-                os.makedirs(sample_dir, exist_ok=True)
-                fitness_std_path = os.path.join(sample_dir, "fitness_std.png")
-                fitness_std_fig.savefig(fitness_std_path, bbox_inches="tight", dpi=150)
-
-            # Log fitness curve to WandB (once per combination, not per CF)
-            if fitness_fig and wandb_run:
-                wandb.log({
-                    "viz/sample_id": SAMPLE_ID,
-                    "viz/combination": str(combination_viz["label"]),
-                    "visualizations/fitness_curve": wandb.Image(fitness_fig),
-                })
-
-            # Log fitness std curve to WandB (once per combination, not per CF)
-            if fitness_std_fig and wandb_run:
-                wandb.log({
-                    "viz/sample_id": SAMPLE_ID,
-                    "viz/combination": str(combination_viz["label"]),
-                    "visualizations/standard_deviation": wandb.Image(fitness_std_fig),
-                })
-
             # Per-counterfactual visualizations
             for cf_idx, cf_viz in enumerate(
                 combination_viz["counterfactuals"]
@@ -995,55 +957,6 @@ def run_single_sample(
                         constraints,
                         class_colors_list,
                     )
-
-                    # Generate radar chart for this specific counterfactual
-                    radar_fig = None
-                    try:
-                        # Filter actionable features
-                        actionable_features = [
-                            f
-                            for f in FEATURE_NAMES
-                            if dict_non_actionable.get(f, "none") != "no_change"
-                        ]
-
-                        # Calculate feature changes for this CF
-                        feature_changes = {}
-                        for feat in actionable_features:
-                            orig_val = ORIGINAL_SAMPLE.get(feat, 0)
-                            cf_val = counterfactual.get(feat, 0)
-                            feature_changes[feat] = abs(cf_val - orig_val)
-
-                        # Filter features with non-zero changes
-                        features_for_radar = [
-                            feat
-                            for feat, change in feature_changes.items()
-                            if change > 0.001
-                        ]
-
-                        # Create radar chart if there are features with changes
-                        if features_for_radar:
-                            from visualization_helpers import create_radar_chart
-
-                            radar_fig_path = os.path.join(
-                                sample_dir, f"radar_cf_{cf_idx}.png"
-                            ) if getattr(config.output, "save_visualization_images", False) else None
-
-                            # Note: create_radar_chart returns bool, not figure, so we'll need to track the path
-                            if getattr(config.output, "save_visualization_images", False):
-                                os.makedirs(sample_dir, exist_ok=True)
-                                create_radar_chart(
-                                    features_for_radar,
-                                    counterfactual,
-                                    ORIGINAL_SAMPLE,
-                                    constraints,
-                                    ORIGINAL_SAMPLE_PREDICTED_CLASS,
-                                    TARGET_CLASS,
-                                    class_colors_list,
-                                    radar_fig_path,
-                                )
-                                radar_fig = radar_fig_path  # Store path for logging
-                    except Exception as exc:
-                        print(f"WARNING: Failed to create radar chart for CF {cf_idx}: {exc}")
 
                     # Generate per-CF evolution visualizations (pairplot, pairwise, pca_pairplot)
                     pairplot_fig_path = None
@@ -1167,8 +1080,6 @@ def run_single_sample(
                     cf_viz["visualizations"] = [
                         heatmap_fig,
                         comparison_fig,
-                        fitness_fig,  # Same for all CFs from this combination
-                        radar_fig,  # Per-CF radar chart path
                         pairplot_fig_path,  # Per-CF pairplot path
                         pairwise_fig_path,  # Per-CF pairwise path
                         pca_pairplot_fig_path,  # Per-CF pca_pairplot path
@@ -1263,10 +1174,6 @@ def run_single_sample(
                                             "viz_gen/generation": gen_idx,
                                             "visualizations/comparison_generation": wandb.Image(gen_comparison_path),
                                         })
-                        if radar_fig and os.path.exists(radar_fig):
-                            log_dict["visualizations/feature_changes_radar"] = wandb.Image(
-                                radar_fig
-                            )
                         if pairplot_fig_path and os.path.exists(pairplot_fig_path):
                             log_dict["visualizations/pairplot"] = wandb.Image(
                                 pairplot_fig_path
@@ -1354,8 +1261,6 @@ Final Results
                     cf_viz["visualizations"] = []
                     cf_viz["explanations"] = {}
 
-            # Sample-level visualizations (after all counterfactuals)
-            pca_fig = None  # Initialize for proper error handling
             try:
                 if combination_viz["counterfactuals"]:
                     counterfactuals_list = [
@@ -1378,20 +1283,6 @@ Final Results
                         for cf_data in combination_viz["counterfactuals"]
                     ]
                     
-                    # Generate combination-level PCA visualization (shows ALL CFs on dataset)
-                    # This is different from per-CF pca_pairplot which shows PC dimensions
-                    pca_fig = plot_pca_with_counterfactuals(
-                        model,
-                        pd.DataFrame(FEATURES, columns=FEATURE_NAMES),
-                        LABELS,
-                        ORIGINAL_SAMPLE,
-                        cf_features_df,
-                        cf_predicted_classes=cf_predicted_classes,
-                        evolution_histories=evolution_histories,
-                        cf_generations_found=cf_generations_found,
-                    )
-                    combination_viz["pca"] = pca_fig
-                    
                     # Generate clean PCA visualization (without generation history)
                     pca_clean_fig = plot_pca_with_counterfactuals_clean(
                         model,
@@ -1409,11 +1300,6 @@ Final Results
                             # Ensure sample_dir exists
                             os.makedirs(sample_dir, exist_ok=True)
 
-                            # Save the PCA figure (with generation history)
-                            if pca_fig:
-                                pca_path = os.path.join(sample_dir, "pca.png")
-                                pca_fig.savefig(pca_path, bbox_inches="tight", dpi=150)
-                            
                             # Save the clean PCA figure (without generation history)
                             if pca_clean_fig:
                                 pca_clean_path = os.path.join(sample_dir, "pca_clean.png")
@@ -1694,10 +1580,6 @@ Final Results
                             "viz_combo/combination": str(combination_viz["label"]),
                         }
 
-                        # Log combination-level PCA visualization (shows all CFs on dataset)
-                        if pca_fig:
-                            log_dict["visualizations/pca"] = wandb.Image(pca_fig)
-                        
                         # Log clean PCA visualization (without generation history)
                         if combination_viz.get("pca_clean"):
                             log_dict["visualizations/pca_clean"] = wandb.Image(combination_viz["pca_clean"])
@@ -1725,15 +1607,6 @@ Final Results
                                 dataframe=pd.read_csv(pca_coords_path)
                             )
                             log_dict["data/pca_coords"] = pca_coords_table
-
-                        pca_generations_path = os.path.join(
-                            sample_dir, "pca_generations.csv"
-                        )
-                        if os.path.exists(pca_generations_path):
-                            pca_generations_table = wandb.Table(
-                                dataframe=pd.read_csv(pca_generations_path)
-                            )
-                            log_dict["data/pca_generations"] = pca_generations_table
 
                         feature_values_path = os.path.join(
                             sample_dir,
