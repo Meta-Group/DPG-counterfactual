@@ -16,20 +16,5 @@ experiment:
   entity: mllab-ts-universit-di-trieste
   notes: Initial baseline run with default parameters
 experiment_params:
-  requested_counterfactuals: 5
-  num_samples: 1
   sample_indices:
   - 2
-  max_workers: null
-output:
-  save_visualizations: true
-  save_visualization_images: true
-  save_visualizations_per_generation: false
-methods:
-  _default:
-    max_generations: 100
-    rules:
-    - none
-  dpg:
-    generation_debugging: true
-    diversity_weight: 0.8

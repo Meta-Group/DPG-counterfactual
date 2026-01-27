@@ -36,9 +36,7 @@ experiment:
 experiment_params:
   seed: 42
   num_samples: 1
-  num_replications: 5
-  num_combinations_to_test: 1
-  parallel_replications: true
+  requested_counterfactuals: 10
   compute_comprehensive_metrics: true
 
 # Output defaults
@@ -53,8 +51,10 @@ methods:
   _default:
     actionability: {}
     # Shared optimization parameters
-    population_size: 30
-    max_generations: 60
+    population_size: 100
+    max_generations: 1
+
+    # to be removed
     mutation_rate: 0.1
     delta_threshold: 0.01
     patience: 15
