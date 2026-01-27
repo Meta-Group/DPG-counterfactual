@@ -71,7 +71,6 @@ methods:
     escape_pressure: 0.5
     prioritize_non_overlapping: true
   dpg:
-    method: dpg
     diversity_weight: 0.5
     # DPG configuration parameters (optional, defaults provided in DPG/config.yaml)
     config:
@@ -90,8 +89,7 @@ methods:
           shape: "box"
           style: "rounded, filled"
   dice:
-    method: dice
-    total_CFs: 4
-    proximity_weight: 0.5
-    diversity_weight: 1.0
+    # total_CFs: 4
+    # proximity_weight: 0.5
+    # diversity_weight: 1.0
     generation_method: genetic
