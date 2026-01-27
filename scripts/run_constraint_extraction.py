@@ -229,11 +229,20 @@ def main():
     
     # Compute constraint separation score
     constraint_score = None
+    n_total_features = len(FEATURE_NAMES)
+    n_total_classes = len(np.unique(LABELS))
     if normalized_constraints:
         try:
-            score_result = compute_constraint_score(normalized_constraints, verbose=False)
+            score_result = compute_constraint_score(
+                normalized_constraints,
+                n_total_features=n_total_features,
+                n_total_classes=n_total_classes,
+                verbose=False,
+            )
             constraint_score = score_result["score"]
-            print(f"INFO: Constraint separation score: {constraint_score:.4f}")
+            print(f"INFO: Constraint quality score: {constraint_score:.4f}")
+            print(f"      Coverage: {score_result['coverage_score']:.4f} (features={score_result['n_features']}/{n_total_features}, classes={score_result['n_classes']}/{n_total_classes})")
+            print(f"      Separation: {score_result['separation_score']:.4f}")
         except Exception as exc:
             print(f"WARNING: Failed to compute constraint score: {exc}")
     
