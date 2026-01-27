@@ -93,7 +93,7 @@ PARAM_DISTRIBUTIONS = {
 }
 
 # Default RandomizedSearchCV settings
-DEFAULT_N_ITER = 1000  # Number of parameter combinations to try
+DEFAULT_N_ITER = 500  # Number of parameter combinations to try
 DEFAULT_CV = 10  # Number of cross-validation folds
 DEFAULT_SCORING = 'accuracy'  # Default scoring metric
 DEFAULT_N_JOBS = -1  # Use all available cores
