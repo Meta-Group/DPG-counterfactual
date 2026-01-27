@@ -439,25 +439,28 @@ def run_single_sample(
                     cf_model.evolution_history = cf_evolution_history
                 else:
                     # Recreate cf_model with stored DPG parameters (including dual-boundary parameters)
+                    # Only pass parameters that exist in result, otherwise use CounterFactualModel defaults
+                    dpg_params = {
+                        "diversity_weight": result.get("diversity_weight"),
+                        "repulsion_weight": result.get("repulsion_weight"),
+                        "boundary_weight": result.get("boundary_weight"),
+                        "distance_factor": result.get("distance_factor"),
+                        "sparsity_factor": result.get("sparsity_factor"),
+                        "constraints_factor": result.get("constraints_factor"),
+                        "original_escape_weight": result.get("original_escape_weight"),
+                        "escape_pressure": result.get("escape_pressure"),
+                        "prioritize_non_overlapping": result.get("prioritize_non_overlapping"),
+                        "max_bonus_cap": result.get("max_bonus_cap"),
+                    }
+                    # Filter out None values to use CounterFactualModel defaults
+                    dpg_params = {k: v for k, v in dpg_params.items() if v is not None}
+
                     cf_model = CounterFactualModel(
                         model,
                         constraints,
                         dict_non_actionable=dict_non_actionable,
                         verbose=False,
-                        diversity_weight=result.get("diversity_weight", 0.5),
-                        repulsion_weight=result.get("repulsion_weight", 4.0),
-                        boundary_weight=result.get("boundary_weight", 15.0),
-                        distance_factor=result.get("distance_factor", 2.0),
-                        sparsity_factor=result.get("sparsity_factor", 1.0),
-                        constraints_factor=result.get("constraints_factor", 3.0),
-                        # Dual-boundary parameters
-                        original_escape_weight=result.get("original_escape_weight", 2.0),
-                        escape_pressure=result.get("escape_pressure", 0.5),
-                        prioritize_non_overlapping=result.get(
-                            "prioritize_non_overlapping", True
-                        ),
-                        # Fitness calculation parameters
-                        max_bonus_cap=result.get("max_bonus_cap", 50.0),
+                        **dpg_params,
                     )
                     # Restore fitness history
                     cf_model.best_fitness_list = best_fitness_list
