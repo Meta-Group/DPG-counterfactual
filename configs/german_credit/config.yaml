@@ -19,6 +19,11 @@ experiment:
   tags:
   - german_credit
   name: german_credit
+methods:
+  _default:
+    actionability:
+      age: non_decreasing
+      personal_status_sex: no_change
 model:
   type: RandomForestClassifier
   n_estimators: 7

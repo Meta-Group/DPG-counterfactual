@@ -6,6 +6,10 @@ experiment:
   tags:
   - thyroid_sick
   name: thyroid_sick
+methods:
+  _default:
+    actionability:
+      0: non_decreasing
 model:
   type: RandomForestClassifier
   n_estimators: 20

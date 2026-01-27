@@ -6,6 +6,10 @@ experiment:
   tags:
   - sick_euthyroid
   name: sick_euthyroid
+methods:
+  _default:
+    actionability:
+      0: non_decreasing
 model:
   type: RandomForestClassifier
   n_estimators: 20
