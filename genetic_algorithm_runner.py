@@ -96,7 +96,8 @@ class GeneticAlgorithmRunner:
         self,
         model,
         constraints,
-        feature_names,
+        dict_non_actionable=None,  
+        feature_names=None,
         verbose=False,
         min_probability_margin=0.001,
         generation_debugging=False,
@@ -107,6 +108,8 @@ class GeneticAlgorithmRunner:
         Args:
             model: Trained ML model with predict() and predict_proba() methods.
             constraints (dict): Feature constraints per class.
+            dict_non_actionable (dict): Dictionary mapping features to non-actionable constraints
+                (non_decreasing, non_increasing, no_change).
             feature_names (list): List of feature names (for DataFrame model input).
             verbose (bool): Whether to print progress messages.
             min_probability_margin (float): Minimum probability difference between
@@ -115,6 +118,7 @@ class GeneticAlgorithmRunner:
         """
         self.model = model
         self.constraints = constraints
+        self.dict_non_actionable = dict_non_actionable 
         self.feature_names = feature_names
         self.verbose = verbose
         self.min_probability_margin = min_probability_margin
@@ -316,6 +320,22 @@ class GeneticAlgorithmRunner:
                     perturbation = np.random.uniform(-0.2, 0.2)
 
                 perturbed[feature] = sample[feature] + perturbation
+
+                # ENFORCE ACTIONABILITY CONSTRAINTS HERE (ADD THIS BLOCK)
+                if self.dict_non_actionable and feature in self.dict_non_actionable:
+                    actionability = self.dict_non_actionable[feature]
+                    original_value = sample[feature]
+                    
+                    if actionability == "no_change":
+                        # Feature cannot change at all
+                        perturbed[feature] = original_value
+                    elif actionability == "non_decreasing":
+                        # Feature can only increase or stay the same
+                        perturbed[feature] = max(perturbed[feature], original_value)
+                    elif actionability == "non_increasing":
+                        # Feature can only decrease or stay the same
+                        perturbed[feature] = min(perturbed[feature], original_value)
+                # END OF ACTIONABILITY BLOCK
 
                 # Clip to target constraint boundaries
                 matching_constraint = next(

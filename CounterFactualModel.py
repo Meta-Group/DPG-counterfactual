@@ -139,6 +139,7 @@ class CounterFactualModel:
         self.ga_runner = GeneticAlgorithmRunner(
             model=model,
             constraints=constraints,
+            dict_non_actionable=dict_non_actionable,
             feature_names=self.feature_names,
             verbose=verbose,
             min_probability_margin=min_probability_margin,
