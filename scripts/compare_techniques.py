@@ -409,13 +409,14 @@ def create_comparison_table(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(comparison_data)
 
 
-def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None, styled: bool = True) -> pd.DataFrame:
+def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None, styled: bool = True, small: bool = False) -> pd.DataFrame:
     """Create a table with methods as rows and metrics as columns.
     
     Args:
         df: DataFrame from fetch_all_runs()
         dataset: Optional dataset name to filter. If None, aggregates across all datasets.
         styled: If True, returns a styled DataFrame with color highlighting for best values.
+        small: If True, filters metrics to a smaller subset of key metrics.
         
     Returns:
         DataFrame (or Styler) with methods as rows (dpg, dice) and metrics as columns.
@@ -439,6 +440,19 @@ def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None,
     
     # Get metric columns
     metric_cols = [col for col in COMPARISON_METRICS.keys() if col in df.columns]
+    
+    # Filter to small set of metrics if requested
+    if small:
+        small_metrics = {
+            'perc_valid_cf_all',
+            'perc_actionable_cf_all',
+            'plausibility_nbr_cf',
+            'distance_mh',
+            'avg_nbr_changes',
+            'count_diversity_all',
+            'accuracy_knn_sklearn'
+        }
+        metric_cols = [col for col in metric_cols if col in small_metrics]
     
     # Aggregate by technique only (across all datasets if dataset is None)
     agg_data = df.groupby('technique')[metric_cols].mean()
