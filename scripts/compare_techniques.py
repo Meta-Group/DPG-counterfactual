@@ -452,9 +452,6 @@ def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None,
             print(f"No data found for dataset: {dataset}")
             return pd.DataFrame()
     
-    # Get metric columns
-    metric_cols = [col for col in COMPARISON_METRICS.keys() if col in df.columns]
-    
     # Filter to small set of metrics if requested
     if small:
         small_metrics = {
@@ -466,10 +463,16 @@ def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None,
             'count_diversity_all',
             'accuracy_knn_sklearn'
         }
-        metric_cols = [col for col in metric_cols if col in small_metrics]
+        # When small=True, always include all small metrics (even if missing from df)
+        metric_cols = [col for col in small_metrics if col in COMPARISON_METRICS]
+    else:
+        # Get all available metric columns
+        metric_cols = [col for col in COMPARISON_METRICS.keys() if col in df.columns]
     
     # Aggregate by technique only (across all datasets if dataset is None)
-    agg_data = df.groupby('technique')[metric_cols].mean()
+    # Use all columns in metric_cols, even if not all are present in df
+    available_metric_cols = [col for col in metric_cols if col in df.columns]
+    agg_data = df.groupby('technique')[available_metric_cols].mean()
     
     # Collect run IDs and create wandb links for each technique (use only the last run)
     run_links = {}
@@ -501,15 +504,16 @@ def create_method_metrics_table(df: pd.DataFrame, dataset: Optional[str] = None,
     
     result = result.rename(columns=rename_map)
     
-    # Hide columns with identical values for all methods
+    # Hide columns with identical values for all methods (only when not in small mode)
     cols_to_drop = []
-    for col in result.columns:
-        if col == 'Link':
-            continue
-        # Check if all values in the column are identical (ignoring NaN)
-        col_values = result[col].dropna()
-        if len(col_values) > 0 and col_values.nunique() == 1:
-            cols_to_drop.append(col)
+    if not small:  # Only hide identical columns when NOT in small mode
+        for col in result.columns:
+            if col == 'Link':
+                continue
+            # Check if all values in the column are identical (ignoring NaN)
+            col_values = result[col].dropna()
+            if len(col_values) > 0 and col_values.nunique() == 1:
+                cols_to_drop.append(col)
     
     if cols_to_drop:
         result = result.drop(columns=cols_to_drop)
