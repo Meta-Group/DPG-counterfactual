@@ -1566,6 +1566,8 @@ Final Results
         "success_rate": success_rate,
         "valid_counterfactuals": valid_counterfactuals,
         "requested_counterfactuals": requested_counterfactuals,
+        "original_class": ORIGINAL_SAMPLE_PREDICTED_CLASS,
+        "target_class": TARGET_CLASS,
     }
 
 
@@ -1850,6 +1852,9 @@ def run_experiment(config: DictConfig, wandb_run=None):
     print(f"Samples processed: {len(results)}")
     print(f"Total valid counterfactuals: {total_valid}/{total_requested}")
     print(f"Overall success rate: {total_success_rate:.2%}")
+    print(f"\nSample Details:")
+    for r in results:
+        print(f"  - {r['sample_id']}: Original Class={r['original_class']}, Target Class={r['target_class']}")
     print(f"{'=' * 60}\n")
 
     if wandb_run:
