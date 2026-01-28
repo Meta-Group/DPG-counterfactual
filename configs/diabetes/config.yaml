@@ -21,3 +21,6 @@ model:
   min_impurity_decrease: 0.01
   max_features: null
   max_depth: 5
+experiment_params:
+  sample_indices:
+  - 2
