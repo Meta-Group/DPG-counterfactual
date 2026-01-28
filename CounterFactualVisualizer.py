@@ -864,7 +864,7 @@ def plot_pairwise_with_counterfactual(model, dataset, target, sample, counterfac
     #plt.show()
 
 
-def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual, class_counterfactual, restrictions):
+def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual, class_counterfactual, restrictions, is_valid=True):
     """
     Plot the original sample, the differences, and the counterfactual as a heatmap,
     and indicate restrictions using icons.
@@ -873,6 +873,7 @@ def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual,
         sample (dict): Original sample values.
         counterfactual (dict): Counterfactual sample values.
         restrictions (dict): Restrictions applied to each feature.
+        is_valid (bool): Whether the counterfactual is valid (reached target class). Default True.
     """
     # Create DataFrame from the samples
     sample_df = pd.DataFrame([sample], index=['Original'])
@@ -922,6 +923,13 @@ def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual,
     plt.title(f'Original (Class {class_sample}), Counterfactual (Class {class_counterfactual}) with Restrictions')
     plt.xticks(rotation=45, ha="right")
     plt.yticks(rotation=0, va="center")
+    
+    # Add NON-VALID overlay if counterfactual didn't reach target class
+    if not is_valid:
+        fig.text(0.5, 0.5, 'NON-VALID', fontsize=60, color='red', alpha=0.3,
+                ha='center', va='center', weight='bold', rotation=30,
+                transform=fig.transFigure, zorder=100)
+    
     plt.close(fig)
     return fig
 

@@ -934,16 +934,16 @@ def run_single_sample(
                         class_colors_list,
                     )
 
-                    # Generate heatmap visualization for valid counterfactuals only
-                    heatmap_fig = None
-                    if cf_pred_class == TARGET_CLASS:
-                        heatmap_fig = plot_sample_and_counterfactual_heatmap(
-                            ORIGINAL_SAMPLE,
-                            ORIGINAL_SAMPLE_PREDICTED_CLASS,
-                            counterfactual,
-                            cf_pred_class,
-                            dict_non_actionable
-                        )
+                    # Generate heatmap visualization for all counterfactuals
+                    is_valid = (cf_pred_class == TARGET_CLASS)
+                    heatmap_fig = plot_sample_and_counterfactual_heatmap(
+                        ORIGINAL_SAMPLE,
+                        ORIGINAL_SAMPLE_PREDICTED_CLASS,
+                        counterfactual,
+                        cf_pred_class,
+                        dict_non_actionable,
+                        is_valid=is_valid
+                    )
 
                     if getattr(config.output, "save_visualization_images", False):
                         try:
