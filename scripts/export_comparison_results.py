@@ -24,6 +24,11 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import warnings
+import re
+import tempfile
+import wandb
+from PIL import Image
+import shutil
 warnings.filterwarnings('ignore')
 
 # Add parent directory to path for imports
@@ -69,6 +74,77 @@ def load_included_datasets():
             config = yaml.safe_load(f)
             return config.get('priority_datasets', None)
     return None
+
+
+def fetch_wandb_visualizations(raw_df, dataset, dataset_viz_dir):
+    """Fetch comparison, pca_clean, and heatmap visualizations from WandB."""
+    viz_types_exported = []
+    try:
+        dataset_runs = raw_df[raw_df['dataset'] == dataset]
+        
+        dpg_run = dataset_runs[dataset_runs['technique'] == 'dpg'].iloc[0] if len(dataset_runs[dataset_runs['technique'] == 'dpg']) > 0 else None
+        dice_run = dataset_runs[dataset_runs['technique'] == 'dice'].iloc[0] if len(dataset_runs[dataset_runs['technique'] == 'dice']) > 0 else None
+        
+        if dpg_run is None or dice_run is None:
+            print(f"  ⚠ {dataset}: Missing DPG or DiCE run, skipping WandB visualizations")
+            return
+        
+        api = wandb.Api()
+        dpg_run_obj = api.run(f"{WANDB_ENTITY}/{WANDB_PROJECT}/{dpg_run['run_id']}")
+        dice_run_obj = api.run(f"{WANDB_ENTITY}/{WANDB_PROJECT}/{dice_run['run_id']}")
+        
+        # Fetch constraints_overview from DPG run
+        constraints_overview = None
+        for f in dpg_run_obj.files():
+            if f.name.endswith('.png') and 'dpg/constraints_overview' in f.name:
+                constraints_overview = f
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    constraints_overview.download(root=tmpdir, replace=True)
+                    img_path = os.path.join(tmpdir, constraints_overview.name)
+                    dest_path = os.path.join(dataset_viz_dir, 'constraints_overview.png')
+                    shutil.copy(img_path, dest_path)
+                    viz_types_exported.append('constraints_overview.png')
+                break
+        
+        # Get visualization images from both runs
+        def get_viz_images(run):
+            images = {}
+            for f in run.files():
+                if f.name.endswith('.png') and 'visualizations/' in f.name:
+                    basename = os.path.basename(f.name)
+                    match = re.match(r'([a-z_]+)_\d+_', basename)
+                    if match:
+                        viz_type = match.group(1)
+                        if viz_type not in images:
+                            images[viz_type] = f
+            return images
+        
+        dpg_images = get_viz_images(dpg_run_obj)
+        dice_images = get_viz_images(dice_run_obj)
+        
+        viz_types_to_fetch = ['comparison', 'pca_clean', 'heatmap', 'standard_deviation']
+        
+        for viz_type in viz_types_to_fetch:
+            if viz_type in dpg_images:
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    download_path = os.path.join(tmpdir, dpg_images[viz_type].name)
+                    dpg_images[viz_type].download(root=tmpdir, replace=True)
+                    dest_path = os.path.join(dataset_viz_dir, f'{viz_type}_dpg.png')
+                    shutil.copy(download_path, dest_path)
+                    viz_types_exported.append(f'{viz_type}_dpg.png')
+            
+            if viz_type in dice_images:
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    download_path = os.path.join(tmpdir, dice_images[viz_type].name)
+                    dice_images[viz_type].download(root=tmpdir, replace=True)
+                    dest_path = os.path.join(dataset_viz_dir, f'{viz_type}_dice.png')
+                    shutil.copy(download_path, dest_path)
+                    viz_types_exported.append(f'{viz_type}_dice.png')
+        
+        return viz_types_exported
+    except Exception as e:
+        print(f"  ⚠ {dataset}: Error fetching WandB visualizations: {e}")
+        return []
 
 
 def ensure_output_dir():
@@ -327,7 +403,7 @@ def export_radar_charts(comparison_df):
     plt.close(fig)
 
 
-def export_dataset_visualizations(comparison_df):
+def export_dataset_visualizations(comparison_df, raw_df):
     """Export dataset-specific visualizations organized by dataset."""
     print("\n" + "="*80)
     print("EXPORTING DATASET-SPECIFIC VISUALIZATIONS")
@@ -344,6 +420,13 @@ def export_dataset_visualizations(comparison_df):
         dataset_viz_dir = os.path.join(viz_base_dir, safe_name)
         os.makedirs(dataset_viz_dir, exist_ok=True)
         
+        viz_files = []
+        
+        # Fetch WandB visualizations (comparison, pca_clean, heatmap)
+        wandb_viz = fetch_wandb_visualizations(raw_df, dataset, dataset_viz_dir)
+        if wandb_viz:
+            viz_files.extend(wandb_viz)
+        
         # Export radar chart for this dataset
         from scripts.compare_techniques import plot_radar_chart
         radar_path = os.path.join(dataset_viz_dir, f'radar.png')
@@ -351,7 +434,7 @@ def export_dataset_visualizations(comparison_df):
         if fig:
             fig.savefig(radar_path, dpi=150, bbox_inches='tight')
             plt.close(fig)
-            print(f"  ✓ {dataset}: radar.png")
+            viz_files.append('radar.png')
         
         # Export bar charts for each metric (small metrics only)
         small_metrics = {
@@ -379,10 +462,79 @@ def export_dataset_visualizations(comparison_df):
                     )
                     if fig:
                         plt.close(fig)
+                        viz_files.append(f'bar_{metric_key}.png')
                         metrics_exported.append(metric_key)
         
         if metrics_exported:
-            print(f"  ✓ {dataset}: {len(metrics_exported)} bar charts")
+            viz_files.extend([f'bar_{m}.png' for m in metrics_exported])
+        
+        # Count total visualizations (check directory)
+        total_viz = len([f for f in os.listdir(dataset_viz_dir) if f.endswith('.png')])
+        print(f"  ✓ {dataset}: {total_viz} visualizations exported")
+    print("\n" + "="*80)
+    print("EXPORTING DATASET-SPECIFIC VISUALIZATIONS")
+    print("="*80)
+    
+    viz_base_dir = os.path.join(OUTPUT_DIR, 'visualizations')
+    os.makedirs(viz_base_dir, exist_ok=True)
+    
+    available_datasets = sorted(comparison_df['dataset'].unique())
+    
+    for dataset in available_datasets:
+        # Create subdirectory for this dataset
+        safe_name = dataset.replace('/', '_').replace(' ', '_')
+        dataset_viz_dir = os.path.join(viz_base_dir, safe_name)
+        os.makedirs(dataset_viz_dir, exist_ok=True)
+        
+        viz_files = []
+        
+        # Fetch WandB visualizations (comparison, pca_clean, heatmap)
+        fetch_wandb_visualizations(comparison_df, dataset, dataset_viz_dir)
+        
+        # Export radar chart for this dataset
+        from scripts.compare_techniques import plot_radar_chart
+        radar_path = os.path.join(dataset_viz_dir, f'radar.png')
+        fig = plot_radar_chart(comparison_df, dataset, figsize=(8, 8))
+        if fig:
+            fig.savefig(radar_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            viz_files.append('radar.png')
+        
+        # Export bar charts for each metric (small metrics only)
+        small_metrics = {
+            'perc_valid_cf_all',
+            'perc_actionable_cf_all',
+            'plausibility_nbr_cf',
+            'distance_mh',
+            'avg_nbr_changes',
+            'count_diversity_all',
+            'accuracy_knn_sklearn'
+        }
+        
+        from scripts.compare_techniques import plot_grouped_bar_chart
+        metrics_exported = []
+        for metric_key in small_metrics:
+            if f'{metric_key}_dpg' in comparison_df.columns and f'{metric_key}_dice' in comparison_df.columns:
+                metric_info = COMPARISON_METRICS.get(metric_key)
+                if metric_info:
+                    bar_path = os.path.join(dataset_viz_dir, f'bar_{metric_key}.png')
+                    fig = plot_grouped_bar_chart(
+                        comparison_df,
+                        metric_key,
+                        output_path=bar_path,
+                        figsize=(10, 6)
+                    )
+                    if fig:
+                        plt.close(fig)
+                        viz_files.append(f'bar_{metric_key}.png')
+                        metrics_exported.append(metric_key)
+        
+        if metrics_exported:
+            viz_files.extend([f'bar_{m}.png' for m in metrics_exported])
+        
+        # Count total visualizations (check directory)
+        total_viz = len([f for f in os.listdir(dataset_viz_dir) if f.endswith('.png')])
+        print(f"  ✓ {dataset}: {total_viz} visualizations exported")
 
 
 def export_comparison_summary(comparison_df):
@@ -436,7 +588,7 @@ def main():
     export_summary_statistics(comparison_df)
     export_winner_heatmap(comparison_df)
     export_radar_charts(comparison_df)
-    export_dataset_visualizations(comparison_df)
+    export_dataset_visualizations(comparison_df, raw_df)
     export_comparison_summary(comparison_df)
     
     # Print summary to console as well
