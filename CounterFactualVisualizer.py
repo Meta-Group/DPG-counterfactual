@@ -923,7 +923,10 @@ def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual,
     plt.title(f'Original (Class {class_sample}), Counterfactual (Class {class_counterfactual}) with Restrictions')
     plt.xticks(rotation=45, ha="right")
     plt.yticks(rotation=0, va="center")
-    
+
+    # Add margins to prevent text cutoff
+    plt.tight_layout(pad=2.0)
+
     # Add NON-VALID overlay if counterfactual didn't reach target class
     if not is_valid:
         fig.text(0.5, 0.5, 'NON-VALID', fontsize=60, color='red', alpha=0.3,
