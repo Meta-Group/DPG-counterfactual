@@ -189,6 +189,8 @@ class SampleGenerator:
                         )  # Adjust to ensure valid range
                 elif actionability == "no_change":
                     adjusted_sample[feature] = original_value
+                    min_value = original_value
+                    max_value = original_value
                     continue
 
             # If no explicit min/max constraints, use range around original value
