@@ -9,8 +9,6 @@ experiment:
 model:
   type: RandomForestClassifier
   n_estimators: 7
-  min_samples_split: 15
   min_impurity_decrease: 0.0
   max_features: null
   max_depth: 7
-  criterion: entropy
