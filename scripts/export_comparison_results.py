@@ -11,6 +11,7 @@ Outputs are saved to: outputs/comparison_results/
 - method_metrics_<dataset>.csv: Per-dataset method-metrics tables
 - winner_heatmap.png: Heatmap showing winners per dataset-metric
 - radar_charts.png: Radar charts for datasets
+- visualizations/<dataset>/heatmap_techniques.png: Heatmap comparing DPG vs DiCE counterfactuals per dataset
 - comparison_summary.txt: Console summary output
 
 Usage:
@@ -26,6 +27,7 @@ import matplotlib.pyplot as plt
 import warnings
 import re
 import tempfile
+import json
 import wandb
 from PIL import Image
 import shutil
@@ -405,6 +407,71 @@ def export_radar_charts(comparison_df):
     plt.close(fig)
 
 
+def export_heatmap_techniques(raw_df, dataset, dataset_viz_dir):
+    """Export heatmap comparing DPG vs DiCE counterfactuals."""
+    try:
+        dataset_runs = raw_df[raw_df['dataset'] == dataset]
+        
+        dpg_run = dataset_runs[dataset_runs['technique'] == 'dpg'].iloc[0] if len(dataset_runs[dataset_runs['technique'] == 'dpg']) > 0 else None
+        dice_run = dataset_runs[dataset_runs['technique'] == 'dice'].iloc[0] if len(dataset_runs[dataset_runs['technique'] == 'dice']) > 0 else None
+        
+        if dpg_run is None or dice_run is None:
+            print(f"  ⚠ {dataset}: Missing DPG or DiCE run, skipping heatmap_techniques")
+            return False
+        
+        api = wandb.Api()
+        dpg_run_obj = api.run(f"{WANDB_ENTITY}/{WANDB_PROJECT}/{dpg_run['run_id']}")
+        dice_run_obj = api.run(f"{WANDB_ENTITY}/{WANDB_PROJECT}/{dice_run['run_id']}")
+        
+        # Fetch sample and counterfactuals from runs
+        dpg_sample = dpg_run_obj.config.get('sample')
+        dpg_class = dpg_run_obj.config.get('sample_class')
+        dpg_cfs = dpg_run_obj.summary.get('final_counterfactuals', [])
+        if isinstance(dpg_cfs, str):
+            try:
+                dpg_cfs = json.loads(dpg_cfs)
+            except:
+                dpg_cfs = []
+        
+        dice_cfs = dice_run_obj.summary.get('final_counterfactuals', [])
+        if isinstance(dice_cfs, str):
+            try:
+                dice_cfs = json.loads(dice_cfs)
+            except:
+                dice_cfs = []
+        
+        if not dpg_sample:
+            print(f"  ⚠ {dataset}: No sample found, skipping heatmap_techniques")
+            return False
+        
+        # Fetch restrictions if available
+        restrictions = dpg_run_obj.config.get('restrictions')
+        
+        # Create heatmap comparing techniques
+        fig = heatmap_techniques(
+            sample=dpg_sample,
+            class_sample=dpg_class,
+            cf_list_1=dpg_cfs[:5],  # Limit to first 5 CFs per technique
+            cf_list_2=dice_cfs[:5],
+            technique_names=('DPG', 'DiCE'),
+            restrictions=restrictions
+        )
+        
+        if fig:
+            output_path = os.path.join(dataset_viz_dir, 'heatmap_techniques.png')
+            fig.savefig(output_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            print(f"  ✓ {dataset}: Exported heatmap_techniques comparison")
+            return True
+        else:
+            print(f"  ⚠ {dataset}: Could not create heatmap_techniques")
+            return False
+            
+    except Exception as e:
+        print(f"  ⚠ {dataset}: Error exporting heatmap_techniques: {e}")
+        return False
+
+
 def export_dataset_visualizations(comparison_df, raw_df):
     """Export dataset-specific visualizations organized by dataset."""
     print("\n" + "="*80)
@@ -424,74 +491,13 @@ def export_dataset_visualizations(comparison_df, raw_df):
         
         viz_files = []
         
+        # Export heatmap comparing DPG vs DiCE counterfactuals
+        export_heatmap_techniques(raw_df, dataset, dataset_viz_dir)
+        
         # Fetch WandB visualizations (comparison, pca_clean, heatmap)
         wandb_viz = fetch_wandb_visualizations(raw_df, dataset, dataset_viz_dir)
         if wandb_viz:
             viz_files.extend(wandb_viz)
-        
-        # Export radar chart for this dataset
-        from scripts.compare_techniques import plot_radar_chart
-        radar_path = os.path.join(dataset_viz_dir, f'radar.png')
-        fig = plot_radar_chart(comparison_df, dataset, figsize=(8, 8))
-        if fig:
-            fig.savefig(radar_path, dpi=150, bbox_inches='tight')
-            plt.close(fig)
-            viz_files.append('radar.png')
-        
-        # Export bar charts for each metric (small metrics only)
-        small_metrics = {
-            'perc_valid_cf_all',
-            'perc_actionable_cf_all',
-            'plausibility_nbr_cf',
-            'distance_mh',
-            'avg_nbr_changes',
-            'count_diversity_all',
-            'accuracy_knn_sklearn'
-        }
-        
-        from scripts.compare_techniques import plot_grouped_bar_chart
-        metrics_exported = []
-        for metric_key in small_metrics:
-            if f'{metric_key}_dpg' in comparison_df.columns and f'{metric_key}_dice' in comparison_df.columns:
-                metric_info = COMPARISON_METRICS.get(metric_key)
-                if metric_info:
-                    bar_path = os.path.join(dataset_viz_dir, f'bar_{metric_key}.png')
-                    fig = plot_grouped_bar_chart(
-                        comparison_df,
-                        metric_key,
-                        output_path=bar_path,
-                        figsize=(10, 6)
-                    )
-                    if fig:
-                        plt.close(fig)
-                        viz_files.append(f'bar_{metric_key}.png')
-                        metrics_exported.append(metric_key)
-        
-        if metrics_exported:
-            viz_files.extend([f'bar_{m}.png' for m in metrics_exported])
-        
-        # Count total visualizations (check directory)
-        total_viz = len([f for f in os.listdir(dataset_viz_dir) if f.endswith('.png')])
-        print(f"  ✓ {dataset}: {total_viz} visualizations exported")
-    print("\n" + "="*80)
-    print("EXPORTING DATASET-SPECIFIC VISUALIZATIONS")
-    print("="*80)
-    
-    viz_base_dir = os.path.join(OUTPUT_DIR, 'visualizations')
-    os.makedirs(viz_base_dir, exist_ok=True)
-    
-    available_datasets = sorted(comparison_df['dataset'].unique())
-    
-    for dataset in available_datasets:
-        # Create subdirectory for this dataset
-        safe_name = dataset.replace('/', '_').replace(' ', '_')
-        dataset_viz_dir = os.path.join(viz_base_dir, safe_name)
-        os.makedirs(dataset_viz_dir, exist_ok=True)
-        
-        viz_files = []
-        
-        # Fetch WandB visualizations (comparison, pca_clean, heatmap)
-        fetch_wandb_visualizations(comparison_df, dataset, dataset_viz_dir)
         
         # Export radar chart for this dataset
         from scripts.compare_techniques import plot_radar_chart
