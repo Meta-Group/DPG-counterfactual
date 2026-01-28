@@ -52,7 +52,7 @@ APPLY_EXCLUDED_DATASETS = True
 OUTPUT_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     'outputs',
-    'comparison_results'
+    '_comparison_results'
 )
 
 
@@ -216,7 +216,10 @@ def export_winner_heatmap(comparison_df):
     print("EXPORTING WINNER HEATMAP")
     print("="*80)
     
-    output_path = os.path.join(OUTPUT_DIR, 'winner_heatmap.png')
+    viz_dir = os.path.join(OUTPUT_DIR, 'visualizations')
+    os.makedirs(viz_dir, exist_ok=True)
+    
+    output_path = os.path.join(viz_dir, 'winner_heatmap.png')
     fig = plot_heatmap_winners(comparison_df, figsize=(16, 12))
     
     if fig:
@@ -227,11 +230,33 @@ def export_winner_heatmap(comparison_df):
         print("⚠ Could not create winner heatmap")
 
 
+def export_radar_chart_for_dataset(comparison_df, dataset, viz_dir):
+    """Export radar chart for a specific dataset."""
+    from scripts.compare_techniques import plot_radar_chart
+    
+    safe_name = dataset.replace('/', '_').replace(' ', '_')
+    output_path = os.path.join(viz_dir, f'radar_{safe_name}.png')
+    
+    fig = plot_radar_chart(
+        comparison_df,
+        dataset,
+        output_path=output_path
+    )
+    
+    if fig:
+        plt.close(fig)
+        return True
+    return False
+
+
 def export_radar_charts(comparison_df):
     """Export radar charts for first 4 datasets."""
     print("\n" + "="*80)
     print("EXPORTING RADAR CHARTS")
     print("="*80)
+    
+    viz_dir = os.path.join(OUTPUT_DIR, 'visualizations')
+    os.makedirs(viz_dir, exist_ok=True)
     
     available_datasets = sorted(comparison_df['dataset'].unique())
     n_to_show = min(4, len(available_datasets))
@@ -296,10 +321,68 @@ def export_radar_charts(comparison_df):
     plt.suptitle('Dataset Comparison Profiles (Higher = Better)', y=1.02)
     plt.tight_layout()
     
-    output_path = os.path.join(OUTPUT_DIR, 'radar_charts.png')
+    output_path = os.path.join(viz_dir, 'radar_charts.png')
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"✓ Exported radar charts to: {output_path}")
+    print(f"✓ Exported combined radar charts to: {output_path}")
     plt.close(fig)
+
+
+def export_dataset_visualizations(comparison_df):
+    """Export dataset-specific visualizations organized by dataset."""
+    print("\n" + "="*80)
+    print("EXPORTING DATASET-SPECIFIC VISUALIZATIONS")
+    print("="*80)
+    
+    viz_base_dir = os.path.join(OUTPUT_DIR, 'visualizations')
+    os.makedirs(viz_base_dir, exist_ok=True)
+    
+    available_datasets = sorted(comparison_df['dataset'].unique())
+    
+    for dataset in available_datasets:
+        # Create subdirectory for this dataset
+        safe_name = dataset.replace('/', '_').replace(' ', '_')
+        dataset_viz_dir = os.path.join(viz_base_dir, safe_name)
+        os.makedirs(dataset_viz_dir, exist_ok=True)
+        
+        # Export radar chart for this dataset
+        from scripts.compare_techniques import plot_radar_chart
+        radar_path = os.path.join(dataset_viz_dir, f'radar.png')
+        fig = plot_radar_chart(comparison_df, dataset, figsize=(8, 8))
+        if fig:
+            fig.savefig(radar_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            print(f"  ✓ {dataset}: radar.png")
+        
+        # Export bar charts for each metric (small metrics only)
+        small_metrics = {
+            'perc_valid_cf_all',
+            'perc_actionable_cf_all',
+            'plausibility_nbr_cf',
+            'distance_mh',
+            'avg_nbr_changes',
+            'count_diversity_all',
+            'accuracy_knn_sklearn'
+        }
+        
+        from scripts.compare_techniques import plot_grouped_bar_chart
+        metrics_exported = []
+        for metric_key in small_metrics:
+            if f'{metric_key}_dpg' in comparison_df.columns and f'{metric_key}_dice' in comparison_df.columns:
+                metric_info = COMPARISON_METRICS.get(metric_key)
+                if metric_info:
+                    bar_path = os.path.join(dataset_viz_dir, f'bar_{metric_key}.png')
+                    fig = plot_grouped_bar_chart(
+                        comparison_df,
+                        metric_key,
+                        output_path=bar_path,
+                        figsize=(10, 6)
+                    )
+                    if fig:
+                        plt.close(fig)
+                        metrics_exported.append(metric_key)
+        
+        if metrics_exported:
+            print(f"  ✓ {dataset}: {len(metrics_exported)} bar charts")
 
 
 def export_comparison_summary(comparison_df):
@@ -353,6 +436,7 @@ def main():
     export_summary_statistics(comparison_df)
     export_winner_heatmap(comparison_df)
     export_radar_charts(comparison_df)
+    export_dataset_visualizations(comparison_df)
     export_comparison_summary(comparison_df)
     
     # Print summary to console as well
