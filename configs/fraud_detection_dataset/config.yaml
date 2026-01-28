@@ -11,7 +11,7 @@ experiment:
   name: fraud_detection_dataset
 model:
   type: RandomForestClassifier
-  n_estimators: 3
+  n_estimators: 7
   min_impurity_decrease: 0.0
   max_features: 0.3
   max_depth: 4
