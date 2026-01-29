@@ -566,6 +566,9 @@ def export_heatmap_techniques(raw_df, dataset, dataset_viz_dir):
             dpg_run_obj = api.run(f"{WANDB_ENTITY}/{WANDB_PROJECT}/{dpg_run['run_id']}")
             dice_run_obj = api.run(f"{WANDB_ENTITY}/{WANDB_PROJECT}/{dice_run['run_id']}")
         
+        # Fetch feature names (needed to convert lists to dicts)
+        feature_names = dpg_run_obj.config.get('feature_names', [])
+        
         # Fetch sample and counterfactuals from runs
         # Try multiple locations for sample data
         dpg_sample = dpg_run_obj.config.get('sample')
@@ -593,6 +596,18 @@ def export_heatmap_techniques(raw_df, dataset, dataset_viz_dir):
                 dice_cfs = json.loads(dice_cfs)
             except:
                 dice_cfs = []
+        
+        # Convert list format to dict format if needed
+        if feature_names:
+            # Convert sample from list to dict
+            if isinstance(dpg_sample, list):
+                dpg_sample = dict(zip(feature_names, dpg_sample))
+            
+            # Convert counterfactuals from list of lists to list of dicts
+            if dpg_cfs and isinstance(dpg_cfs[0], list):
+                dpg_cfs = [dict(zip(feature_names, cf)) for cf in dpg_cfs]
+            if dice_cfs and isinstance(dice_cfs[0], list):
+                dice_cfs = [dict(zip(feature_names, cf)) for cf in dice_cfs]
         
         # Debug: print what we found
         if not dpg_sample or not dpg_cfs or not dice_cfs:
