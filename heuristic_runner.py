@@ -327,6 +327,10 @@ class HeuristicRunner:
                         perturbed[feature] = max(feature_min, perturbed[feature])
                     if feature_max is not None:
                         perturbed[feature] = min(feature_max, perturbed[feature])
+                    if feature_min is None and feature_max is None:
+                        perturbed[feature] = sample[feature]
+                else:
+                    perturbed[feature] = sample[feature]
 
                 # ENFORCE ACTIONABILITY CONSTRAINTS AFTER clipping (actionability wins over constraints)
                 if self.dict_non_actionable and feature in self.dict_non_actionable:
