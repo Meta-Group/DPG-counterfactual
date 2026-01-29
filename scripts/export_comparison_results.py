@@ -68,7 +68,7 @@ from CounterFactualVisualizer import heatmap_techniques
 WANDB_ENTITY = 'mllab-ts-universit-di-trieste'
 WANDB_PROJECT = 'CounterFactualDPG'
 SELECTED_DATASETS = None  # No filter - fetch all
-MIN_CREATED_AT = "2026-01-26T22:00:00"
+MIN_CREATED_AT = "2026-01-28T22:00:00"
 APPLY_EXCLUDED_DATASETS = True
 
 # Output directory
