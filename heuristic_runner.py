@@ -35,8 +35,7 @@ class DistanceBasedHOF:
     """
     Hall of Fame that ranks individuals by distance to original sample.
     
-    Unlike GA's HOF which uses fitness (with diversity/repulsion bonuses),
-    this ranks purely by Euclidean distance to the original sample.
+    Ranks purely by Euclidean distance to the original sample.
     This prevents the drift-away problem where bonuses cause CFs to move far from original.
     """
     
@@ -83,7 +82,7 @@ class DistanceBasedHOF:
         return iter([item[1] for item in self.items])
 
 
-class GeneticAlgorithmRunner:
+class HeuristicRunner:
     """
     Generates counterfactual candidates using heuristic approach.
     
@@ -100,7 +99,6 @@ class GeneticAlgorithmRunner:
         feature_names=None,
         verbose=False,
         min_probability_margin=0.001,
-        generation_debugging=False,
     ):
         """
         Initialize the heuristic runner.
@@ -114,7 +112,6 @@ class GeneticAlgorithmRunner:
             verbose (bool): Whether to print progress messages.
             min_probability_margin (float): Minimum probability difference between
                 target class and second-best class for valid counterfactuals.
-            generation_debugging (bool): Unused, kept for API compatibility.
         """
         self.model = model
         self.constraints = constraints
@@ -122,16 +119,13 @@ class GeneticAlgorithmRunner:
         self.feature_names = feature_names
         self.verbose = verbose
         self.min_probability_margin = min_probability_margin
-        self.generation_debugging = generation_debugging
 
-        # Tracking attributes (kept for API compatibility, simplified)
+        # Tracking attributes
         self.best_fitness_list = []
         self.average_fitness_list = []
         self.std_fitness_list = []
         self.evolution_history = []
-        self.hof_evolution_histories = {}
         self.per_cf_evolution_histories = []
-        self.generation_debug_table = []
         self.cf_generation_found = []
         self._original_features = None
 
@@ -160,21 +154,15 @@ class GeneticAlgorithmRunner:
             target_class (int): Target class for counterfactual.
             original_class (int): Original class for escape-aware generation.
             population_size (int): Number of candidates to generate.
-            generations: Unused, kept for API compatibility.
-            mutation_rate: Unused, kept for API compatibility.
             metric (str): Distance metric for fitness calculation.
-            delta_threshold: Unused, kept for API compatibility.
-            patience: Unused, kept for API compatibility.
-            n_jobs: Unused, kept for API compatibility.
             num_best_results (int): Number of top individuals to return.
             boundary_analysis (dict): Pre-computed boundary analysis between classes.
             create_individual_func: Function to create individual dict.
-            crossover_func: Unused, kept for API compatibility.
-            mutate_func: Function for perturbation.
             calculate_fitness_func: Function to calculate fitness.
             get_valid_sample_func: Function to generate valid sample.
             normalize_feature_func: Function to normalize feature names.
             features_match_func: Function to check if features match.
+            overgeneration_factor (int): Generate this many times the requested CFs.
 
         Returns:
             list: Valid counterfactuals (or None if none found).
@@ -215,9 +203,7 @@ class GeneticAlgorithmRunner:
         self.average_fitness_list = []
         self.std_fitness_list = []
         self.evolution_history = []
-        self.hof_evolution_histories = {}
         self.per_cf_evolution_histories = []
-        self.generation_debug_table = []
         self.cf_generation_found = []
 
         # Evaluate fitness for all candidates
