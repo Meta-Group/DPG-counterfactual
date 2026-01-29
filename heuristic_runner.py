@@ -392,8 +392,8 @@ class HeuristicRunner:
         original_features = self._original_features
         
         # Tunable parameter for diversity vs proximity
-        # Higher values (closer to 1.0) prioritize diversity over proximity
-        diversity_lambda = 0.8
+        # Lower values prioritize proximity (distance minimization) over diversity
+        diversity_lambda = 0.6
         
         if self.verbose:
             print("\n=== CF Selection (Fitness -> Diverse Selection) ===")
@@ -487,7 +487,7 @@ class HeuristicRunner:
                 distances = [c['distance'] for c in quality_pool]
                 print(f"  Fitness range: {min(fitnesses):.4f} to {max(fitnesses):.4f}")
                 print(f"  Distance range: {min(distances):.4f} to {max(distances):.4f}")
-                print(f"  Diversity lambda: {diversity_lambda} (higher = more diversity priority)")
+                print(f"  Diversity lambda: {diversity_lambda} (lower = more proximity priority)")
         
         # STEP 3: Apply greedy diverse selection on the quality pool
         final_counterfactuals = []
