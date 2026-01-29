@@ -280,7 +280,11 @@ class SampleGenerator:
                 elif actionability == "non_increasing":
                     v_max = min(v_max, original_value)
             
-            # Skip invalid bounds
+            # Fix inverted bounds (can happen with decrease escape direction)
+            if v_min > v_max:
+                v_min, v_max = v_max, v_min
+            
+            # Skip invalid bounds (after potential swap)
             if v_min >= v_max:
                 continue
             
@@ -378,6 +382,97 @@ class SampleGenerator:
                 return test_sample
         
         return None
+
+    def _random_sample_search(self, sample, feature_bounds_info, target_class, n_samples=100):
+        """
+        Random sampling within constraint space as last resort.
+        
+        Args:
+            sample (dict): Original sample values.
+            feature_bounds_info (dict): Feature bounds info from initial pass.
+            target_class (int): Target class for validation.
+            n_samples (int): Number of random samples to try.
+            
+        Returns:
+            dict or None: Valid sample closest to original, or None if not found.
+        """
+        sample_keys = list(sample.keys())
+        
+        # Collect searchable features with valid bounds
+        searchable_features = []
+        for feature, bounds in feature_bounds_info.items():
+            if self.dict_non_actionable and feature in self.dict_non_actionable:
+                if self.dict_non_actionable[feature] == "no_change":
+                    continue
+            
+            v_min = bounds['min']
+            v_max = bounds['max']
+            original_value = bounds['original']
+            
+            # Apply actionability constraints
+            if self.dict_non_actionable and feature in self.dict_non_actionable:
+                actionability = self.dict_non_actionable[feature]
+                if actionability == "non_decreasing":
+                    v_min = max(v_min, original_value)
+                elif actionability == "non_increasing":
+                    v_max = min(v_max, original_value)
+            
+            # Fix inverted bounds
+            if v_min > v_max:
+                v_min, v_max = v_max, v_min
+            
+            if v_min < v_max:
+                searchable_features.append({
+                    'feature': feature,
+                    'min': v_min,
+                    'max': v_max,
+                    'original': original_value,
+                })
+        
+        if not searchable_features:
+            return None
+        
+        best_sample = None
+        best_distance = float('inf')
+        
+        for i in range(n_samples):
+            test_sample = sample.copy()
+            
+            for feat_info in searchable_features:
+                feature = feat_info['feature']
+                v_min = feat_info['min']
+                v_max = feat_info['max']
+                # Random value within bounds
+                test_sample[feature] = np.random.uniform(v_min, v_max)
+            
+            is_valid, margin, pred = self._validate_sample_prediction(
+                test_sample, target_class, sample_keys
+            )
+            
+            if is_valid:
+                # Calculate distance to original
+                distance = sum(
+                    (test_sample[f['feature']] - f['original'])**2 
+                    for f in searchable_features
+                )**0.5
+                
+                if distance < best_distance:
+                    best_sample = test_sample.copy()
+                    best_distance = distance
+                    
+                    if self.verbose and i % 20 == 0:
+                        print(f"[VERBOSE-DPG]     Random sample {i}: found valid (distance={distance:.4f})")
+        
+        if best_sample is not None and self.verbose:
+            print(f"[VERBOSE-DPG]   Best random sample distance: {best_distance:.4f}")
+            for feat_info in searchable_features:
+                feature = feat_info['feature']
+                orig = feat_info['original']
+                new_val = best_sample[feature]
+                delta = new_val - orig
+                print(f"[VERBOSE-DPG]     {feature}: {orig:.4f} → {new_val:.4f} (Δ={delta:+.4f})")
+        
+        return best_sample
 
     def get_valid_sample(self, sample, target_class, original_class):
         """
@@ -636,6 +731,12 @@ class SampleGenerator:
                 elif actionability == "non_increasing":
                     v_max = min(v_max, original_value)
             
+            # Fix inverted bounds (can happen with decrease escape direction)
+            if v_min > v_max:
+                v_min, v_max = v_max, v_min
+                if self.verbose:
+                    print(f"[VERBOSE-DPG]   Swapped bounds for {feature}: [{v_min:.4f}, {v_max:.4f}]")
+            
             if v_min >= v_max:
                 if self.verbose:
                     print(f"[VERBOSE-DPG]   Skipping {feature}: invalid bounds [{v_min}, {v_max}]")
@@ -686,6 +787,23 @@ class SampleGenerator:
                 if self.verbose:
                     print(f"[VERBOSE-DPG] ✓ Progressive depth search success! (margin: {margin:.3f})")
                 return progressive_result
+
+        # Last resort: random sampling within constraint space
+        if self.verbose:
+            print("[VERBOSE-DPG] Progressive depth failed, trying random sampling...")
+        
+        random_result = self._random_sample_search(
+            sample, feature_bounds_info, target_class, n_samples=100
+        )
+        
+        if random_result is not None:
+            is_valid, margin, pred = self._validate_sample_prediction(
+                random_result, target_class, sample_keys
+            )
+            if is_valid:
+                if self.verbose:
+                    print(f"[VERBOSE-DPG] ✓ Random sampling success! (margin: {margin:.3f})")
+                return random_result
 
         # All retries exhausted
         if self.verbose:
