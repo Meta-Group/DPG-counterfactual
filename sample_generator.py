@@ -103,7 +103,7 @@ class SampleGenerator:
                   and respects actionable changes.
         """
         if self.verbose:
-            print(f"[VERBOSE-DPG] Generating valid sample for target class {target_class}")
+            print(f"[VERBOSE-DPG] Generating valid sample for target class {target_class} - get_valid_sample")
             if original_class is not None:
                 print(f"[VERBOSE-DPG]   Original class: {original_class} (escape-aware generation)")
         
