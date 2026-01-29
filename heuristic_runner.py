@@ -311,23 +311,7 @@ class HeuristicRunner:
 
                 perturbed[feature] = sample[feature] + perturbation
 
-                # ENFORCE ACTIONABILITY CONSTRAINTS HERE (ADD THIS BLOCK)
-                if self.dict_non_actionable and feature in self.dict_non_actionable:
-                    actionability = self.dict_non_actionable[feature]
-                    original_value = sample[feature]
-                    
-                    if actionability == "no_change":
-                        # Feature cannot change at all
-                        perturbed[feature] = original_value
-                    elif actionability == "non_decreasing":
-                        # Feature can only increase or stay the same
-                        perturbed[feature] = max(perturbed[feature], original_value)
-                    elif actionability == "non_increasing":
-                        # Feature can only decrease or stay the same
-                        perturbed[feature] = min(perturbed[feature], original_value)
-                # END OF ACTIONABILITY BLOCK
-
-                # Clip to target constraint boundaries
+                # Clip to target constraint boundaries FIRST
                 matching_constraint = next(
                     (
                         c
@@ -343,6 +327,21 @@ class HeuristicRunner:
                         perturbed[feature] = max(feature_min, perturbed[feature])
                     if feature_max is not None:
                         perturbed[feature] = min(feature_max, perturbed[feature])
+
+                # ENFORCE ACTIONABILITY CONSTRAINTS AFTER clipping (actionability wins over constraints)
+                if self.dict_non_actionable and feature in self.dict_non_actionable:
+                    actionability = self.dict_non_actionable[feature]
+                    original_value = sample[feature]
+                    
+                    if actionability == "no_change":
+                        # Feature cannot change at all
+                        perturbed[feature] = original_value
+                    elif actionability == "non_decreasing":
+                        # Feature can only increase or stay the same
+                        perturbed[feature] = max(perturbed[feature], original_value)
+                    elif actionability == "non_increasing":
+                        # Feature can only decrease or stay the same
+                        perturbed[feature] = min(perturbed[feature], original_value)
 
                 # Ensure non-negative and round
                 perturbed[feature] = np.round(max(0, perturbed[feature]), 2)
