@@ -69,19 +69,10 @@ output:
 methods:
   _default:
     actionability: {}
-    # Number of candidate counterfactuals to generate
-    population_size: 100
-    max_generations: 100 
-
-    # Legacy GA parameters (unused, kept for API compatibility)
-    mutation_rate: 0.1
-    delta_threshold: 0.01
-    patience: 15
-
-    # Fitness weights
+    diversity_weight: 1.0
     repulsion_weight: 4.0
     boundary_weight: 15.0
-    distance_factor: 2.0
+    distance_factor: 100.0
     sparsity_factor: 1.0
     constraints_factor: 3.0
     original_escape_weight: 2.0

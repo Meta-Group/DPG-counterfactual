@@ -80,6 +80,7 @@ class CounterFactualModel:
         self.distance_factor = distance_factor
         self.sparsity_factor = sparsity_factor
         self.constraints_factor = constraints_factor
+        self.unconstrained_penalty_factor = unconstrained_penalty_factor
         # Dual-boundary parameters
         self.original_escape_weight = original_escape_weight
         self.escape_pressure = escape_pressure
@@ -144,6 +145,39 @@ class CounterFactualModel:
         self.requested_counterfactuals = requested_counterfactuals
         # Calculate population_size internally: overgeneration_factor * requested_counterfactuals
         self.population_size = overgeneration_factor * requested_counterfactuals
+
+        # Print configuration if verbose
+        if self.verbose:
+            print("=" * 80)
+            print("CounterFactualModel Configuration")
+            print("=" * 80)
+            print(f"Model type: {type(self.model).__name__}")
+            print(f"Verbose: {self.verbose}")
+            print(f"Feature names: {self.feature_names}")
+            print()
+            print("Fitness Weights:")
+            print(f"  - diversity_weight: {self.diversity_weight}")
+            print(f"  - repulsion_weight: {self.repulsion_weight}")
+            print(f"  - boundary_weight: {self.boundary_weight}")
+            print(f"  - distance_factor: {self.distance_factor}")
+            print(f"  - sparsity_factor: {self.sparsity_factor}")
+            print(f"  - constraints_factor: {self.constraints_factor}")
+            print(f"  - original_escape_weight: {self.original_escape_weight}")
+            print(f"  - max_bonus_cap: {self.max_bonus_cap}")
+            print()
+            print("Generation Parameters:")
+            print(f"  - escape_pressure: {self.escape_pressure}")
+            print(f"  - prioritize_non_overlapping: {self.prioritize_non_overlapping}")
+            print(f"  - unconstrained_penalty_factor: {self.unconstrained_penalty_factor}")
+            print()
+            print("Validation Parameters:")
+            print(f"  - min_probability_margin: {self.min_probability_margin}")
+            print()
+            print("Population Parameters:")
+            print(f"  - overgeneration_factor: {self.overgeneration_factor}")
+            print(f"  - requested_counterfactuals: {self.requested_counterfactuals}")
+            print(f"  - calculated population_size: {self.population_size}")
+            print("=" * 80)
 
     def _analyze_boundary_overlap(self, original_class, target_class):
         """Delegate to BoundaryAnalyzer for boundary overlap analysis."""
