@@ -70,7 +70,7 @@ def run_counterfactual_generation_dpg(args):
         if verbose_mode:
             print("[VERBOSE-DPG] Verbose mode enabled for counterfactual generation")
         
-        # Create CF model with config parameters (including dual-boundary parameters)
+        # Create CF model with config parameters
         cf_model = CounterFactualModel(
             model, 
             constraints,
@@ -91,8 +91,6 @@ def run_counterfactual_generation_dpg(args):
             # Training data for nearest neighbor fallback
             X_train=X_train,
             y_train=y_train,
-            # Generation debugging
-            generation_debugging=getattr(config.counterfactual, 'generation_debugging', False),
         )
         
         # Get the number of counterfactuals to generate
@@ -102,8 +100,6 @@ def run_counterfactual_generation_dpg(args):
             ORIGINAL_SAMPLE, 
             TARGET_CLASS, 
             config.counterfactual.population_size,
-            config.counterfactual.max_generations,
-            mutation_rate=config.counterfactual.mutation_rate,
             num_best_results=requested_counterfactuals
         )
         
@@ -130,7 +126,6 @@ def run_counterfactual_generation_dpg(args):
         best_fitness_list = getattr(cf_model, 'best_fitness_list', [])
         average_fitness_list = getattr(cf_model, 'average_fitness_list', [])
         std_fitness_list = getattr(cf_model, 'std_fitness_list', [])
-        generation_debug_table = getattr(cf_model, 'generation_debug_table', [])
         
         # Get per-CF evolution histories (each CF gets its own history path)
         per_cf_evolution_histories = getattr(cf_model, 'per_cf_evolution_histories', None)
@@ -148,14 +143,13 @@ def run_counterfactual_generation_dpg(args):
         
         return {
             'counterfactual': counterfactual,
-            'all_counterfactuals': counterfactuals,  # All requested counterfactuals from single GA run
-            'evolution_history': evolution_history,  # Shared best-per-generation history
+            'all_counterfactuals': counterfactuals,  # All requested counterfactuals
+            'evolution_history': evolution_history,  # Shared best history
             'per_cf_evolution_histories': per_cf_evolution_histories,  # Per-CF evolution paths
-            'cf_generation_found': cf_generation_found,  # Generation where each CF was found
+            'cf_generation_found': cf_generation_found,  # When each CF was found
             'best_fitness_list': best_fitness_list,
             'average_fitness_list': average_fitness_list,
             'std_fitness_list': std_fitness_list,
-            'generation_debug_table': generation_debug_table,  # Per-generation fitness component breakdown
             'dict_non_actionable': dict_non_actionable,
             'method': 'dpg',
             # Store serializable versions of model properties needed later

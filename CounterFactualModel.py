@@ -5,7 +5,7 @@ from constraint_validator import ConstraintValidator
 from fitness_calculator import FitnessCalculator
 from mutation_strategy import MutationStrategy
 from sample_generator import SampleGenerator
-from genetic_algorithm_runner import GeneticAlgorithmRunner
+from heuristic_runner import HeuristicRunner
 from constants import UNCONSTRAINED_CHANGE_PENALTY_FACTOR
 
 
@@ -30,7 +30,6 @@ class CounterFactualModel:
         X_train=None,
         y_train=None,
         min_probability_margin=0.001,
-        generation_debugging=False,
         overgeneration_factor=5,
     ):
         """
@@ -60,9 +59,6 @@ class CounterFactualModel:
             min_probability_margin (float): Minimum margin the target class probability must exceed the
                 second-highest class probability by. Prevents accepting weak counterfactuals where
                 the prediction is essentially a tie. Default 0.001 (0.1% margin).
-            generation_debugging (bool): Enable detailed per-generation fitness component tracking.
-                When True, collects fitness breakdown (distance, sparsity, penalties, bonuses) for
-                the best individual each generation, exported as a table for WandB logging.
             overgeneration_factor (int): Multiplier for internal CF generation. Generate this many
                 times the requested counterfactuals, then sort by fitness and return the best.
                 Default 5 means if 5 CFs are requested, 25 are generated internally and the top 5
@@ -120,7 +116,7 @@ class CounterFactualModel:
             boundary_analyzer=self.boundary_analyzer,
             verbose=verbose,
         )
-        # Initialize MutationStrategy for mutation and crossover operations
+        # Initialize MutationStrategy for perturbation operations
         self.mutation_strategy = MutationStrategy(
             constraints=constraints,
             dict_non_actionable=dict_non_actionable,
@@ -142,15 +138,14 @@ class CounterFactualModel:
             boundary_analyzer=self.boundary_analyzer,
             constraint_validator=self.constraint_validator,
         )
-        # Initialize GeneticAlgorithmRunner for GA execution
-        self.ga_runner = GeneticAlgorithmRunner(
+        # Initialize HeuristicRunner for candidate generation
+        self.heuristic_runner = HeuristicRunner(
             model=model,
             constraints=constraints,
             dict_non_actionable=dict_non_actionable,
             feature_names=self.feature_names,
             verbose=verbose,
             min_probability_margin=min_probability_margin,
-            generation_debugging=generation_debugging,
         )
         # Store training data for nearest neighbor fallback
         self.X_train = X_train
@@ -310,60 +305,16 @@ class CounterFactualModel:
             return_components=return_components,
         )
 
-    def _create_deap_individual(self, sample_dict, feature_names):
+    def _create_individual(self, sample_dict, feature_names):
         """Delegate to MutationStrategy for individual creation."""
         return self.mutation_strategy.create_deap_individual(sample_dict, feature_names)
 
-    def _mutate_individual(
-        self,
-        individual,
-        sample,
-        feature_names,
-        mutation_rate,
-        target_class=None,
-        original_class=None,
-        boundary_analysis=None,
-    ):
-        """Delegate to MutationStrategy for mutation."""
-        return self.mutation_strategy.mutate_individual(
-            individual,
-            sample,
-            feature_names,
-            mutation_rate,
-            target_class,
-            original_class,
-            boundary_analysis,
-        )
-
-    def _dual_boundary_mutate(
-        self,
-        current_value,
-        target_min,
-        target_max,
-        orig_min,
-        orig_max,
-        escape_dir="both",
-    ):
-        """Delegate to MutationStrategy for dual boundary mutation."""
-        return self.mutation_strategy._dual_boundary_mutate(
-            current_value, target_min, target_max, orig_min, orig_max, escape_dir
-        )
-
-    def _crossover_dict(self, ind1, ind2, indpb, sample=None):
-        """Delegate to MutationStrategy for crossover."""
-        return self.mutation_strategy.crossover_dict(ind1, ind2, indpb, sample)
-
-    def genetic_algorithm(
+    def generate_candidates(
         self,
         sample,
         target_class,
         population_size=100,
-        generations=100,
-        mutation_rate=0.8,
         metric="euclidean",
-        delta_threshold=0.1,
-        patience=7,
-        n_jobs=-1,
         original_class=None,
         num_best_results=1,
         overgeneration_factor=None,
@@ -377,16 +328,14 @@ class CounterFactualModel:
             sample (dict): Original sample features.
             target_class (int): Target class for counterfactual.
             population_size (int): Number of candidates to generate.
-            generations (int): Unused, kept for API compatibility.
-            mutation_rate (float): Unused, kept for API compatibility.
             metric (str): Distance metric for fitness calculation.
-            delta_threshold (float): Unused, kept for API compatibility.
-            patience (int): Unused, kept for API compatibility.
-            n_jobs (int): Unused, kept for API compatibility.
             original_class (int): Original class for escape-aware generation.
             num_best_results (int): Number of top individuals to return.
             overgeneration_factor (int): Multiplier for internal CF generation. If None,
                 uses the instance's overgeneration_factor (default 5).
+
+        Returns:
+            list: Valid counterfactuals (or None if none found).
         """
         # Pre-compute boundary analysis for dual-boundary operations
         boundary_analysis = None
@@ -399,8 +348,8 @@ class CounterFactualModel:
         if overgeneration_factor is None:
             overgeneration_factor = self.overgeneration_factor
 
-        # Delegate to GeneticAlgorithmRunner
-        result = self.ga_runner.run(
+        # Delegate to HeuristicRunner
+        result = self.heuristic_runner.run(
             sample=sample,
             target_class=target_class,
             original_class=original_class,
@@ -408,7 +357,7 @@ class CounterFactualModel:
             metric=metric,
             num_best_results=num_best_results,
             boundary_analysis=boundary_analysis,
-            create_individual_func=self._create_deap_individual,
+            create_individual_func=self._create_individual,
             calculate_fitness_func=self.calculate_fitness,
             get_valid_sample_func=self.get_valid_sample,
             normalize_feature_func=self._normalize_feature_name,
@@ -417,14 +366,12 @@ class CounterFactualModel:
         )
 
         # Copy tracking attributes back from runner
-        self.best_fitness_list = self.ga_runner.best_fitness_list
-        self.average_fitness_list = self.ga_runner.average_fitness_list
-        self.std_fitness_list = self.ga_runner.std_fitness_list
-        self.evolution_history = self.ga_runner.evolution_history
-        self.hof_evolution_histories = self.ga_runner.hof_evolution_histories
-        self.per_cf_evolution_histories = self.ga_runner.per_cf_evolution_histories
-        self.cf_generation_found = getattr(self.ga_runner, 'cf_generation_found', [])
-        self.generation_debug_table = self.ga_runner.generation_debug_table
+        self.best_fitness_list = self.heuristic_runner.best_fitness_list
+        self.average_fitness_list = self.heuristic_runner.average_fitness_list
+        self.std_fitness_list = self.heuristic_runner.std_fitness_list
+        self.evolution_history = self.heuristic_runner.evolution_history
+        self.per_cf_evolution_histories = self.heuristic_runner.per_cf_evolution_histories
+        self.cf_generation_found = getattr(self.heuristic_runner, 'cf_generation_found', [])
 
         return result
 
@@ -433,9 +380,6 @@ class CounterFactualModel:
         sample,
         target_class,
         population_size=100,
-        generations=100,
-        mutation_rate=0.8,
-        n_jobs=-1,
         num_best_results=1,
     ):
         """
@@ -448,10 +392,6 @@ class CounterFactualModel:
             sample (dict): The original sample with feature values.
             target_class (int): The desired class for the counterfactual.
             population_size (int): Number of candidates to generate.
-            generations (int): Unused, kept for API compatibility.
-            mutation_rate (float): Unused, kept for API compatibility.
-            n_jobs (int): Unused, kept for API compatibility.
-            relaxation_factor (float): Unused, kept for API compatibility.
             num_best_results (int): Number of top counterfactuals to return.
 
         Returns:
@@ -465,13 +405,10 @@ class CounterFactualModel:
             )
 
         # Generate counterfactuals using heuristic approach
-        counterfactuals = self.genetic_algorithm(
+        counterfactuals = self.generate_candidates(
             sample,
             target_class,
             population_size,
-            generations,
-            mutation_rate=mutation_rate,
-            n_jobs=n_jobs,
             original_class=sample_class,
             num_best_results=num_best_results,
         )
