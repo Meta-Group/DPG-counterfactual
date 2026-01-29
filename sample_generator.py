@@ -90,8 +90,7 @@ class SampleGenerator:
         Generate a valid sample that meets all constraints for the specified target class
         while respecting actionable changes.
 
-        Enhanced with dual-boundary support: when original_class is provided, the sample
-        is biased to move away from original class bounds toward target class bounds.
+        Enhanced with dual-boundary support: the sample is biased to move away from original class bounds toward target class bounds.
 
         Args:
             sample (dict): The sample with feature values.
