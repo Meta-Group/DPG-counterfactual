@@ -85,6 +85,161 @@ class SampleGenerator:
             feature2
         )
 
+    def _validate_sample_prediction(self, adjusted_sample, target_class, sample_keys):
+        """
+        Validate that a sample is predicted as the target class.
+
+        Args:
+            adjusted_sample (dict): The sample to validate.
+            target_class (int): The expected target class.
+            sample_keys (list): Feature names in order.
+
+        Returns:
+            tuple: (is_valid: bool, margin: float, pred: int)
+                - is_valid: True if predicted as target_class with sufficient margin
+                - margin: Probability margin between target and second-best class
+                - pred: The predicted class
+        """
+        try:
+            if self.feature_names is not None:
+                adjusted_df = pd.DataFrame([adjusted_sample], columns=self.feature_names)
+                pred = self.model.predict(adjusted_df)[0]
+                proba = self.model.predict_proba(adjusted_df)[0]
+            else:
+                adjusted_array = np.array([[adjusted_sample[f] for f in sample_keys]])
+                pred = self.model.predict(adjusted_array)[0]
+                proba = self.model.predict_proba(adjusted_array)[0]
+
+            if pred != target_class:
+                return False, 0.0, pred
+
+            # Calculate probability margin
+            if hasattr(self.model, "classes_"):
+                class_list = list(self.model.classes_)
+                if target_class in class_list:
+                    target_idx = class_list.index(target_class)
+                else:
+                    target_idx = target_class
+            else:
+                target_idx = target_class
+
+            target_prob = proba[target_idx]
+            sorted_probs = np.sort(proba)[::-1]
+            second_best_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0.0
+            margin = target_prob - second_best_prob
+
+            is_valid = margin >= self.min_probability_margin
+            return is_valid, margin, pred
+
+        except Exception as e:
+            if self.verbose:
+                print(f"[VERBOSE-DPG] Prediction validation failed: {e}")
+            return False, 0.0, None
+
+    def _binary_search_feature(self, sample, feature, v_min, v_max, target_class, 
+                                original_value, escape_dir, eps=0.01, max_iter=20):
+        """
+        Binary search within [v_min, v_max] to find a value for feature that
+        results in the sample being classified as target_class.
+
+        Args:
+            sample (dict): Current sample values.
+            feature (str): Feature name to search.
+            v_min (float): Minimum bound for search.
+            v_max (float): Maximum bound for search.
+            target_class (int): Target class for validation.
+            original_value (float): Original feature value (for minimal change preference).
+            escape_dir (str): Escape direction ('increase', 'decrease', or 'both').
+            eps (float): Minimum interval size to stop search.
+            max_iter (int): Maximum iterations.
+
+        Returns:
+            float or None: Valid feature value, or None if not found.
+        """
+        sample_keys = list(sample.keys())
+        test_sample = sample.copy()
+        
+        # Determine search direction based on escape_dir
+        # For 'increase': search from v_min toward v_max (prefer values closer to v_min)
+        # For 'decrease': search from v_max toward v_min (prefer values closer to v_max)
+        if escape_dir == "increase":
+            low, high = v_min, v_max
+        elif escape_dir == "decrease":
+            low, high = v_min, v_max
+        else:
+            low, high = v_min, v_max
+
+        best_valid_value = None
+        best_distance = float('inf')
+        
+        for iteration in range(max_iter):
+            if abs(high - low) < eps:
+                break
+                
+            mid = (low + high) / 2
+            test_sample[feature] = mid
+            
+            is_valid, margin, pred = self._validate_sample_prediction(
+                test_sample, target_class, sample_keys
+            )
+            
+            if is_valid:
+                # Found valid value - track it and search for closer one
+                distance = abs(mid - original_value)
+                if distance < best_distance:
+                    best_valid_value = mid
+                    best_distance = distance
+                
+                # Search toward original value for minimal change
+                if escape_dir == "increase":
+                    # Valid at mid, try lower (closer to original if escape is increase)
+                    high = mid
+                elif escape_dir == "decrease":
+                    # Valid at mid, try higher (closer to original if escape is decrease)
+                    low = mid
+                else:
+                    # No clear direction - search toward original
+                    if mid > original_value:
+                        high = mid
+                    else:
+                        low = mid
+            else:
+                # Not valid - search deeper into target bounds
+                if escape_dir == "increase":
+                    low = mid  # Need higher values
+                elif escape_dir == "decrease":
+                    high = mid  # Need lower values
+                else:
+                    # Try moving away from original
+                    if mid > original_value:
+                        low = mid
+                    else:
+                        high = mid
+            
+            if self.verbose and iteration % 5 == 0:
+                status = "valid" if is_valid else "invalid"
+                print(f"[VERBOSE-DPG]     Binary search iter {iteration}: {feature}={mid:.4f} ({status})")
+
+        # If binary search found a valid value, return it
+        if best_valid_value is not None:
+            if self.verbose:
+                print(f"[VERBOSE-DPG]     Binary search found valid value: {feature}={best_valid_value:.4f}")
+            return best_valid_value
+
+        # Fallback: try boundary values directly
+        for boundary_val in [v_min + eps, v_max - eps, (v_min + v_max) / 2]:
+            if v_min <= boundary_val <= v_max:
+                test_sample[feature] = boundary_val
+                is_valid, margin, pred = self._validate_sample_prediction(
+                    test_sample, target_class, sample_keys
+                )
+                if is_valid:
+                    if self.verbose:
+                        print(f"[VERBOSE-DPG]     Boundary fallback found: {feature}={boundary_val:.4f}")
+                    return boundary_val
+
+        return None
+
     def get_valid_sample(self, sample, target_class, original_class):
         """
         Generate a valid sample that meets all constraints for the specified target class
@@ -107,6 +262,7 @@ class SampleGenerator:
                 print(f"[VERBOSE-DPG]   Original class: {original_class} (escape-aware generation)")
         
         adjusted_sample = sample.copy()  # Start with the original values
+        feature_bounds_info = {}  # Track bounds for retry
         # Filter the constraints for the specified target class
         class_constraints = self.constraints.get(f"Class {target_class}", [])
         original_constraints = (self.constraints.get(f"Class {original_class}", []))
@@ -257,6 +413,14 @@ class SampleGenerator:
             # Clip to target bounds and set
             adjusted_sample[feature] = np.clip(target_value, min_value, max_value)
             
+            # Store feature bounds info for potential retry
+            feature_bounds_info[feature] = {
+                'min': min_value,
+                'max': max_value,
+                'escape_dir': escape_dir,
+                'original': original_value,
+            }
+            
             if self.verbose:
                 delta = adjusted_sample[feature] - original_value
                 escape_info = f" (escape: {escape_dir})" if escape_dir != "both" else ""
@@ -267,50 +431,109 @@ class SampleGenerator:
         if self.verbose:
             print(f"[VERBOSE-DPG] --------------------------------------------------------") 
 
-        # Verify that the adjusted sample is classified as the target class
-        try:
-            # Convert adjusted_sample dict to DataFrame for prediction
-            if self.feature_names is not None:
-                adjusted_df = pd.DataFrame([adjusted_sample], columns=self.feature_names)
-                pred = self.model.predict(adjusted_df)[0]
-                proba = self.model.predict_proba(adjusted_df)[0]
-            else:
-                # Convert dict to array maintaining feature order
-                adjusted_array = np.array([[adjusted_sample[f] for f in sample.keys()]])
-                pred = self.model.predict(adjusted_array)[0]
-                proba = self.model.predict_proba(adjusted_array)[0]
-            
-            # Check if prediction matches target class
-            if pred != target_class:
-                if self.verbose:
-                    print(f"[VERBOSE-DPG] WARNING: Generated sample predicted as class {pred}, not target class {target_class}")
-            else:
-                # Check probability margin
-                if hasattr(self.model, "classes_"):
-                    class_list = list(self.model.classes_)
-                    if target_class in class_list:
-                        target_idx = class_list.index(target_class)
-                    else:
-                        target_idx = target_class
-                else:
-                    target_idx = target_class
-                
-                target_prob = proba[target_idx]
-                sorted_probs = np.sort(proba)[::-1]
-                second_best_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0.0
-                margin = target_prob - second_best_prob
-                
-                if self.verbose:
-                    print(f"[VERBOSE-DPG] ✓ Sample correctly predicted as class {pred} with probability {target_prob:.3f} (margin: {margin:.3f})")
-                
-                if margin < self.min_probability_margin:
-                    if self.verbose:
-                        print(f"[VERBOSE-DPG] WARNING: Weak probability margin {margin:.3f} < {self.min_probability_margin}")
-                        
-        except Exception as e:
-            if self.verbose:
-                print(f"[VERBOSE-DPG] Prediction validation failed: {e}")
+        # Validate initial sample
+        sample_keys = list(sample.keys())
+        is_valid, margin, pred = self._validate_sample_prediction(
+            adjusted_sample, target_class, sample_keys
+        )
 
+        if is_valid:
+            if self.verbose:
+                print(f"[VERBOSE-DPG] ✓ Sample correctly predicted as class {pred} (margin: {margin:.3f})")
+            return adjusted_sample
+
+        # Initial attempt failed - retry with binary search on non-overlapping features
+        if self.verbose:
+            print(f"[VERBOSE-DPG] Initial sample predicted as class {pred}, not target {target_class}")
+            print(f"[VERBOSE-DPG] Starting binary search retry on features with clear escape directions...")
+
+        # Get non-overlapping features (clearest escape path) from boundary analysis
+        retry_features = []
+        if boundary_analysis:
+            non_overlapping = boundary_analysis.get("non_overlapping", [])
+            escape_directions = boundary_analysis.get("escape_direction", {})
+            
+            for feature in sample.keys():
+                norm_feature = self._normalize_feature_name(feature)
+                
+                # Skip no_change features
+                if self.dict_non_actionable and feature in self.dict_non_actionable:
+                    if self.dict_non_actionable[feature] == "no_change":
+                        continue
+                
+                # Prioritize non-overlapping features with clear escape directions
+                escape_dir = escape_directions.get(norm_feature, "both")
+                if norm_feature in non_overlapping or escape_dir in ["increase", "decrease"]:
+                    bounds = feature_bounds_info.get(feature, {})
+                    if bounds:
+                        retry_features.append({
+                            'feature': feature,
+                            'escape_dir': escape_dir,
+                            'min': bounds['min'],
+                            'max': bounds['max'],
+                            'original': bounds['original'],
+                            'priority': 0 if norm_feature in non_overlapping else 1
+                        })
+        
+        # Sort by priority (non-overlapping first)
+        retry_features.sort(key=lambda x: x['priority'])
+        
+        if self.verbose:
+            print(f"[VERBOSE-DPG] Features to retry: {[f['feature'] for f in retry_features]}")
+
+        # Binary search each feature until we find a valid sample
+        for feat_info in retry_features:
+            feature = feat_info['feature']
+            v_min = feat_info['min']
+            v_max = feat_info['max']
+            escape_dir = feat_info['escape_dir']
+            original_value = feat_info['original']
+            
+            # Apply actionability constraints to search bounds
+            if self.dict_non_actionable and feature in self.dict_non_actionable:
+                actionability = self.dict_non_actionable[feature]
+                if actionability == "non_decreasing":
+                    v_min = max(v_min, original_value)
+                elif actionability == "non_increasing":
+                    v_max = min(v_max, original_value)
+            
+            if v_min >= v_max:
+                if self.verbose:
+                    print(f"[VERBOSE-DPG]   Skipping {feature}: invalid bounds [{v_min}, {v_max}]")
+                continue
+            
+            if self.verbose:
+                print(f"[VERBOSE-DPG]   Searching {feature} in [{v_min:.4f}, {v_max:.4f}] (escape: {escape_dir})")
+            
+            found_value = self._binary_search_feature(
+                adjusted_sample, feature, v_min, v_max, target_class,
+                original_value, escape_dir, eps=0.01, max_iter=20
+            )
+            
+            if found_value is not None:
+                adjusted_sample[feature] = found_value
+                
+                # Validate the updated sample
+                is_valid, margin, pred = self._validate_sample_prediction(
+                    adjusted_sample, target_class, sample_keys
+                )
+                
+                if is_valid:
+                    if self.verbose:
+                        delta = found_value - original_value
+                        print(f"[VERBOSE-DPG] ✓ Binary search success! {feature}: {original_value:.4f} → {found_value:.4f} (Δ={delta:+.4f})")
+                        print(f"[VERBOSE-DPG] ✓ Sample now predicted as class {pred} (margin: {margin:.3f})")
+                    return adjusted_sample
+                else:
+                    if self.verbose:
+                        print(f"[VERBOSE-DPG]   {feature} updated but sample still predicted as {pred}")
+            else:
+                if self.verbose:
+                    print(f"[VERBOSE-DPG]   No valid value found for {feature}")
+
+        # All retries exhausted
+        if self.verbose:
+            print(f"[VERBOSE-DPG] WARNING: Binary search exhausted, returning best attempt (predicted as {pred})")
             
         return adjusted_sample
 
