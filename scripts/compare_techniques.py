@@ -837,6 +837,7 @@ def plot_heatmap_winners(
     comparison_df: pd.DataFrame,
     output_path: Optional[str] = None,
     figsize: Tuple[int, int] = (14, 10),
+    metrics_to_include: Optional[List[str]] = None,
 ) -> Optional[plt.Figure]:
     """Create heatmap showing which technique wins for each dataset-metric pair.
     
@@ -844,6 +845,7 @@ def plot_heatmap_winners(
         comparison_df: DataFrame from create_comparison_table()
         output_path: Optional path to save figure
         figsize: Figure size
+        metrics_to_include: Optional list of metric keys to include. If None, excludes only delta and perc_valid_cf.
         
     Returns:
         matplotlib Figure object
@@ -853,9 +855,14 @@ def plot_heatmap_winners(
         return None
     
     datasets = sorted(comparison_df['dataset'].unique())
-    # Exclude delta and perc_valid_cf from metrics
-    excluded_metrics = {'delta', 'perc_valid_cf'}
-    metrics = [m for m in COMPARISON_METRICS.keys() if m not in excluded_metrics]
+    
+    if metrics_to_include is not None:
+        # Use only specified metrics
+        metrics = metrics_to_include
+    else:
+        # Exclude delta and perc_valid_cf from metrics
+        excluded_metrics = {'delta', 'perc_valid_cf'}
+        metrics = [m for m in COMPARISON_METRICS.keys() if m not in excluded_metrics]
     
     # Create winner matrix: 1 = DPG wins, -1 = DiCE wins, 0 = tie/na
     winner_matrix = np.zeros((len(datasets), len(metrics)))

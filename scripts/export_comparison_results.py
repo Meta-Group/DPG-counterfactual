@@ -361,7 +361,7 @@ def export_winner_heatmap(comparison_df):
     os.makedirs(viz_dir, exist_ok=True)
     
     output_path = os.path.join(viz_dir, 'winner_heatmap.png')
-    fig = plot_heatmap_winners(comparison_df, figsize=(16, 12))
+    fig = plot_heatmap_winners(comparison_df, figsize=(24, 12))
     
     if fig:
         fig.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -369,6 +369,38 @@ def export_winner_heatmap(comparison_df):
         plt.close(fig)
     else:
         print("⚠ Could not create winner heatmap")
+
+
+def export_winner_heatmap_small(comparison_df):
+    """Export small winner heatmap with only key metrics to PNG."""
+    print("\n" + "="*80)
+    print("EXPORTING SMALL WINNER HEATMAP (KEY METRICS ONLY)")
+    print("="*80)
+    
+    viz_dir = os.path.join(OUTPUT_DIR, 'visualizations')
+    os.makedirs(viz_dir, exist_ok=True)
+    
+    # Small metrics to include
+    small_metrics = [
+        'perc_valid_cf_all',
+        'perc_actionable_cf_all',
+        'plausibility_nbr_cf',
+        'distance_mh',
+        'avg_nbr_changes',
+        'count_diversity_all',
+        'accuracy_knn_sklearn',
+        'runtime'
+    ]
+    
+    output_path = os.path.join(viz_dir, 'winner_heatmap_small.png')
+    fig = plot_heatmap_winners(comparison_df, figsize=(20, 12), metrics_to_include=small_metrics)
+    
+    if fig:
+        fig.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"✓ Exported small winner heatmap to: {output_path}")
+        plt.close(fig)
+    else:
+        print("⚠ Could not create small winner heatmap")
 
 
 def export_radar_chart_for_dataset(comparison_df, dataset, viz_dir):
@@ -905,6 +937,7 @@ def main():
     
     # Always regenerate visualizations
     export_winner_heatmap(comparison_df)
+    export_winner_heatmap_small(comparison_df)
     export_radar_charts(comparison_df)
     export_dataset_visualizations(comparison_df, raw_df)
     
