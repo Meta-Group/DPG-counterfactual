@@ -238,7 +238,7 @@ def fetch_and_filter_data():
         project=WANDB_PROJECT,
         entity=WANDB_ENTITY,
         datasets=SELECTED_DATASETS,
-        limit=500,
+        limit=300,
         min_created_at=MIN_CREATED_AT
     )
     
