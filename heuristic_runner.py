@@ -331,6 +331,15 @@ class HeuristicRunner:
                 if matching_constraint:
                     feature_min = matching_constraint.get("min")
                     feature_max = matching_constraint.get("max")
+                    original_value = sample[feature]
+                    
+                    # Apply weak_constraints: extend bounds to include original value
+                    if weak_constraints:
+                        if feature_min is not None:
+                            feature_min = min(feature_min, original_value)
+                        if feature_max is not None:
+                            feature_max = max(feature_max, original_value)
+                    
                     if feature_min is not None:
                         perturbed[feature] = max(feature_min, perturbed[feature])
                     if feature_max is not None:
