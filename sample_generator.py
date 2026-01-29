@@ -266,6 +266,52 @@ class SampleGenerator:
                 print(f"[VERBOSE-DPG]   {feature}: {original_value:.4f} → {adjusted_sample[feature]:.4f} (Δ={delta:+.4f}){escape_info}{actionable_info}")
         if self.verbose:
             print(f"[VERBOSE-DPG] --------------------------------------------------------") 
+
+        # Verify that the adjusted sample is classified as the target class
+        try:
+            # Convert adjusted_sample dict to DataFrame for prediction
+            if self.feature_names is not None:
+                adjusted_df = pd.DataFrame([adjusted_sample], columns=self.feature_names)
+                pred = self.model.predict(adjusted_df)[0]
+                proba = self.model.predict_proba(adjusted_df)[0]
+            else:
+                # Convert dict to array maintaining feature order
+                adjusted_array = np.array([[adjusted_sample[f] for f in sample.keys()]])
+                pred = self.model.predict(adjusted_array)[0]
+                proba = self.model.predict_proba(adjusted_array)[0]
+            
+            # Check if prediction matches target class
+            if pred != target_class:
+                if self.verbose:
+                    print(f"[VERBOSE-DPG] WARNING: Generated sample predicted as class {pred}, not target class {target_class}")
+            else:
+                # Check probability margin
+                if hasattr(self.model, "classes_"):
+                    class_list = list(self.model.classes_)
+                    if target_class in class_list:
+                        target_idx = class_list.index(target_class)
+                    else:
+                        target_idx = target_class
+                else:
+                    target_idx = target_class
+                
+                target_prob = proba[target_idx]
+                sorted_probs = np.sort(proba)[::-1]
+                second_best_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0.0
+                margin = target_prob - second_best_prob
+                
+                if self.verbose:
+                    print(f"[VERBOSE-DPG] ✓ Sample correctly predicted as class {pred} with probability {target_prob:.3f} (margin: {margin:.3f})")
+                
+                if margin < self.min_probability_margin:
+                    if self.verbose:
+                        print(f"[VERBOSE-DPG] WARNING: Weak probability margin {margin:.3f} < {self.min_probability_margin}")
+                        
+        except Exception as e:
+            if self.verbose:
+                print(f"[VERBOSE-DPG] Prediction validation failed: {e}")
+
+            
         return adjusted_sample
 
     def find_nearest_counterfactual(
