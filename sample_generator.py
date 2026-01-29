@@ -273,7 +273,14 @@ class SampleGenerator:
                 if self.dict_non_actionable and feature in self.dict_non_actionable:
                     actionable_info = f" [{self.dict_non_actionable[feature]}]"
                 print(f"[VERBOSE-DPG]   {feature}: {original_value:.4f} → {adjusted_sample[feature]:.4f} (Δ={delta:+.4f}){escape_info}{actionable_info}")
-
+        if self.verbose:
+            valid, penalty = self.constraint_validator.validate_constraints(
+                adjusted_sample, sample, target_class
+            )
+            validity_str = "valid" if valid else "invalid"
+            validity_sign = "✓" if valid else "✗"
+            print(f"[VERBOSE-DPG] Generated sample is {validity_str} against constraints.     -  {validity_sign}")
+            print(f"[VERBOSE-DPG] --------------------------------------------------------") 
         return adjusted_sample
 
     def find_nearest_counterfactual(
