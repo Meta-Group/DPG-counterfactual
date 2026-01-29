@@ -508,7 +508,7 @@ class SampleGenerator:
         
         return best_sample
 
-    def get_valid_sample(self, sample, target_class, original_class):
+    def get_valid_sample(self, sample, target_class, original_class, weak_constraints=True):
         """
         Generate a valid sample that meets all constraints for the specified target class
         while respecting actionable changes.
@@ -519,6 +519,9 @@ class SampleGenerator:
             sample (dict): The sample with feature values.
             target_class (int): The target class for filtering constraints.
             original_class (int): The original class for escape-aware generation.
+            weak_constraints (bool): If True, search bounds span from original value to target constraint,
+                                    allowing CFs to be found along the path. If False, search only within
+                                    exact DPG target bounds.
 
         Returns:
             dict: A valid sample that meets all constraints for the target class
@@ -528,6 +531,7 @@ class SampleGenerator:
             print(f"[VERBOSE-DPG] Generating valid sample for target class {target_class} - get_valid_sample")
             if original_class is not None:
                 print(f"[VERBOSE-DPG]   Original class: {original_class} (escape-aware generation)")
+            print(f"[VERBOSE-DPG]   weak_constraints={weak_constraints}")
         
         adjusted_sample = sample.copy()  # Start with the original values
         feature_bounds_info = {}  # Track bounds for retry
@@ -685,19 +689,51 @@ class SampleGenerator:
             adjusted_sample[feature] = np.clip(target_value, min_value, max_value)
             
             # Store feature bounds info for potential retry
-            # Use RAW target constraints for search space
-            # When constraints are unbounded, use a larger search range (10x the value range)
-            if raw_target_min is not None:
-                search_min = raw_target_min
+            # Determine search bounds based on weak_constraints mode
+            if weak_constraints:
+                # WEAK CONSTRAINTS: Search from original value toward target constraint
+                # This allows finding CFs along the "path" to the target class
+                if escape_dir == "increase":
+                    # Need to increase: search from original toward target max
+                    search_min = original_value
+                    if raw_target_max is not None:
+                        search_max = raw_target_max
+                    elif raw_target_min is not None:
+                        # If only min bound (e.g., equal bounds case), use that
+                        search_max = raw_target_min
+                    else:
+                        search_max = original_value + 10.0 * (abs(original_value) + 1.0)
+                elif escape_dir == "decrease":
+                    # Need to decrease: search from target min toward original
+                    if raw_target_min is not None:
+                        search_min = raw_target_min
+                    elif raw_target_max is not None:
+                        # If only max bound (e.g., equal bounds case), use that
+                        search_min = raw_target_max
+                    else:
+                        search_min = original_value - 10.0 * (abs(original_value) + 1.0)
+                    search_max = original_value
+                else:
+                    # "both" direction: include original value in the range
+                    if raw_target_min is not None:
+                        search_min = min(raw_target_min, original_value)
+                    else:
+                        search_min = original_value - 10.0 * (abs(original_value) + 1.0)
+                    if raw_target_max is not None:
+                        search_max = max(raw_target_max, original_value)
+                    else:
+                        search_max = original_value + 10.0 * (abs(original_value) + 1.0)
             else:
-                # No lower constraint - use large negative range for search
-                search_min = original_value - 10.0 * (abs(original_value) + 1.0)
-            
-            if raw_target_max is not None:
-                search_max = raw_target_max
-            else:
-                # No upper constraint - use large positive range for search
-                search_max = original_value + 10.0 * (abs(original_value) + 1.0)
+                # STRICT CONSTRAINTS: Search only within exact DPG target bounds
+                if raw_target_min is not None:
+                    search_min = raw_target_min
+                else:
+                    search_min = original_value - 10.0 * (abs(original_value) + 1.0)
+                
+                if raw_target_max is not None:
+                    search_max = raw_target_max
+                else:
+                    search_max = original_value + 10.0 * (abs(original_value) + 1.0)
             
             feature_bounds_info[feature] = {
                 'min': search_min,
@@ -712,7 +748,7 @@ class SampleGenerator:
                 actionable_info = ""
                 if self.dict_non_actionable and feature in self.dict_non_actionable:
                     actionable_info = f" [{self.dict_non_actionable[feature]}]"
-                print(f"[VERBOSE-DPG]   {feature}: {original_value:.4f} → {adjusted_sample[feature]:.4f} (Δ={delta:+.4f}){escape_info}{actionable_info}    --- [bounds: {min_value:.4f}, {max_value:.4f}]")
+                print(f"[VERBOSE-DPG]   {feature}: {original_value:.4f} → {adjusted_sample[feature]:.4f} (Δ={delta:+.4f}){escape_info}{actionable_info}    --- [search: {search_min:.4f}, {search_max:.4f}]")
         if self.verbose:
             print(f"[VERBOSE-DPG] --------------------------------------------------------") 
 
