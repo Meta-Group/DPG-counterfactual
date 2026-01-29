@@ -42,6 +42,7 @@ class FitnessCalculator:
         unconstrained_penalty_factor=UNCONSTRAINED_CHANGE_PENALTY_FACTOR,
         constraint_validator=None,
         boundary_analyzer=None,
+        verbose=False,
     ):
         """
         Initialize the FitnessCalculator.
@@ -60,6 +61,7 @@ class FitnessCalculator:
             unconstrained_penalty_factor (float): Penalty multiplier for changing features without target constraints.
             constraint_validator: ConstraintValidator instance for validation.
             boundary_analyzer: BoundaryAnalyzer instance for escape penalty calculation.
+            verbose (bool): Whether to print detailed logging.
         """
         self.model = model
         self.feature_names = feature_names
@@ -74,6 +76,7 @@ class FitnessCalculator:
         self.unconstrained_penalty_factor = unconstrained_penalty_factor
         self.constraint_validator = constraint_validator
         self.boundary_analyzer = boundary_analyzer
+        self.verbose = verbose
 
     def calculate_distance(
         self, original_sample, counterfactual_sample, metric="euclidean"
@@ -354,10 +357,14 @@ class FitnessCalculator:
         if self.constraint_validator and not self.constraint_validator.is_actionable_change(
             individual, sample
         ):
+            if self.verbose:
+                print(f"[VERBOSE-DPG] Fitness: INVALID (non-actionable change)")
             return INVALID_FITNESS
 
         # Check if sample is identical to original
         if np.array_equal(features.flatten(), original_features.flatten()):
+            if self.verbose:
+                print(f"[VERBOSE-DPG] Fitness: INVALID (identical to original)")
             return INVALID_FITNESS
 
         # Check the constraints (pass original_class for smart overlap handling)

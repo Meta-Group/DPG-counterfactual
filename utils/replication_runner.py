@@ -59,7 +59,16 @@ def run_counterfactual_generation_dpg(args):
     
     try:
         # Get verbose mode from config if available
-        verbose_mode = getattr(config, 'verbose', False) or getattr(config.experiment, 'verbose', False)
+        # Check multiple possible locations: top-level, experiment, methods.dpg, counterfactual
+        verbose_mode = (
+            getattr(config, 'verbose', False) or 
+            getattr(config.experiment, 'verbose', False) or
+            getattr(getattr(config, 'methods', type('', (), {'dpg': type('', (), {'verbose': False})()})), 'dpg', type('', (), {'verbose': False})()).verbose or
+            getattr(config.counterfactual, 'verbose', False)
+        )
+        
+        if verbose_mode:
+            print("[VERBOSE-DPG] Verbose mode enabled for counterfactual generation")
         
         # Create CF model with config parameters (including dual-boundary parameters)
         cf_model = CounterFactualModel(

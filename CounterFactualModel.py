@@ -101,6 +101,7 @@ class CounterFactualModel:
             dict_non_actionable=dict_non_actionable,
             feature_names=self.feature_names,
             boundary_analyzer=self.boundary_analyzer,
+            verbose=verbose,
         )
         # Initialize FitnessCalculator for fitness calculation
         self.fitness_calculator = FitnessCalculator(
@@ -117,6 +118,7 @@ class CounterFactualModel:
             unconstrained_penalty_factor=unconstrained_penalty_factor,
             constraint_validator=self.constraint_validator,
             boundary_analyzer=self.boundary_analyzer,
+            verbose=verbose,
         )
         # Initialize MutationStrategy for mutation and crossover operations
         self.mutation_strategy = MutationStrategy(

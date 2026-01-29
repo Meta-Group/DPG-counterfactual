@@ -106,6 +106,11 @@ class SampleGenerator:
             dict: A valid sample that meets all constraints for the target class
                   and respects actionable changes.
         """
+        if self.verbose:
+            print(f"[VERBOSE-DPG] Generating valid sample for target class {target_class}")
+            if original_class is not None:
+                print(f"[VERBOSE-DPG]   Original class: {original_class} (escape-aware generation)")
+        
         adjusted_sample = sample.copy()  # Start with the original values
         # Filter the constraints for the specified target class
         class_constraints = self.constraints.get(f"Class {target_class}", [])
@@ -260,6 +265,14 @@ class SampleGenerator:
 
             # Clip to target bounds and set
             adjusted_sample[feature] = np.clip(target_value, min_value, max_value)
+            
+            if self.verbose:
+                delta = adjusted_sample[feature] - original_value
+                escape_info = f" (escape: {escape_dir})" if escape_dir != "both" else ""
+                actionable_info = ""
+                if self.dict_non_actionable and feature in self.dict_non_actionable:
+                    actionable_info = f" [{self.dict_non_actionable[feature]}]"
+                print(f"[VERBOSE-DPG]   {feature}: {original_value:.4f} → {adjusted_sample[feature]:.4f} (Δ={delta:+.4f}){escape_info}{actionable_info}")
 
         return adjusted_sample
 

@@ -420,6 +420,8 @@ class GeneticAlgorithmRunner:
                 
                 # Skip if doesn't predict target class
                 if predicted_class != target_class:
+                    if self.verbose:
+                        print(f"[VERBOSE-DPG] Candidate rejected: predicted class {predicted_class} != target {target_class}")
                     continue
                 
                 # Check probability margin
@@ -435,9 +437,13 @@ class GeneticAlgorithmRunner:
                 margin = target_prob - second_best_prob
                 
                 if margin < self.min_probability_margin:
+                    if self.verbose:
+                        print(f"[VERBOSE-DPG] Candidate rejected: margin {margin:.6f} < {self.min_probability_margin:.6f} (target_prob={target_prob:.4f}, second={second_best_prob:.4f})")
                     continue
                     
-            except Exception:
+            except Exception as e:
+                if self.verbose:
+                    print(f"[VERBOSE-DPG] Candidate rejected: prediction error {e}")
                 continue
             
             # Calculate fitness for this candidate
@@ -459,9 +465,14 @@ class GeneticAlgorithmRunner:
             })
         
         if self.verbose:
-            print(f"Valid candidates: {len(candidates)}")
+            print(f"[VERBOSE-DPG] Valid candidates after filtering: {len(candidates)}/{len(hof)} from HOF")
+            if len(hof) > len(candidates):
+                rejected = len(hof) - len(candidates)
+                print(f"[VERBOSE-DPG] Rejected {rejected} candidates (wrong class or insufficient margin)")
         
         if not candidates:
+            if self.verbose:
+                print(f"[VERBOSE-DPG] No valid candidates found - all {len(hof)} HOF entries rejected")
             return None
         
         # STEP 2: Sort by fitness (lower is better) and take top internal_num_results

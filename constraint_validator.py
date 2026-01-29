@@ -22,6 +22,7 @@ class ConstraintValidator:
         dict_non_actionable=None,
         feature_names=None,
         boundary_analyzer=None,
+        verbose=False,
     ):
         """
         Initialize the ConstraintValidator.
@@ -33,12 +34,14 @@ class ConstraintValidator:
                 (non_decreasing, non_increasing, no_change).
             feature_names: List of feature names from the model.
             boundary_analyzer: Optional BoundaryAnalyzer instance for overlap analysis.
+            verbose (bool): Whether to print detailed logging.
         """
         self.model = model
         self.constraints = constraints
         self.dict_non_actionable = dict_non_actionable
         self.feature_names = feature_names
         self.boundary_analyzer = boundary_analyzer
+        self.verbose = verbose
 
     def _normalize_feature_name(self, feature):
         """
@@ -99,10 +102,16 @@ class ConstraintValidator:
             constraint = self.dict_non_actionable[feature]
 
             if constraint == "non_decreasing" and new_value < original_value:
+                if self.verbose:
+                    print(f"[VERBOSE-DPG] Actionability violation: {feature} = {new_value:.4f} < {original_value:.4f} (non_decreasing constraint)")
                 return False
             if constraint == "non_increasing" and new_value > original_value:
+                if self.verbose:
+                    print(f"[VERBOSE-DPG] Actionability violation: {feature} = {new_value:.4f} > {original_value:.4f} (non_increasing constraint)")
                 return False
             if constraint == "no_change" and new_value != original_value:
+                if self.verbose:
+                    print(f"[VERBOSE-DPG] Actionability violation: {feature} = {new_value:.4f} != {original_value:.4f} (no_change constraint)")
                 return False
 
         return True
@@ -167,6 +176,9 @@ class ConstraintValidator:
         # Filter the constraints for the specified target class
         class_constraints = self.constraints.get(str("Class " + str(target_class)), [])
 
+        if self.verbose:
+            print(f"[VERBOSE-DPG] Validating constraints for target class {target_class}")
+
         for feature, new_value in S_prime.items():
             original_value = sample.get(feature)
 
@@ -186,15 +198,29 @@ class ConstraintValidator:
                     min_val = matching_constraint.get("min")
                     max_val = matching_constraint.get("max")
 
+                    delta = new_value - original_value
+                    if self.verbose:
+                        in_bounds = "✓" if (min_val is None or new_value >= min_val) and (max_val is None or new_value <= max_val) else "✗"
+                        print(f"[VERBOSE-DPG]   {feature}: {original_value:.4f} → {new_value:.4f} (Δ={delta:+.4f}) [{min_val}, {max_val}] {in_bounds}")
+
                     # Check if the new value violates min constraint
                     if min_val is not None and new_value < min_val:
                         valid_change = False
-                        penalty += abs(new_value - min_val)
+                        violation = abs(new_value - min_val)
+                        penalty += violation
+                        if self.verbose:
+                            print(f"[VERBOSE-DPG]     Min violation: {new_value:.4f} < {min_val:.4f}, penalty += {violation:.4f}")
 
                     # Check if the new value violates max constraint
                     if max_val is not None and new_value > max_val:
                         valid_change = False
-                        penalty += abs(new_value - max_val)
+                        violation = abs(new_value - max_val)
+                        penalty += violation
+                        if self.verbose:
+                            print(f"[VERBOSE-DPG]     Max violation: {new_value:.4f} > {max_val:.4f}, penalty += {violation:.4f}")
+                elif self.verbose and new_value != original_value:
+                    delta = new_value - original_value
+                    print(f"[VERBOSE-DPG]   {feature}: {original_value:.4f} → {new_value:.4f} (Δ={delta:+.4f}) [no constraint]")
 
         # In relaxed mode, skip non-target class penalty (used when constraints overlap significantly)
         if not strict_mode:
