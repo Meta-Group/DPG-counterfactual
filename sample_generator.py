@@ -137,7 +137,7 @@ class SampleGenerator:
             return False, 0.0, None
 
     def _binary_search_feature(self, sample, feature, v_min, v_max, target_class, 
-                                original_value, escape_dir, eps=0.01, max_iter=20):
+                                original_value, escape_dir, eps=0.01, max_iter=100):
         """
         Binary search within [v_min, v_max] to find a value for feature that
         results in the sample being classified as target_class.
