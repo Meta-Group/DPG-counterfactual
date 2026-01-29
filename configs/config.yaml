@@ -8,7 +8,7 @@
 
 priority_datasets:
   - iris
-  - abalone
+  - abalone # similar to 19
   - abalone_19 
   - diabetes
   - banknote_authentication
@@ -88,7 +88,7 @@ methods:
     escape_pressure: 0.5
     prioritize_non_overlapping: true
   dpg:
-    overgeneration_factor: 5
+    overgeneration_factor: 10
     diversity_weight: 0.5
     # DPG configuration parameters (optional, defaults provided in DPG/config.yaml)
     config:
