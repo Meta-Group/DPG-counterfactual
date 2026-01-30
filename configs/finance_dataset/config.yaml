@@ -14,3 +14,6 @@ model:
   min_impurity_decrease: 0.0
   max_features: 0.3
   max_depth: 3
+# methods:
+#   dpg:
+#     verbose: true
