@@ -352,7 +352,7 @@ def export_summary_statistics(comparison_df):
 
 
 def export_winner_heatmap(comparison_df):
-    """Export winner heatmap to PNG."""
+    """Export winner heatmap to PNG and CSV."""
     print("\n" + "="*80)
     print("EXPORTING WINNER HEATMAP")
     print("="*80)
@@ -369,10 +369,13 @@ def export_winner_heatmap(comparison_df):
         plt.close(fig)
     else:
         print("⚠ Could not create winner heatmap")
+    
+    # Export winner data to CSV
+    export_winner_heatmap_csv(comparison_df)
 
 
 def export_winner_heatmap_small(comparison_df):
-    """Export small winner heatmap with only key metrics to PNG."""
+    """Export small winner heatmap with only key metrics to PNG and CSV."""
     print("\n" + "="*80)
     print("EXPORTING SMALL WINNER HEATMAP (KEY METRICS ONLY)")
     print("="*80)
@@ -401,6 +404,9 @@ def export_winner_heatmap_small(comparison_df):
         plt.close(fig)
     else:
         print("⚠ Could not create small winner heatmap")
+    
+    # Export winner data to CSV
+    export_winner_heatmap_csv(comparison_df, metrics_to_include=small_metrics, filename_suffix='_small')
 
 
 def export_radar_chart_for_dataset(comparison_df, dataset, viz_dir):
@@ -785,6 +791,59 @@ def export_heatmap_techniques(raw_df, dataset, dataset_viz_dir):
     except Exception as e:
         print(f"  ⚠ {dataset}: Error exporting heatmap_techniques: {e}")
         return False
+
+
+def export_winner_heatmap_csv(comparison_df, metrics_to_include=None, filename_suffix=''):
+    """Export winner heatmap data to CSV.
+    
+    Creates a CSV where rows are datasets and columns are metrics.
+    Values are 'DPG', 'DiCE', or 'Tie' indicating which technique won.
+    """
+    # Filter metrics if specified
+    if metrics_to_include:
+        metrics_to_use = {k: v for k, v in COMPARISON_METRICS.items() 
+                         if k in metrics_to_include}
+    else:
+        metrics_to_use = COMPARISON_METRICS
+    
+    # Create winner matrix
+    winners_data = []
+    
+    for _, row in comparison_df.iterrows():
+        dataset = row['dataset']
+        winners_row = {'Dataset': dataset}
+        
+        for metric_key, metric_info in metrics_to_use.items():
+            dpg_col = f'{metric_key}_dpg'
+            dice_col = f'{metric_key}_dice'
+            
+            if dpg_col in row.index and dice_col in row.index:
+                dpg_val = row[dpg_col]
+                dice_val = row[dice_col]
+                
+                winner = determine_winner(dpg_val, dice_val, metric_info['goal'])
+                # Convert to uppercase for display
+                if winner == 'dpg':
+                    winners_row[metric_info['name']] = 'DPG'
+                elif winner == 'dice':
+                    winners_row[metric_info['name']] = 'DiCE'
+                else:
+                    winners_row[metric_info['name']] = 'Tie'
+            else:
+                winners_row[metric_info['name']] = 'N/A'
+        
+        winners_data.append(winners_row)
+    
+    # Create DataFrame
+    winners_df = pd.DataFrame(winners_data)
+    winners_df = winners_df.set_index('Dataset')
+    
+    # Export to CSV
+    output_path = os.path.join(OUTPUT_DIR, f'winner_heatmap{filename_suffix}.csv')
+    winners_df.to_csv(output_path)
+    print(f"✓ Exported winner heatmap data to: {output_path}")
+    
+    return winners_df
 
 
 def export_dataset_visualizations(comparison_df, raw_df):
