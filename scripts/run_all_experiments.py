@@ -253,11 +253,15 @@ class ExperimentRunner:
             )
             
             if persistent_status == PersistentStatus.FINISHED:
-                # Already completed successfully
-                exp.status = ExperimentStatus.SKIPPED
-                if status_info and status_info.start_time:
-                    exp.start_time = status_info.start_time
-                    exp.end_time = status_info.end_time
+                # Already completed successfully - skip only if skip_existing is True
+                if self.skip_existing:
+                    exp.status = ExperimentStatus.SKIPPED
+                    if status_info and status_info.start_time:
+                        exp.start_time = status_info.start_time
+                        exp.end_time = status_info.end_time
+                else:
+                    # Add to queue to re-run
+                    self.pending_queue.append(exp.key)
             elif persistent_status == PersistentStatus.RUNNING:
                 # Another process is running this experiment - track it
                 if status_info and status_info.pid and is_process_running(status_info.pid):
