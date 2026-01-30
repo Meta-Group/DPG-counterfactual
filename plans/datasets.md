@@ -10,21 +10,21 @@ This document provides a summary of all datasets available in the configs folder
 
 ## Dataset Details
 
-| Dataset Name | Number of Features | Actionability Constraints |
-|--------------|-------------------|--------------------------|
-| abalone | 11 | None |
-| diabetes | 9 | Age: non_decreasing; Pregnancies: non_decreasing; DiabetesPedigreeFunction: no_change; BMI: actionable; Glucose: actionable; BloodPressure: actionable |
-| ecoli | 8 | None |
-| education_dataset | 4 | None |
-| energy_dataset | 4 | None |
-| fraud_detection_dataset | 5 | None |
-| isolet | 618 | None |
-| libras_move | 91 | None |
-| mammography | 7 | None |
-| satimage | 37 | None |
-| scene | 295 | None |
-| us_crime | 101 | None |
-| yeast_ml8 | 103 | None |
+| Dataset Name | Number of Features | Number of Samples | Actionability Constraints |
+|--------------|-------------------|------------------|--------------------------|
+| abalone | 11 | 4,177 | None |
+| diabetes | 9 | 767 | Age: non_decreasing; Pregnancies: non_decreasing; DiabetesPedigreeFunction: no_change; BMI: actionable; Glucose: actionable; BloodPressure: actionable |
+| ecoli | 8 | 336 | None |
+| education_dataset | 4 | 1,000 | None |
+| energy_dataset | 4 | 1,000 | None |
+| fraud_detection_dataset | 5 | 1,000 | None |
+| isolet | 618 | 7,797 | None |
+| libras_move | 91 | 360 | None |
+| mammography | 7 | 11,183 | None |
+| satimage | 37 | 6,435 | None |
+| scene | 295 | 2,407 | None |
+| us_crime | 101 | 1,994 | None |
+| yeast_ml8 | 103 | 2,417 | None |
 
 ## Datasets with Actionability Constraints
 
