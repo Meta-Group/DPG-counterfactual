@@ -476,31 +476,18 @@ class HeuristicRunner:
                 print(f"[VERBOSE-DPG] No valid candidates found - all {len(hof)} HOF entries rejected")
             return None
         
-        # STEP 2: Sort by fitness (lower is better) and take top internal_num_results
-        candidates.sort(key=lambda x: x['fitness'])
-        quality_pool = candidates[:internal_num_results]
-        
-        if self.verbose:
-            print(f"\nQuality pool (top {len(quality_pool)} by fitness)")
-            if quality_pool:
-                fitnesses = [c['fitness'] for c in quality_pool]
-                distances = [c['distance'] for c in quality_pool]
-                print(f"  Fitness range: {min(fitnesses):.4f} to {max(fitnesses):.4f}")
-                print(f"  Distance range: {min(distances):.4f} to {max(distances):.4f}")
-                print(f"  Diversity lambda: {diversity_lambda} (lower = more proximity priority)")
-        
-        # STEP 3: Apply greedy diverse selection on the quality pool
+        # STEP 2: Calculate normalization ranges from ALL candidates BEFORE filtering
+        # This ensures diversity_lambda has real effect by using full fitness range
         final_counterfactuals = []
         selected_arrays = []
         
-        # Calculate normalization ranges for scoring
-        if len(quality_pool) > 1:
-            all_fitnesses = [c['fitness'] for c in quality_pool]
+        if len(candidates) > 1:
+            all_fitnesses = [c['fitness'] for c in candidates]
             fitness_range = max(all_fitnesses) - min(all_fitnesses)
             fitness_min = min(all_fitnesses)
             
-            # Estimate max possible diversity (diagonal of feature space)
-            all_arrays = [c['array'] for c in quality_pool]
+            # Estimate max possible diversity from ALL candidates
+            all_arrays = [c['array'] for c in candidates]
             max_diversity = 0
             for i in range(len(all_arrays)):
                 for j in range(i+1, len(all_arrays)):
@@ -511,6 +498,21 @@ class HeuristicRunner:
             fitness_range = 1.0
             fitness_min = 0.0
             max_diversity = 1.0
+        
+        # Now sort and filter to quality pool
+        candidates.sort(key=lambda x: x['fitness'])
+        quality_pool = candidates[:internal_num_results]
+        
+        if self.verbose:
+            print(f"\nQuality pool (top {len(quality_pool)} by fitness from {len(candidates)} total)")
+            if quality_pool:
+                pool_fitnesses = [c['fitness'] for c in quality_pool]
+                distances = [c['distance'] for c in quality_pool]
+                print(f"  Pool fitness range: {min(pool_fitnesses):.4f} to {max(pool_fitnesses):.4f}")
+                print(f"  Full fitness range for normalization: {fitness_min:.4f} to {fitness_min + fitness_range:.4f}")
+                print(f"  Distance range: {min(distances):.4f} to {max(distances):.4f}")
+                print(f"  Max diversity for normalization: {max_diversity:.4f}")
+                print(f"  Diversity lambda: {diversity_lambda} (lower = more proximity priority)")
         
         # Always pick the best fitness CF first (which is also typically closest)
         if quality_pool:
