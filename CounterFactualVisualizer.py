@@ -1129,7 +1129,7 @@ def plot_pca_with_counterfactuals_comparison(
     counterfactuals_df_1, cf_predicted_classes_1,
     counterfactuals_df_2, cf_predicted_classes_2,
     method_1_name='Method 1', method_2_name='Method 2',
-    method_1_color='red', method_2_color='blue'
+    method_1_color='#E69F00', method_2_color='#56B4E9'
 ):
     """
     Plot a PCA visualization comparing counterfactuals from two different methods.
@@ -1222,9 +1222,9 @@ def plot_pca_with_counterfactuals_comparison(
             linewidths=2.5, zorder=8
         )
 
-    plt.xlabel('PCA Component 1')
-    plt.ylabel('PCA Component 2')
-    plt.title(f'PCA Comparison: {method_1_name} vs {method_2_name}')
+    plt.xlabel(f'PCA Component 1 ({pca.explained_variance_ratio_[0]:.1%} explained variance)')
+    plt.ylabel(f'PCA Component 2 ({pca.explained_variance_ratio_[1]:.1%} explained variance)')
+    plt.title('PCA Scores Projection')
     
     # Create custom legend
     from matplotlib.lines import Line2D
