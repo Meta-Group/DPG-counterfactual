@@ -331,6 +331,7 @@ class HeuristicRunner:
                     'min': feature_min,
                     'max': feature_max,
                     'base': base_counterfactual[feature],
+                    'original': sample[feature],  # Store original for diversity exploration
                     'range': (feature_max - feature_min) if (feature_min is not None and feature_max is not None) else 1.0
                 }
                 
@@ -365,26 +366,17 @@ class HeuristicRunner:
 
         # Create remaining individuals using STRATIFIED sampling for diversity
         # Strategy: divide the remaining slots into tiers that explore different regions
+        # KEY INSIGHT: To get diversity, we need to explore at different "depths" from original to boundary
+        # Not just perturb around the already-deep base CF
         remaining_slots = population_size - 1
         
         for individual in range(remaining_slots):
             perturbed = base_counterfactual.copy()
             
-            # Use stratified tiers: some near base, some in middle, some at extremes
+            # Use stratified tiers with different exploration strategies
             # t goes from 0 to 1 across the population
             t = (individual + 1) / remaining_slots
             
-            # Create different "exploration strategies" based on position
-            if t < 0.3:
-                # First 30%: Small perturbations near base (for proximity)
-                perturbation_scale = 0.1 + t * 0.2  # 0.1 to 0.16
-            elif t < 0.7:
-                # Middle 40%: Medium perturbations (balanced)
-                perturbation_scale = 0.2 + (t - 0.3) * 0.5  # 0.2 to 0.4
-            else:
-                # Last 30%: Large perturbations toward boundaries (for diversity)
-                perturbation_scale = 0.4 + (t - 0.7) * 1.0  # 0.4 to 0.7
-
             for feature in feature_names:
                 bounds = feature_bounds.get(feature)
                 if bounds is None:
@@ -395,32 +387,29 @@ class HeuristicRunner:
                 feature_max = bounds['max']
                 feature_range = bounds['range']
                 base_val = bounds['base']
+                original_val = bounds['original']
                 
                 norm_feature = normalize_feature_func(feature)
                 escape_dir = escape_directions.get(norm_feature, "both")
                 
-                # For extreme exploration (t > 0.7), bias toward boundary in ESCAPE direction
-                # Don't explore against escape direction as it leads to invalid predictions
-                if t > 0.7:
-                    # Determine target based on ESCAPE direction, not just alternating
-                    if escape_dir == "increase":
-                        # Escape by increasing: explore toward max
-                        target_point = feature_max - 0.05 * feature_range if feature_max else base_val + feature_range * 0.5
-                    elif escape_dir == "decrease":
-                        # Escape by decreasing: explore toward min
-                        target_point = feature_min + 0.05 * feature_range if feature_min else base_val - feature_range * 0.5
-                    else:
-                        # "both" direction: alternate but with less extreme jumps
-                        if individual % 2 == 0:
-                            target_point = base_val + 0.3 * feature_range
-                        else:
-                            target_point = base_val - 0.3 * feature_range
-                    
-                    # Interpolate between base and target with controlled noise
-                    noise = np.random.uniform(-0.05, 0.05) * feature_range
-                    perturbed[feature] = base_val + perturbation_scale * (target_point - base_val) + noise
-                else:
-                    # Regular perturbation with escape-aware direction
+                # Determine the target extreme based on escape direction
+                if escape_dir == "increase":
+                    target_extreme = feature_max
+                elif escape_dir == "decrease":
+                    target_extreme = feature_min
+                else:  # "both"
+                    # Alternate between min and max based on individual index
+                    target_extreme = feature_max if individual % 2 == 0 else feature_min
+                
+                # STRATIFIED DEPTH EXPLORATION:
+                # Instead of perturbing around base, explore at different depths from original to target
+                if t < 0.2:
+                    # Tier 1 (20%): Near base CF - small perturbations for proximity
+                    perturbation = np.random.uniform(-0.1, 0.1) * feature_range
+                    perturbed[feature] = base_val + perturbation
+                elif t < 0.5:
+                    # Tier 2 (30%): Medium exploration around base
+                    perturbation_scale = 0.15 + (t - 0.2) * 0.5  # 0.15 to 0.3
                     if escape_dir == "increase":
                         perturbation = np.random.uniform(0, perturbation_scale * feature_range)
                     elif escape_dir == "decrease":
@@ -429,6 +418,17 @@ class HeuristicRunner:
                         perturbation = np.random.uniform(-perturbation_scale * feature_range / 2, 
                                                           perturbation_scale * feature_range / 2)
                     perturbed[feature] = base_val + perturbation
+                elif t < 0.75:
+                    # Tier 3 (25%): DIVERSE depth exploration - interpolate from ORIGINAL toward extreme
+                    # This creates candidates at different "depths" of the search space
+                    depth = 0.3 + (t - 0.5) * 2.0  # depth 0.3 to 0.8
+                    noise = np.random.uniform(-0.05, 0.05) * feature_range
+                    perturbed[feature] = original_val + depth * (target_extreme - original_val) + noise
+                else:
+                    # Tier 4 (25%): Extreme exploration - push toward boundaries from original
+                    depth = 0.8 + (t - 0.75) * 0.8  # depth 0.8 to 1.0
+                    noise = np.random.uniform(-0.03, 0.03) * feature_range
+                    perturbed[feature] = original_val + depth * (target_extreme - original_val) + noise
                 
                 # Clip to bounds
                 if feature_min is not None:
