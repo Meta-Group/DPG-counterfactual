@@ -401,9 +401,12 @@ class HeuristicRunner:
                     # Alternate between min and max based on individual index
                     target_extreme = feature_max if individual % 2 == 0 else feature_min
                 
-                # STRATIFIED DEPTH EXPLORATION:
-                # Instead of perturbing around base, explore at different depths from original to target
-                if t < 0.2:
+                # Handle None target_extreme - fallback to base value perturbation
+                if target_extreme is None:
+                    # No valid target extreme, just perturb around base
+                    perturbation = np.random.uniform(-0.1, 0.1) * feature_range
+                    perturbed[feature] = base_val + perturbation
+                elif t < 0.2:
                     # Tier 1 (20%): Near base CF - small perturbations for proximity
                     perturbation = np.random.uniform(-0.1, 0.1) * feature_range
                     perturbed[feature] = base_val + perturbation
