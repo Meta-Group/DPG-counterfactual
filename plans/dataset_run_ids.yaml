@@ -1,0 +1,43 @@
+datasets:
+  abalone:
+    dice: r9osrefn
+    dpg: 3y8je31j
+  diabetes:
+    dice: s9k8e9cn
+    dpg: 45v4wmkw
+  ecoli:
+    dice: z54voy0h
+    dpg: 7qhvgip4
+  education_dataset:
+    dice: xa7lfg5v
+    dpg: 3lyr0poj
+  energy_dataset:
+    dice: adgwll9e
+    dpg: ttiesb70
+  fraud_detection_dataset:
+    dice: gxwwnhpt
+    dpg: tcto6p7z
+  iris:
+    dice: 6kgximqw
+    dpg: v8atep2v
+  isolet:
+    dice: qhs0dbd7
+    dpg: moyr62mk
+  libras_move:
+    dice: jugzqxqs
+    dpg: t3vp6893
+  mammography:
+    dice: faco0f37
+    dpg: zrhwidj9
+  satimage:
+    dice: 8jakxbn2
+    dpg: 37orsn40
+  scene:
+    dice: 6bl5p0tb
+    dpg: wrfx8bm6
+  us_crime:
+    dice: zrd15syh
+    dpg: f2opauxf
+  yeast_ml8:
+    dice: aers3zg7
+    dpg: xmr7fj8q
