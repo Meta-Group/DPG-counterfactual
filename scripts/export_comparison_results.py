@@ -92,11 +92,34 @@ OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 # Metadata file for storing run information
 METADATA_FILE = os.path.join(OUTPUT_DIR, 'metadata.pkl')
 
+# Cache file for storing fetched WandB data (sample + counterfactuals per dataset)
+WANDB_CACHE_FILE = os.path.join(OUTPUT_DIR, 'wandb_data_cache.pkl')
+
 # Repository root for loading datasets
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Cache for loaded datasets and models
 _DATASET_CACHE = {}
+
+# Cache for WandB fetched data (populated during fetch, used in local-only mode)
+_WANDB_DATA_CACHE = {}
+
+
+def save_wandb_data_cache(cache_data):
+    """Save WandB fetched data (samples and counterfactuals) to disk for local-only mode."""
+    with open(WANDB_CACHE_FILE, 'wb') as f:
+        pickle.dump(cache_data, f)
+    print(f"✓ Saved WandB data cache to: {WANDB_CACHE_FILE}")
+
+
+def load_wandb_data_cache():
+    """Load cached WandB data from disk."""
+    if not os.path.exists(WANDB_CACHE_FILE):
+        return {}
+    
+    with open(WANDB_CACHE_FILE, 'rb') as f:
+        cache_data = pickle.load(f)
+    return cache_data
 
 
 def load_dataset_and_model(dataset_name):
@@ -996,6 +1019,15 @@ def export_heatmap_techniques(raw_df, dataset, dataset_viz_dir):
         # Fetch restrictions if available
         restrictions = dpg_run_obj.config.get('restrictions')
         
+        # Cache the fetched data for PCA comparison and future local-only use
+        _WANDB_DATA_CACHE[dataset] = {
+            'sample': dpg_sample,
+            'class': dpg_class,
+            'dpg_cfs': dpg_cfs,
+            'dice_cfs': dice_cfs,
+            'restrictions': restrictions
+        }
+        
         # Create heatmap comparing techniques
         fig = heatmap_techniques(
             sample=dpg_sample,
@@ -1034,44 +1066,53 @@ def export_pca_comparison(raw_df, dataset, dataset_viz_dir):
     full_dataset = dataset_model_info['dataset']
     target = dataset_model_info['target']
     
-    # Handle local-only mode by loading from disk
+    # Handle local-only mode by loading from cache or disk
     if args.local_only:
+        # Try to load from WandB data cache first
+        if dataset in _WANDB_DATA_CACHE:
+            cached_data = _WANDB_DATA_CACHE[dataset]
+            dpg_sample = cached_data['sample']
+            dpg_cfs = cached_data['dpg_cfs']
+            dice_cfs = cached_data['dice_cfs']
+        else:
+            # Fallback to local pkl files
+            try:
+                dpg_data = _load_local_viz_data(dataset, 'dpg')
+                dice_data = _load_local_viz_data(dataset, 'dice')
+                
+                if not dpg_data or not dice_data:
+                    print(f"  ⚠ {dataset}: PCA comparison in local-only mode requires cached data")
+                    print(f"     Tip: Run without --local-only flag first to fetch and cache data from WandB")
+                    return False
+                
+                # Extract sample and counterfactuals from local data
+                dpg_sample = dpg_data.get('original_sample')
+                
+                # Extract counterfactuals from visualizations  
+                dpg_cfs = []
+                for viz in dpg_data.get('visualizations', []):
+                    for cf_data in viz.get('counterfactuals', []):
+                        cf = cf_data.get('counterfactual')
+                        if cf:
+                            dpg_cfs.append(cf)
+                
+                dice_cfs = []
+                for viz in dice_data.get('visualizations', []):
+                    for cf_data in viz.get('counterfactuals', []):
+                        cf = cf_data.get('counterfactual')
+                        if cf:
+                            dice_cfs.append(cf)
+                
+            except Exception as e:
+                print(f"  ⚠ {dataset}: Error loading local data for PCA comparison: {e}")
+                return False
+        
+        if not dpg_sample or not dpg_cfs or not dice_cfs:
+            print(f"  ⚠ {dataset}: Missing required data - sample: {bool(dpg_sample)}, dpg_cfs: {len(dpg_cfs) if dpg_cfs else 0}, dice_cfs: {len(dice_cfs) if dice_cfs else 0}")
+            return False
+        
+        # Convert counterfactuals to DataFrames
         try:
-            dpg_data = _load_local_viz_data(dataset, 'dpg')
-            dice_data = _load_local_viz_data(dataset, 'dice')
-            
-            if not dpg_data or not dice_data:
-                missing = []
-                if not dpg_data:
-                    missing.append('DPG')
-                if not dice_data:
-                    missing.append('DiCE')
-                print(f"  ⚠ {dataset}: Missing local {' and '.join(missing)} data, skipping PCA comparison")
-                return False
-            
-            # Extract sample and counterfactuals from local data
-            dpg_sample = dpg_data.get('original_sample')
-            
-            # Extract counterfactuals from visualizations
-            dpg_cfs = []
-            for viz in dpg_data.get('visualizations', []):
-                for cf_data in viz.get('counterfactuals', []):
-                    cf = cf_data.get('counterfactual')
-                    if cf:
-                        dpg_cfs.append(cf)
-            
-            dice_cfs = []
-            for viz in dice_data.get('visualizations', []):
-                for cf_data in viz.get('counterfactuals', []):
-                    cf = cf_data.get('counterfactual')
-                    if cf:
-                        dice_cfs.append(cf)
-            
-            if not dpg_sample or not dpg_cfs or not dice_cfs:
-                print(f"  ⚠ {dataset}: Missing local data - sample: {bool(dpg_sample)}, dpg_cfs: {len(dpg_cfs)}, dice_cfs: {len(dice_cfs)}")
-                return False
-            
-            # Convert counterfactuals to DataFrames
             dpg_cfs_df = pd.DataFrame(dpg_cfs[:5])  # Limit to first 5
             dice_cfs_df = pd.DataFrame(dice_cfs[:5])
             
@@ -1099,16 +1140,56 @@ def export_pca_comparison(raw_df, dataset, dataset_viz_dir):
                 output_path = os.path.join(dataset_viz_dir, 'pca_comparison.png')
                 fig.savefig(output_path, dpi=150, bbox_inches='tight')
                 plt.close(fig)
-                print(f"  ✓ {dataset}: Exported PCA comparison (from local data)")
+                print(f"  ✓ {dataset}: Exported PCA comparison (from cached data)")
                 return True
-            
-            return False
-            
+            else:
+                return False
         except Exception as e:
-            print(f"  ⚠ {dataset}: Error loading local data for PCA comparison: {e}")
+            print(f"  ⚠ {dataset}: Error creating PCA comparison: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
-    # WandB mode
+    # WandB mode - check if data is already cached first (from export_heatmap_techniques)
+    if dataset in _WANDB_DATA_CACHE:
+        cached_data = _WANDB_DATA_CACHE[dataset]
+        dpg_sample = cached_data['sample']
+        dpg_cfs = cached_data['dpg_cfs']
+        dice_cfs = cached_data['dice_cfs']
+        
+        # Convert counterfactuals to DataFrames
+        dpg_cfs_df = pd.DataFrame(dpg_cfs[:5])  # Limit to first 5
+        dice_cfs_df = pd.DataFrame(dice_cfs[:5])
+        
+        # Predict classes for counterfactuals
+        dpg_cf_classes = model.predict(dpg_cfs_df)
+        dice_cf_classes = model.predict(dice_cfs_df)
+        
+        # Create PCA comparison plot
+        fig = plot_pca_with_counterfactuals_comparison(
+            model=model,
+            dataset=full_dataset,
+            target=target,
+            sample=dpg_sample,
+            counterfactuals_df_1=dpg_cfs_df,
+            cf_predicted_classes_1=dpg_cf_classes,
+            counterfactuals_df_2=dice_cfs_df,
+            cf_predicted_classes_2=dice_cf_classes,
+            method_1_name='DPG',
+            method_2_name='DiCE',
+            method_1_color='#1f77b4',  # Blue for DPG
+            method_2_color='#ff7f0e'   # Orange for DiCE
+        )
+        
+        if fig:
+            output_path = os.path.join(dataset_viz_dir, 'pca_comparison.png')
+            fig.savefig(output_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            print(f"  ✓ {dataset}: Exported PCA comparison (from cache)")
+            return True
+        return False
+    
+    # Fetch from WandB if not cached
     try:
         dataset_runs = raw_df[raw_df['dataset'] == dataset]
         
@@ -1163,6 +1244,14 @@ def export_pca_comparison(raw_df, dataset, dataset_viz_dir):
         if not dpg_sample or not dpg_cfs or not dice_cfs:
             print(f"  ⚠ {dataset}: Missing required data - sample: {bool(dpg_sample)}, dpg_cfs: {len(dpg_cfs) if dpg_cfs else 0}, dice_cfs: {len(dice_cfs) if dice_cfs else 0}")
             return False
+        
+        # Cache the data for future use (e.g., if heatmap_techniques hasn't cached it yet)
+        if dataset not in _WANDB_DATA_CACHE:
+            _WANDB_DATA_CACHE[dataset] = {
+                'sample': dpg_sample,
+                'dpg_cfs': dpg_cfs,
+                'dice_cfs': dice_cfs,
+            }
         
         # Convert counterfactuals to DataFrames
         dpg_cfs_df = pd.DataFrame(dpg_cfs[:5])  # Limit to first 5
@@ -1405,6 +1494,8 @@ def export_comparison_summary(comparison_df):
 
 def main():
     """Main execution flow."""
+    global _WANDB_DATA_CACHE
+    
     print("\n" + "="*80)
     print("DPG vs DiCE COMPARISON RESULTS EXPORT")
     print("="*80)
@@ -1416,6 +1507,12 @@ def main():
     
     # Ensure output directory exists
     ensure_output_dir()
+    
+    # Load WandB data cache if in local-only mode
+    if args.local_only:
+        _WANDB_DATA_CACHE = load_wandb_data_cache()
+        if _WANDB_DATA_CACHE:
+            print(f"✓ Loaded WandB data cache with {len(_WANDB_DATA_CACHE)} datasets")
     
     if args.local_only:
         # Load data from disk
@@ -1487,6 +1584,9 @@ def main():
     
     if not args.local_only:
         export_comparison_summary(comparison_df)
+        # Save WandB data cache for future local-only use
+        if _WANDB_DATA_CACHE:
+            save_wandb_data_cache(_WANDB_DATA_CACHE)
     else:
         # Load and print summary from file
         summary_path = os.path.join(OUTPUT_DIR, 'comparison_summary.txt')
