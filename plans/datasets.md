@@ -13,7 +13,7 @@ This document provides a summary of all datasets available in the configs folder
 | Dataset Name | Number of Features | Number of Samples | Number of Classes | Actionability Constraints |
 |--------------|-------------------|------------------|------------------|--------------------------|
 | abalone | 11 | 4,177 | 2 | None |
-| diabetes | 9 | 767 | 3 | Age: non_decreasing; Pregnancies: non_decreasing; DiabetesPedigreeFunction: no_change; BMI: actionable; Glucose: actionable; BloodPressure: actionable |
+| diabetes | 8 | 768 | 2 | Age: non_decreasing; Pregnancies: non_decreasing; DiabetesPedigreeFunction: no_change; BMI: actionable; Glucose: actionable; BloodPressure: actionable |
 | ecoli | 8 | 336 | 2 | None |
 | education_dataset | 4 | 1,000 | 2 | None |
 | energy_dataset | 4 | 1,000 | 2 | None |
@@ -29,7 +29,7 @@ This document provides a summary of all datasets available in the configs folder
 
 ## Datasets with Actionability Constraints
 
-### diabetes (9 features)
+### diabetes (8 features)
 - **Age**: non_decreasing
 - **Pregnancies**: non_decreasing
 - **DiabetesPedigreeFunction**: no_change
