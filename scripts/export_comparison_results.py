@@ -1131,9 +1131,7 @@ def export_pca_comparison(raw_df, dataset, dataset_viz_dir):
                 counterfactuals_df_2=dice_cfs_df,
                 cf_predicted_classes_2=dice_cf_classes,
                 method_1_name='DPG',
-                method_2_name='DiCE',
-                method_1_color='#1f77b4',  # Blue for DPG
-                method_2_color='#ff7f0e'   # Orange for DiCE
+                method_2_name='DiCE'
             )
             
             if fig:
@@ -1176,9 +1174,7 @@ def export_pca_comparison(raw_df, dataset, dataset_viz_dir):
             counterfactuals_df_2=dice_cfs_df,
             cf_predicted_classes_2=dice_cf_classes,
             method_1_name='DPG',
-            method_2_name='DiCE',
-            method_1_color='#1f77b4',  # Blue for DPG
-            method_2_color='#ff7f0e'   # Orange for DiCE
+            method_2_name='DiCE'
         )
         
         if fig:
@@ -1272,9 +1268,7 @@ def export_pca_comparison(raw_df, dataset, dataset_viz_dir):
             counterfactuals_df_2=dice_cfs_df,
             cf_predicted_classes_2=dice_cf_classes,
             method_1_name='DPG',
-            method_2_name='DiCE',
-            method_1_color='#1f77b4',  # Blue for DPG
-            method_2_color='#ff7f0e'   # Orange for DiCE
+            method_2_name='DiCE'
         )
         
         if fig:
