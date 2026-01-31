@@ -71,6 +71,8 @@ from scripts.compare_techniques import (
     filter_to_latest_run_per_combo,
 )
 
+from utils.config_manager import load_config
+
 from CounterFactualVisualizer import heatmap_techniques, plot_pca_with_counterfactuals_comparison
 from utils.dataset_loader import load_dataset
 from utils.config_manager import DictConfig
@@ -140,17 +142,19 @@ def load_dataset_and_model(dataset_name):
         return _DATASET_CACHE[dataset_name]
     
     try:
-        # Load dataset config
+        # Load dataset config using load_config (to inherit base defaults from configs/config.yaml)
         config_path = os.path.join(REPO_ROOT, 'configs', dataset_name, 'config.yaml')
         if not os.path.exists(config_path):
             print(f"  ⚠ Config not found for {dataset_name}: {config_path}")
             return None
         
-        with open(config_path, 'r') as f:
-            config_dict = yaml.safe_load(f)
+        # Use load_config to get merged config (base defaults + dataset-specific)
+        config = load_config(config_path, repo_root=REPO_ROOT)
         
-        # Convert to DictConfig object for easier access
-        config = DictConfig(config_dict)
+        # Set random seed BEFORE loading dataset and splitting (matches run_experiment.py)
+        # This ensures reproducibility like the original experiment
+        seed = getattr(config.experiment_params, 'seed', 42)
+        np.random.seed(seed)
         
         # Load dataset
         dataset_info = load_dataset(config, repo_root=REPO_ROOT)
