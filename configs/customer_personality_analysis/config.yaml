@@ -45,9 +45,7 @@ methods:
       Response: no_change
 model:
   type: RandomForestClassifier
-  n_estimators: 15
-  min_samples_split: 10
-  min_impurity_decrease: 0.01
-  max_features: 0.4
-  max_depth: 6
-  criterion: entropy
+  n_estimators: 10
+  min_impurity_decrease: 0.0
+  max_features: 0.5
+  max_depth: 7
