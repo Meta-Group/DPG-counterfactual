@@ -866,11 +866,20 @@ class SampleGenerator:
                         0.5 - SAMPLE_GEN_ESCAPE_BIAS * self.escape_pressure
                     )
             else:
-                # Default: keep original value if within bounds, otherwise use midpoint
-                if min_value <= original_value <= max_value:
+                # Default (escape_dir == "both"): minimal change principle
+                if weak_constraints:
+                    # WEAK CONSTRAINTS: bounds are extended to include original value
+                    # So original is always "within bounds" - start there and let search find minimum change
                     target_value = original_value
+                elif min_value <= original_value <= max_value:
+                    # Already within target bounds - keep original
+                    target_value = original_value
+                elif original_value < min_value:
+                    # Below target bounds - step just inside the minimum
+                    target_value = min_value + epsilon
                 else:
-                    target_value = (min_value + max_value) / 2
+                    # Above target bounds - step just inside the maximum
+                    target_value = max_value - epsilon
 
             # Clip to target bounds and set
             adjusted_sample[feature] = np.clip(target_value, min_value, max_value)
