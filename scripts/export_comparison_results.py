@@ -1428,24 +1428,24 @@ def export_dataset_visualizations(comparison_df, raw_df):
             viz_files.extend(wandb_viz)
         
         # Export radar chart for this dataset
-        from scripts.compare_techniques import plot_radar_chart
-        radar_path = os.path.join(dataset_viz_dir, f'radar.png')
-        fig = plot_radar_chart(comparison_df, dataset, figsize=(8, 8))
-        if fig:
-            fig.savefig(radar_path, dpi=150, bbox_inches='tight')
-            plt.close(fig)
-            viz_files.append('radar.png')
+        # from scripts.compare_techniques import plot_radar_chart
+        # radar_path = os.path.join(dataset_viz_dir, f'radar.png')
+        # fig = plot_radar_chart(comparison_df, dataset, figsize=(8, 8))
+        # if fig:
+        #     fig.savefig(radar_path, dpi=150, bbox_inches='tight')
+        #     plt.close(fig)
+        #     viz_files.append('radar.png')
         
         # Export bar charts for each metric (small metrics only)
         small_metrics = {
-            'perc_valid_cf_all',
-            'perc_actionable_cf_all',
-            'plausibility_nbr_cf',
-            'distance_mh',
-            'avg_nbr_changes',
-            'count_diversity_all',
-            'accuracy_knn_sklearn',
-            'runtime'
+            # 'perc_valid_cf_all',
+            # 'perc_actionable_cf_all',
+            # 'plausibility_nbr_cf',
+            # 'distance_mh',
+            # 'avg_nbr_changes',
+            # 'count_diversity_all',
+            # 'accuracy_knn_sklearn',
+            # 'runtime'
         }
         
         from scripts.compare_techniques import plot_grouped_bar_chart
@@ -1580,7 +1580,9 @@ def main():
         'accuracy_knn_sklearn',
         'runtime'
     ], filename_suffix='_small')
-    export_radar_charts(comparison_df)
+
+
+    # export_radar_charts(comparison_df)
     export_dataset_visualizations(comparison_df, raw_df)
     
     if not args.local_only:
@@ -1588,15 +1590,6 @@ def main():
         # Save WandB data cache for future local-only use
         if _WANDB_DATA_CACHE:
             save_wandb_data_cache(_WANDB_DATA_CACHE)
-    else:
-        # Load and print summary from file
-        summary_path = os.path.join(OUTPUT_DIR, 'comparison_summary.txt')
-        if os.path.exists(summary_path):
-            print("\n" + "="*80)
-            print("CONSOLE SUMMARY (from saved file)")
-            print("="*80)
-            with open(summary_path, 'r') as f:
-                print(f.read())
     
     print("\n" + "="*80)
     print("✓ ALL RESULTS EXPORTED SUCCESSFULLY")
