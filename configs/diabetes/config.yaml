@@ -16,7 +16,7 @@ methods:
       Glucose: actionable
       BloodPressure: actionable
   dpg:
-    verbose: true
+    verbose: false
 model:
   type: RandomForestClassifier
   n_estimators: 12
