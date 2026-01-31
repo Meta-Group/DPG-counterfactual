@@ -246,6 +246,181 @@ class SampleGenerator:
 
         return None
 
+    def _asymmetric_depth_search(self, sample, feature_bounds_info, target_class, eps=0.01):
+        """
+        Asymmetric depth search: Try pushing INDIVIDUAL features before combinations.
+        This finds minimal counterfactuals by discovering which features matter most.
+        
+        Strategy:
+        1. Try each feature individually at increasing depths (others at original/minimal)
+        2. Try pairs of features with one at high depth, other at medium
+        3. Returns the first valid sample with smallest total change
+        
+        This is more efficient than uniform progressive search for finding minimal changes.
+        """
+        sample_keys = list(sample.keys())
+        
+        # Build searchable features list (same logic as progressive depth search)
+        searchable_features = []
+        fixed_features = {}
+        
+        for feature, bounds in feature_bounds_info.items():
+            if self.dict_non_actionable and feature in self.dict_non_actionable:
+                if self.dict_non_actionable[feature] == "no_change":
+                    continue
+            
+            v_min = bounds['min']
+            v_max = bounds['max']
+            escape_dir = bounds['escape_dir']
+            original_value = bounds['original']
+            raw_target_min = bounds.get('raw_target_min')
+            raw_target_max = bounds.get('raw_target_max')
+            
+            # Override escape direction based on actual sample position
+            if raw_target_min is not None and raw_target_max is not None:
+                if original_value < raw_target_min and escape_dir == "decrease":
+                    escape_dir = "increase"
+                elif original_value > raw_target_max and escape_dir == "increase":
+                    escape_dir = "decrease"
+            elif raw_target_min is not None and original_value < raw_target_min and escape_dir == "decrease":
+                escape_dir = "increase"
+            elif raw_target_max is not None and original_value > raw_target_max and escape_dir == "increase":
+                escape_dir = "decrease"
+            
+            # Apply actionability constraints
+            if self.dict_non_actionable and feature in self.dict_non_actionable:
+                actionability = self.dict_non_actionable[feature]
+                if actionability == "non_decreasing":
+                    v_min = max(v_min, original_value)
+                elif actionability == "non_increasing":
+                    v_max = min(v_max, original_value)
+            
+            if v_min > v_max:
+                v_min, v_max = v_max, v_min
+            
+            if abs(v_min - v_max) < 1e-6:
+                fixed_features[feature] = v_min
+                continue
+            
+            if v_min >= v_max:
+                continue
+            
+            # Calculate target value based on escape direction
+            if escape_dir == "increase":
+                target_val = v_max - eps
+            elif escape_dir == "decrease":
+                target_val = v_min + eps
+            else:
+                # For "both", default to max but will try both directions
+                target_val = v_max - eps
+            
+            searchable_features.append({
+                'feature': feature,
+                'original': original_value,
+                'target': target_val,
+                'v_min': v_min,
+                'v_max': v_max,
+                'escape_dir': escape_dir,
+            })
+        
+        if not searchable_features:
+            return None
+        
+        if self.verbose:
+            print(f"[VERBOSE-DPG] Asymmetric search on {len(searchable_features)} features:")
+            for f in searchable_features:
+                print(f"[VERBOSE-DPG]   {f['feature']}: orig={f['original']:.2f} → target={f['target']:.2f} (escape={f['escape_dir']})")
+        
+        best_result = None
+        best_change = float('inf')
+        
+        # Phase 1: Try each feature individually at high depth (others at original)
+        if self.verbose:
+            print(f"[VERBOSE-DPG] Phase 1: Single-feature push...")
+        
+        for primary_feat in searchable_features:
+            test_sample = sample.copy()
+            for feature, fixed_val in fixed_features.items():
+                test_sample[feature] = fixed_val
+            
+            # Push primary feature to target, others stay at original
+            test_sample[primary_feat['feature']] = primary_feat['target']
+            
+            is_valid, margin, pred = self._validate_sample_prediction(
+                test_sample, target_class, sample_keys
+            )
+            
+            if is_valid:
+                total_change = abs(primary_feat['target'] - primary_feat['original'])
+                if total_change < best_change:
+                    best_change = total_change
+                    best_result = test_sample.copy()
+                    if self.verbose:
+                        print(f"[VERBOSE-DPG]   ✓ {primary_feat['feature']} alone works! (Δ={total_change:.2f})")
+        
+        if best_result is not None:
+            return best_result
+        
+        # Phase 2: Try pairs of features (one at high, one at medium)
+        if self.verbose:
+            print(f"[VERBOSE-DPG] Phase 2: Feature pairs...")
+        
+        import itertools
+        for feat1, feat2 in itertools.combinations(searchable_features, 2):
+            test_sample = sample.copy()
+            for feature, fixed_val in fixed_features.items():
+                test_sample[feature] = fixed_val
+            
+            # Both at target depth
+            test_sample[feat1['feature']] = feat1['target']
+            test_sample[feat2['feature']] = feat2['target']
+            
+            is_valid, margin, pred = self._validate_sample_prediction(
+                test_sample, target_class, sample_keys
+            )
+            
+            if is_valid:
+                total_change = (abs(feat1['target'] - feat1['original']) + 
+                               abs(feat2['target'] - feat2['original']))
+                if total_change < best_change:
+                    best_change = total_change
+                    best_result = test_sample.copy()
+                    if self.verbose:
+                        print(f"[VERBOSE-DPG]   ✓ {feat1['feature']}+{feat2['feature']} works! (Δ={total_change:.2f})")
+        
+        if best_result is not None:
+            return best_result
+        
+        # Phase 3: Try triplets
+        if len(searchable_features) >= 3:
+            if self.verbose:
+                print(f"[VERBOSE-DPG] Phase 3: Feature triplets...")
+            
+            for feat1, feat2, feat3 in itertools.combinations(searchable_features, 3):
+                test_sample = sample.copy()
+                for feature, fixed_val in fixed_features.items():
+                    test_sample[feature] = fixed_val
+                
+                test_sample[feat1['feature']] = feat1['target']
+                test_sample[feat2['feature']] = feat2['target']
+                test_sample[feat3['feature']] = feat3['target']
+                
+                is_valid, margin, pred = self._validate_sample_prediction(
+                    test_sample, target_class, sample_keys
+                )
+                
+                if is_valid:
+                    total_change = (abs(feat1['target'] - feat1['original']) + 
+                                   abs(feat2['target'] - feat2['original']) +
+                                   abs(feat3['target'] - feat3['original']))
+                    if total_change < best_change:
+                        best_change = total_change
+                        best_result = test_sample.copy()
+                        if self.verbose:
+                            print(f"[VERBOSE-DPG]   ✓ Triplet works! (Δ={total_change:.2f})")
+        
+        return best_result
+
     def _progressive_depth_search(self, sample, feature_bounds_info, target_class, 
                                    eps=0.01, max_iter=30):
         """
@@ -1053,9 +1228,26 @@ class SampleGenerator:
                 if self.verbose:
                     print(f"[VERBOSE-DPG]   No valid value found for {feature}")
 
-        # Single-feature search failed - try progressive depth search (all features together)
+        # Single-feature search failed - try asymmetric depth search (feature combinations)
         if self.verbose:
-            print("[VERBOSE-DPG] Single-feature search exhausted, trying progressive depth search...")
+            print("[VERBOSE-DPG] Single-feature search exhausted, trying asymmetric depth search...")
+        
+        asymmetric_result = self._asymmetric_depth_search(
+            sample, feature_bounds_info, target_class, eps=0.01
+        )
+        
+        if asymmetric_result is not None:
+            is_valid, margin, pred = self._validate_sample_prediction(
+                asymmetric_result, target_class, sample_keys
+            )
+            if is_valid:
+                if self.verbose:
+                    print(f"[VERBOSE-DPG] ✓ Asymmetric depth search success! (margin: {margin:.3f})")
+                return asymmetric_result
+        
+        # Asymmetric search failed - try uniform progressive depth search (all features together)
+        if self.verbose:
+            print("[VERBOSE-DPG] Asymmetric search failed, trying uniform progressive depth search...")
         
         progressive_result = self._progressive_depth_search(
             sample, feature_bounds_info, target_class, eps=0.01, max_iter=30
