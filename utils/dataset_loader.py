@@ -14,6 +14,7 @@ All dataset-specific behavior is controlled via YAML config options:
 - data.binarize_target: Whether to binarize target
 - data.binarize_threshold: Threshold for binarization (>= threshold = 1)
 - data.missing_values: Strategy for handling missing values ('fill' or 'drop')
+- data.separator: CSV separator/delimiter (default: ',')
 - data.categorical_features: Explicit list of categorical feature names (auto-detected if not specified)
 - data.continuous_features: Explicit list of continuous feature names (auto-detected if not specified)
 - data.variable_features: List of actionable features (all features if not specified)
@@ -75,6 +76,7 @@ def _load_csv_dataset(config, repo_root=None):
         data.binarize_target: Whether to binarize target (optional, default False)
         data.binarize_threshold: Threshold for binarization (optional, default 1)
         data.missing_values: Strategy for missing values - 'fill' or 'drop' (optional, default 'fill')
+        data.separator: CSV separator/delimiter (optional, default ',')
         
     Returns:
         dict with features, labels, feature_names, features_df, label_encoders, and feature indices
@@ -87,7 +89,11 @@ def _load_csv_dataset(config, repo_root=None):
     if not os.path.isabs(dataset_path) and repo_root:
         dataset_path = os.path.join(repo_root, dataset_path)
     
-    df = pd.read_csv(dataset_path)
+    # Get separator from config (default to comma)
+    separator = getattr(config.data, 'separator', ',')
+    print(f"INFO: Using separator: '{separator}'")
+    
+    df = pd.read_csv(dataset_path, sep=separator)
     
     # Drop columns if specified (e.g., id columns)
     drop_columns = getattr(config.data, 'drop_columns', None) or []
