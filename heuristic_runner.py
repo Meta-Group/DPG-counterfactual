@@ -408,30 +408,48 @@ class HeuristicRunner:
                     perturbed[feature] = base_val + perturbation
                 elif t < 0.2:
                     # Tier 1 (20%): Near base CF - small perturbations for proximity
-                    perturbation = np.random.uniform(-0.1, 0.1) * feature_range
+                    perturbation = np.random.uniform(-0.15, 0.15) * feature_range
                     perturbed[feature] = base_val + perturbation
                 elif t < 0.5:
                     # Tier 2 (30%): Medium exploration around base
-                    perturbation_scale = 0.15 + (t - 0.2) * 0.5  # 0.15 to 0.3
+                    perturbation_scale = 0.2 + (t - 0.2) * 0.6  # 0.2 to 0.38
                     if escape_dir == "increase":
-                        perturbation = np.random.uniform(0, perturbation_scale * feature_range)
+                        perturbation = np.random.uniform(-0.1 * feature_range, perturbation_scale * feature_range)
                     elif escape_dir == "decrease":
-                        perturbation = np.random.uniform(-perturbation_scale * feature_range, 0)
+                        perturbation = np.random.uniform(-perturbation_scale * feature_range, 0.1 * feature_range)
                     else:
                         perturbation = np.random.uniform(-perturbation_scale * feature_range / 2, 
                                                           perturbation_scale * feature_range / 2)
                     perturbed[feature] = base_val + perturbation
-                elif t < 0.75:
-                    # Tier 3 (25%): DIVERSE depth exploration - interpolate from ORIGINAL toward extreme
-                    # This creates candidates at different "depths" of the search space
-                    depth = 0.3 + (t - 0.5) * 2.0  # depth 0.3 to 0.8
-                    noise = np.random.uniform(-0.05, 0.05) * feature_range
-                    perturbed[feature] = original_val + depth * (target_extreme - original_val) + noise
                 else:
-                    # Tier 4 (25%): Extreme exploration - push toward boundaries from original
-                    depth = 0.8 + (t - 0.75) * 0.8  # depth 0.8 to 1.0
-                    noise = np.random.uniform(-0.03, 0.03) * feature_range
-                    perturbed[feature] = original_val + depth * (target_extreme - original_val) + noise
+                    # Tier 3-4 (50%): ASYMMETRIC exploration for diversity
+                    # Create feature-wise variation: randomly decide if this feature pushes toward
+                    # extreme or stays conservative. This creates diverse combinations.
+                    # Use individual index + feature index for deterministic but varied patterns
+                    feature_idx = list(feature_names).index(feature) if feature in feature_names else 0
+                    pattern = (individual + feature_idx) % 4
+                    
+                    if pattern == 0:
+                        # Push toward extreme (max for increase, min for decrease)
+                        push_factor = 0.6 + np.random.uniform(0, 0.4)  # 0.6 to 1.0 toward extreme
+                        perturbed[feature] = base_val + push_factor * (target_extreme - base_val)
+                    elif pattern == 1:
+                        # Stay near base with small perturbation
+                        perturbed[feature] = base_val + np.random.uniform(-0.1, 0.1) * feature_range
+                    elif pattern == 2:
+                        # Medium push
+                        push_factor = 0.3 + np.random.uniform(0, 0.3)  # 0.3 to 0.6 toward extreme
+                        perturbed[feature] = base_val + push_factor * (target_extreme - base_val)
+                    else:
+                        # Counter-direction (small) if escape is "both", else stay near base
+                        if escape_dir == "both":
+                            counter_extreme = feature_min if target_extreme == feature_max else feature_max
+                            if counter_extreme is not None:
+                                perturbed[feature] = base_val + np.random.uniform(0, 0.2) * (counter_extreme - base_val)
+                            else:
+                                perturbed[feature] = base_val + np.random.uniform(-0.15, 0.15) * feature_range
+                        else:
+                            perturbed[feature] = base_val + np.random.uniform(-0.1, 0.1) * feature_range
                 
                 # Clip to bounds
                 if feature_min is not None:
