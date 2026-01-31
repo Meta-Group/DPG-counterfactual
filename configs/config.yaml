@@ -19,8 +19,8 @@ priority_datasets:
   - satimage
   - scene
   - us_crime
-  - fraud_detection_dataset
   - yeast_ml8
+  # - fraud_detection_dataset
   # - abalone_19 
   # - banknote_authentication
   # - oil

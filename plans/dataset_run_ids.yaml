@@ -14,9 +14,6 @@ datasets:
   energy_dataset:
     dice: adgwll9e
     dpg: ttiesb70
-  fraud_detection_dataset:
-    dice: gxwwnhpt
-    dpg: tcto6p7z
   iris:
     dice: 6kgximqw
     dpg: v8atep2v

@@ -17,7 +17,6 @@ This document provides a summary of all datasets available in the configs folder
 | ecoli | 7 | 336 | 2 | None |
 | education_dataset | 3 | 1,000 | 2 | None |
 | energy_dataset | 3 | 1,000 | 2 | None |
-| fraud_detection_dataset | 4 | 1,000 | 2 | None |
 | iris | 4 | 150 | 3 | None |
 | isolet | 617 | 7,797 | 2 | None |
 | libras_move | 90 | 360 | 2 | None |
