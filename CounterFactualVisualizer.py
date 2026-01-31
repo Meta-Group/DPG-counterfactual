@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
@@ -1176,26 +1177,29 @@ def plot_pca_with_counterfactuals_comparison(
     # Determine original sample class for consistent styling
     original_class = model.predict(pd.DataFrame([sample]))[0]
 
+    lower_opacity=0.5
+    size=80
+    linewidth=1.5
+
     # Plot dataset points by class
     for class_value in np.unique(target):
         plt.scatter(
             iris_pca[target == class_value, 0],
             iris_pca[target == class_value, 1],
             label=f"Class {class_value}",
-            color=colors[class_value % len(colors)],
-            alpha=0.3
+            color=mcolors.to_rgba(colors[class_value % len(colors)], 0.2),
+            edgecolor=mcolors.to_rgba(colors[class_value % len(colors)], 0.1),
         )
-    linewidth=5
-    size=80
     # Plot original sample with edge matching its class color
+
     original_color = colors[original_class % len(colors)]
     plt.scatter(
         original_sample_pca[:, 0], original_sample_pca[:, 1],
         label='Original Sample',
         marker='o',
-        color=original_color, 
-        edgecolor='black',
-        linewidths=2,
+        color=mcolors.to_rgba(original_color, lower_opacity),
+        edgecolor=(0, 0, 0, 1.0),
+        linewidths=linewidth,
         s=size, 
         zorder=10,
     )
@@ -1205,11 +1209,11 @@ def plot_pca_with_counterfactuals_comparison(
         class_color = colors[cf_class % len(colors)]
         plt.scatter(
             counterfactuals_pca_1[idx, 0], counterfactuals_pca_1[idx, 1],
-            color=class_color, 
+            color=mcolors.to_rgba(class_color, lower_opacity), 
             marker='o', 
             s=size,
             edgecolor=method_1_color,
-            linewidths=2, 
+            linewidths=linewidth, 
             zorder=8,
         )
     
@@ -1218,11 +1222,11 @@ def plot_pca_with_counterfactuals_comparison(
         class_color = colors[cf_class % len(colors)]
         plt.scatter(
             counterfactuals_pca_2[idx, 0], counterfactuals_pca_2[idx, 1],
-            color=class_color, 
+            color=mcolors.to_rgba(class_color, lower_opacity), 
             marker='o', 
             s=size,
             edgecolor=method_2_color,
-            linewidths=2, 
+            linewidths=linewidth, 
             zorder=8,
         )
 
