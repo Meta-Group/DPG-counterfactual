@@ -11,20 +11,20 @@ This document provides a summary of all datasets available in the configs folder
 ## Dataset Details
 
 | Dataset Name | Number of Features | Number of Samples | Number of Classes | Actionability Constraints |
-|--------------|-------------------|------------------|------------------|--------------------------|
-| abalone | 11 | 4,177 | 2 | None |
+|--------------|-------------------:|------------------:|------------------:|--------------------------|
+| abalone | 10 | 4,177 | 2 | None |
 | diabetes | 8 | 768 | 2 | Age: non_decreasing; Pregnancies: non_decreasing; DiabetesPedigreeFunction: no_change; BMI: actionable; Glucose: actionable; BloodPressure: actionable |
-| ecoli | 8 | 336 | 2 | None |
-| education_dataset | 4 | 1,000 | 2 | None |
-| energy_dataset | 4 | 1,000 | 2 | None |
-| fraud_detection_dataset | 5 | 1,000 | 2 | None |
-| iris | 5 | 150 | 3 | None |
-| isolet | 618 | 7,797 | 2 | None |
-| libras_move | 91 | 360 | 2 | None |
-| mammography | 7 | 11,183 | 2 | None |
-| satimage | 37 | 6,435 | 2 | None |
-| scene | 295 | 2,407 | 2 | None |
-| us_crime | 101 | 1,994 | 2 | None |
+| ecoli | 7 | 336 | 2 | None |
+| education_dataset | 3 | 1,000 | 2 | None |
+| energy_dataset | 3 | 1,000 | 2 | None |
+| fraud_detection_dataset | 4 | 1,000 | 2 | None |
+| iris | 4 | 150 | 3 | None |
+| isolet | 617 | 7,797 | 2 | None |
+| libras_move | 90 | 360 | 2 | None |
+| mammography | 6 | 11,183 | 2 | None |
+| satimage | 36 | 6,435 | 2 | None |
+| scene | 294 | 2,407 | 2 | None |
+| us_crime | 100 | 1,994 | 2 | None |
 | yeast_ml8 | 103 | 2,417 | 2 | None |
 
 ## Datasets with Actionability Constraints
@@ -51,14 +51,14 @@ Actionability constraints define how features can be modified when generating co
 ## Feature Count Statistics
 
 | Metric | Value |
-|--------|-------|
-| Minimum features | 4 (education_dataset, energy_dataset) |
-| Maximum features | 618 (isolet) |
-| Average features | ~91 |
-| Median features | ~49 |
+|--------|-------:|
+| Minimum features | 3 (education_dataset, energy_dataset) |
+| Maximum features | 617 (isolet) |
+| Average features | ~91.79 |
+| Median features | 9 |
 
 ## Notes
 
-- All feature counts include the target column
+- Feature counts exclude the target column (the target/label is not considered a feature)
 - Actionability constraints are defined in the `methods._default.actionability` section of each config.yaml file
 - The **iris** dataset information (150 samples, 4 features, 3 classes) is from scikit-learn's built-in iris dataset
