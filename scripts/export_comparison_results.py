@@ -157,18 +157,37 @@ def fetch_specific_runs(run_ids_dict):
                     print(f"  ⚠ {dataset}/{technique}: Run {run_id} not finished (state: {run.state})")
                     continue
                 
+                config = run.config
+                summary = run.summary._json_dict
+                
                 # Extract metrics from run
                 run_data = {
                     'run_id': run.id,
+                    'run_name': run.name,
                     'dataset': dataset,
                     'technique': technique.lower(),
-                    'created_at': run.created_at
+                    'state': run.state,
                 }
                 
-                # Get all metrics from summary
-                for key, value in run.summary.items():
-                    if not key.startswith('_') and isinstance(value, (int, float)):
-                        run_data[key] = value
+                # Extract per-counterfactual metrics using COMPARISON_METRICS and wandb_keys
+                for metric_key, metric_info in COMPARISON_METRICS.items():
+                    value = None
+                    # Try each possible WandB key for this metric
+                    wandb_keys = metric_info.get('wandb_keys', [f'metrics/{metric_key}', f'combo_metrics/{metric_key}'])
+                    for wkey in wandb_keys:
+                        if wkey in summary:
+                            value = summary[wkey]
+                            break
+                    
+                    run_data[metric_key] = value
+                
+                # Also extract any additional summary metrics as fallback
+                for key, value in summary.items():
+                    if isinstance(value, (int, float)) and key not in run_data:
+                        # Clean up metric names
+                        clean_key = key.replace('combo_metrics/', '').replace('metrics/', '')
+                        if clean_key not in run_data:
+                            run_data[clean_key] = value
                 
                 runs_data.append(run_data)
                 print(f"  ✓ {dataset}/{technique}: Fetched run {run_id}")
