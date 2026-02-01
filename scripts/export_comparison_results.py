@@ -26,9 +26,9 @@ Outputs are saved to: outputs/comparison_results/
 - comparison_summary.txt: Console summary output
 - rf_model_information.csv: Random Forest model information (train/test split, accuracies, hyperparameters)
 - rf_model_summary.txt: Summary statistics of RF models across all datasets
-- dataset_overview.tex: LaTeX table with dataset overview (features, samples, classes, accuracies, constraints)
+- dataset_overview.tex: LaTeX table with dataset overview (features, samples, classes, accuracies)
+- dataset_dpg_constraints.tex: LaTeX table with detailed DPG constraints per dataset (landscape, one dataset per page)
 - dpg_constraints/<dataset>_dpg_constraints.json: DPG-learned constraints (min/max bounds) per dataset as JSON
-- dpg_constraints/<dataset>_dpg_constraints.csv: DPG-learned constraints (min/max bounds) per dataset as CSV
 
 Usage:
     python scripts/export_comparison_results.py                    # Full export (fetches from WandB)
@@ -2017,6 +2017,62 @@ def count_actionability_constraints(dataset_name):
         return None
 
 
+def get_dpg_constraints_data(dataset_name):
+    """Get raw DPG constraints data for a dataset.
+    
+    Extracts the DPG-learned constraints (min/max bounds per feature per class)
+    from multiple sources. Tries:
+    1. Local filesystem (outputs/{dataset}_dpg/)
+    2. WandB data cache (if available)
+    
+    Args:
+        dataset_name: Name of the dataset
+        
+    Returns:
+        Dictionary of constraints or None if not found
+    """
+    try:
+        constraints = None
+        
+        # Try source 1: Local filesystem
+        outputs_base = os.path.join(REPO_ROOT, 'outputs')
+        dpg_dir = os.path.join(outputs_base, f"{dataset_name}_dpg")
+        
+        if os.path.exists(dpg_dir):
+            # Find the most recent sample directory (highest number)
+            sample_dirs = []
+            for name in os.listdir(dpg_dir):
+                sample_path = os.path.join(dpg_dir, name)
+                if os.path.isdir(sample_path):
+                    try:
+                        sample_dirs.append((int(name), sample_path))
+                    except ValueError:
+                        continue
+            
+            if sample_dirs:
+                # Get most recent (highest sample ID)
+                sample_dirs.sort(key=lambda x: x[0], reverse=True)
+                _, sample_dir = sample_dirs[0]
+                
+                # Load constraints from JSON
+                constraints_path = os.path.join(sample_dir, 'dpg_constraints_normalized.json')
+                if os.path.exists(constraints_path):
+                    with open(constraints_path, 'r') as f:
+                        constraints = json.load(f)
+        
+        # Try source 2: WandB data cache
+        if not constraints and dataset_name in _WANDB_DATA_CACHE:
+            cached_constraints = _WANDB_DATA_CACHE[dataset_name].get('constraints')
+            if cached_constraints:
+                constraints = cached_constraints
+        
+        return constraints
+        
+    except Exception as e:
+        print(f"    Warning: Error loading DPG constraints for {dataset_name}: {e}")
+        return None
+
+
 def get_dpg_constraints_formatted(dataset_name):
     """Get DPG constraints formatted for LaTeX table display.
     
@@ -2345,19 +2401,19 @@ def export_model_information(raw_df, comparison_df):
     print(f"\n✓ Exported RF model information to: {output_path}")
     print(f"  {len(model_info_data)} datasets processed")
     
-    # Export LaTeX table
+    # Export LaTeX table - First, the summary table
     latex_path = os.path.join(OUTPUT_DIR, 'dataset_overview.tex')
     with open(latex_path, 'w') as f:
         f.write("\\begin{table}[ht]\n")
         f.write("  \\centering\n")
         f.write(f"  \\caption{{Overview of the {len(model_info_data)} benchmark datasets used in the experimental evaluation, ")
-        f.write("including the number of features, samples, classes, train/test split, accuracies, actionability restrictions, ")
-        f.write("and DPG constraints (ND=Non-Decreasing, NI=Non-Increasing, NC=No Change).}\n")
+        f.write("including the number of features, samples, classes, train/test split, accuracies, and actionability restrictions. ")
+        f.write("See Table~\\ref{tab:dpg-constraints} for detailed DPG constraints.}\n")
         f.write("  \\label{tab:datasets}\n")
         f.write("  \\small\n")
-        f.write("  \\begin{tabular}{lrrrlrrp{2cm}p{3.5cm}}\n")
+        f.write("  \\begin{tabular}{lrrrlrrp{2cm}}\n")
         f.write("    \\toprule\n")
-        f.write("    Dataset & \\# Features & \\# Samples & \\# Classes & Train/Test & Train Acc. & Test Acc. & Actionability Restrictions & DPG Constraints \\\\\n")
+        f.write("    Dataset & \\# Features & \\# Samples & \\# Classes & Train/Test & Train Acc. & Test Acc. & Actionability \\\\\n")
         f.write("    \\midrule\n")
         
         # Sort datasets alphabetically
@@ -2380,9 +2436,6 @@ def export_model_information(raw_df, comparison_df):
             num_restrictions = count_actionability_constraints(dataset)
             restrictions_str = str(num_restrictions) if num_restrictions is not None and num_restrictions > 0 else "None"
             
-            # Get formatted DPG constraints
-            dpg_constraints_str = get_dpg_constraints_formatted(dataset)
-            
             # Format numbers with thousands separator
             total_samples_str = f"{total_samples:,}"
             
@@ -2390,13 +2443,99 @@ def export_model_information(raw_df, comparison_df):
             dataset_latex = dataset.replace('_', '\\_')
             
             f.write(f"    {dataset_latex} & {num_features} & {total_samples_str} & {num_classes} & "
-                   f"{train_test_split} & {train_acc} & {test_acc} & {restrictions_str} & {dpg_constraints_str} \\\\\n")
+                   f"{train_test_split} & {train_acc} & {test_acc} & {restrictions_str} \\\\\n")
         
         f.write("    \\bottomrule\n")
         f.write("  \\end{tabular}\n")
         f.write("\\end{table}\n")
     
     print(f"✓ Exported LaTeX table to: {latex_path}")
+    
+    # Export detailed DPG constraints table in landscape mode, one dataset per page
+    latex_constraints_path = os.path.join(OUTPUT_DIR, 'dataset_dpg_constraints.tex')
+    with open(latex_constraints_path, 'w') as f:
+        # Write header once
+        f.write("% DPG Constraints for all datasets - one dataset per page\n")
+        f.write("% Each table shows the min/max bounds learned by DPG for each feature and class\n\n")
+        
+        for info in sorted_data:
+            dataset = info['Dataset']
+            dataset_latex = dataset.replace('_', '\\_')
+            
+            # Get DPG constraints for this dataset
+            constraints = get_dpg_constraints_data(dataset)
+            
+            if not constraints:
+                continue
+            
+            # Start landscape page for this dataset
+            f.write("\\begin{landscape}\n")
+            f.write("\\begin{table}[p]\n")
+            f.write("  \\centering\n")
+            f.write(f"  \\caption{{DPG-learned constraints (min/max bounds) for {dataset_latex} dataset. ")
+            f.write("These constraints define valid regions in the feature space for each class ")
+            f.write("and are used to guide counterfactual generation.}\n")
+            f.write(f"  \\label{{tab:dpg-constraints-{dataset}}}\n")
+            f.write("  \\small\n")
+            
+            # Build table with classes as columns
+            classes = sorted(constraints.keys())
+            num_classes = len(classes)
+            
+            # Column specification: Feature name + (min, max) pair for each class
+            col_spec = "l" + "rr" * num_classes
+            f.write(f"  \\begin{{tabular}}{{{col_spec}}}\n")
+            f.write("    \\toprule\n")
+            
+            # Header row 1: Feature and class labels
+            header1 = "    Feature"
+            for class_label in classes:
+                class_latex = str(class_label).replace('_', '\\_')
+                header1 += f" & \\multicolumn{{2}}{{c}}{{{class_latex}}}"
+            header1 += " \\\\\n"
+            f.write(header1)
+            
+            # Header row 2: Min/Max labels under each class
+            header2 = "    "
+            for _ in classes:
+                header2 += " & Min & Max"
+            header2 += " \\\\\n"
+            f.write(header2)
+            f.write("    \\midrule\n")
+            
+            # Collect all features across all classes
+            all_features = set()
+            for class_constraints in constraints.values():
+                all_features.update(class_constraints.keys())
+            
+            # Write data rows (one per feature)
+            for feature in sorted(all_features):
+                feature_latex = feature.replace('_', '\\_')
+                row = f"    {feature_latex}"
+                
+                for class_label in classes:
+                    class_constraints = constraints[class_label]
+                    bounds = class_constraints.get(feature, {})
+                    
+                    min_val = bounds.get('min')
+                    max_val = bounds.get('max')
+                    
+                    # Format values nicely
+                    min_str = f"{min_val:.2f}" if min_val is not None else "---"
+                    max_str = f"{max_val:.2f}" if max_val is not None else "---"
+                    
+                    row += f" & {min_str} & {max_str}"
+                
+                row += " \\\\\n"
+                f.write(row)
+            
+            f.write("    \\bottomrule\n")
+            f.write("  \\end{tabular}\n")
+            f.write("\\end{table}\n")
+            f.write("\\end{landscape}\n")
+            f.write("\\clearpage\n\n")
+    
+    print(f"✓ Exported DPG constraints table to: {latex_constraints_path}")
     
     # Also export a summary statistics file
     summary_path = os.path.join(OUTPUT_DIR, 'rf_model_summary.txt')
