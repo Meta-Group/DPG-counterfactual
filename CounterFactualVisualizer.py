@@ -1178,6 +1178,98 @@ def plot_sample_and_counterfactual_comparison_combined(model, sample, sample_df,
                     f'{width_bar:.2f}', ha='left', va='center', 
                     fontsize=8, fontweight='bold')
     
+    # Add constraint indicators if constraints are provided
+    if constraints is not None:
+        # Get the x-axis limits to determine the plotting range
+        xlim = ax.get_xlim()
+        
+        # Plot constraints for both original and CF classes
+        for class_idx in [predicted_class, dpg_cf_class, dice_cf_class]:
+            class_name = f'Class {class_idx}'
+            if class_name in constraints:
+                class_constraints = constraints[class_name]
+                
+                # Handle both list and dict formats
+                if isinstance(class_constraints, list):
+                    constraint_dict = {c['feature']: c for c in class_constraints}
+                elif isinstance(class_constraints, dict):
+                    constraint_dict = {k: {'min': v.get('min'), 'max': v.get('max')} for k, v in class_constraints.items()}
+                else:
+                    constraint_dict = {}
+                
+                # Determine vertical offset based on class
+                if class_idx == predicted_class:
+                    y_offset = -width  # Original bar position
+                elif class_idx == dpg_cf_class:
+                    y_offset = 0  # DPG bar position
+                else:
+                    y_offset = width  # DiCE bar position
+                
+                for i, feature in enumerate(feature_list):
+                    # Match feature name
+                    feature_key = None
+                    feature_normalized = feature.replace(' (cm)', '').replace('_', ' ').strip().lower()
+                    
+                    for key in constraint_dict.keys():
+                        key_normalized = key.replace('_', ' ').strip().lower()
+                        if key_normalized == feature_normalized or key == feature or key.replace('_', ' ') == feature:
+                            feature_key = key
+                            break
+                    
+                    if feature_key and feature_key in constraint_dict:
+                        c = constraint_dict[feature_key]
+                        min_val = c['min'] if c['min'] is not None else xlim[0]
+                        max_val = c['max'] if c['max'] is not None else xlim[1]
+                        
+                        constraint_color = class_colors_list[class_idx]
+                        alpha_constraint = 0.8
+                        
+                        # Draw constraint range
+                        if c['min'] is not None and c['max'] is not None:
+                            ax.plot([min_val, max_val], [i + y_offset, i + y_offset], 
+                                   color=constraint_color, linewidth=6, alpha=alpha_constraint, 
+                                   linestyle='-', zorder=10)
+                            ax.plot([min_val], [i + y_offset], marker='|', markersize=15, 
+                                   color=constraint_color, alpha=1.0, markeredgewidth=4, zorder=11)
+                            ax.plot([max_val], [i + y_offset], marker='|', markersize=15, 
+                                   color=constraint_color, alpha=1.0, markeredgewidth=4, zorder=11)
+                            ax.text(min_val, i + y_offset + 0.15, f'{min_val:.2f}', 
+                                   ha='right', va='bottom', fontsize=8, 
+                                   color=constraint_color, weight='bold', style='italic',
+                                   bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', 
+                                           edgecolor=constraint_color, alpha=0.9, linewidth=1.5),
+                                   zorder=12)
+                            ax.text(max_val, i + y_offset - 0.15, f'{max_val:.2f}', 
+                                   ha='left', va='top', fontsize=8, 
+                                   color=constraint_color, weight='bold', style='italic',
+                                   bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', 
+                                           edgecolor=constraint_color, alpha=0.9, linewidth=1.5),
+                                   zorder=12)
+                        elif c['min'] is not None:
+                            ax.plot([min_val, xlim[1]], [i + y_offset, i + y_offset], 
+                                   color=constraint_color, linewidth=6, alpha=alpha_constraint, 
+                                   linestyle='--', zorder=10)
+                            ax.plot([min_val], [i + y_offset], marker='|', markersize=15, 
+                                   color=constraint_color, alpha=1.0, markeredgewidth=4, zorder=11)
+                            ax.text(min_val, i + y_offset - 0.2, f'min:{min_val:.2f}', 
+                                   ha='center', va='top', fontsize=8, 
+                                   color=constraint_color, weight='bold', style='italic',
+                                   bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', 
+                                           edgecolor=constraint_color, alpha=0.9, linewidth=1.5),
+                                   zorder=12)
+                        elif c['max'] is not None:
+                            ax.plot([xlim[0], max_val], [i + y_offset, i + y_offset], 
+                                   color=constraint_color, linewidth=6, alpha=alpha_constraint, 
+                                   linestyle='--', zorder=10)
+                            ax.plot([max_val], [i + y_offset], marker='|', markersize=15, 
+                                   color=constraint_color, alpha=1.0, markeredgewidth=4, zorder=11)
+                            ax.text(max_val, i + y_offset - 0.2, f'max:{max_val:.2f}', 
+                                   ha='center', va='top', fontsize=8, 
+                                   color=constraint_color, weight='bold', style='italic',
+                                   bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', 
+                                           edgecolor=constraint_color, alpha=0.9, linewidth=1.5),
+                                   zorder=12)
+    
     ax.set_yticks(x_pos)
     ax.set_yticklabels([f.replace(' (cm)', '').replace('_', ' ') for f in feature_list])
     ax.set_xlabel('Feature Value', fontsize=12, fontweight='bold')
