@@ -26,6 +26,7 @@ Outputs are saved to: outputs/comparison_results/
 - comparison_summary.txt: Console summary output
 - rf_model_information.csv: Random Forest model information (train/test split, accuracies, hyperparameters)
 - rf_model_summary.txt: Summary statistics of RF models across all datasets
+- dataset_overview.tex: LaTeX table with dataset overview (features, samples, classes, accuracies, constraints)
 
 Usage:
     python scripts/export_comparison_results.py                    # Full export (fetches from WandB)
@@ -1186,7 +1187,7 @@ def export_sample_cf_comparison(raw_df, dataset, dataset_viz_dir):
                 sample=sample,
                 sample_df=sample_df,
                 counterfactual=cf,
-                constraints=None,  # Could add constraints here if needed
+                constraints=None,
                 class_colors_list=None,
                 generation=None
             )
@@ -1705,6 +1706,37 @@ def export_comparison_summary(comparison_df):
     print(f"✓ Exported comparison summary to: {output_path}")
 
 
+def count_actionability_constraints(dataset_name):
+    """Count the number of actionability constraints for a dataset.
+    
+    Args:
+        dataset_name: Name of the dataset
+        
+    Returns:
+        Number of constraints or None if not found
+    """
+    try:
+        config_path = os.path.join(REPO_ROOT, 'configs', dataset_name, 'config.yaml')
+        if not os.path.exists(config_path):
+            return None
+        
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Navigate to actionability constraints
+        actionability = config.get('methods', {}).get('_default', {}).get('actionability', {})
+        
+        if not actionability:
+            return 0
+        
+        # Count constraints (exclude None values)
+        count = sum(1 for v in actionability.values() if v is not None)
+        return count
+        
+    except Exception as e:
+        return None
+
+
 def export_model_information(raw_df, comparison_df):
     """Export Random Forest model information for each dataset.
     
@@ -1774,6 +1806,51 @@ def export_model_information(raw_df, comparison_df):
     model_info_df.to_csv(output_path, index=False)
     print(f"\n✓ Exported RF model information to: {output_path}")
     print(f"  {len(model_info_data)} datasets processed")
+    
+    # Export LaTeX table
+    latex_path = os.path.join(OUTPUT_DIR, 'dataset_overview.tex')
+    with open(latex_path, 'w') as f:
+        f.write("\\begin{table}[ht]\n")
+        f.write("  \\centering\n")
+        f.write(f"  \\caption{{Overview of the {len(model_info_data)} benchmark datasets used in the experimental evaluation, ")
+        f.write("including the number of features, samples, classes, train/test accuracies, and actionability constraints ")
+        f.write("specified for each dataset.}}\n")
+        f.write("  \\label{tab:datasets}\n")
+        f.write("  \\small\n")
+        f.write("  \\begin{tabular}{lrrrrrp{3cm}}\n")
+        f.write("    \\toprule\n")
+        f.write("    Dataset & \\# Features & \\# Samples & \\# Classes & Train Acc. & Test Acc. & \\# Constraints \\\\\n")
+        f.write("    \\midrule\n")
+        
+        # Sort datasets alphabetically
+        sorted_data = sorted(model_info_data, key=lambda x: x['Dataset'])
+        
+        for info in sorted_data:
+            dataset = info['Dataset']
+            num_features = info['Num Features']
+            total_samples = info['Total Size']
+            num_classes = info['Num Classes']
+            train_acc = info['Train Accuracy']
+            test_acc = info['Test Accuracy']
+            
+            # Count actionability constraints
+            num_constraints = count_actionability_constraints(dataset)
+            constraints_str = str(num_constraints) if num_constraints is not None and num_constraints > 0 else "None"
+            
+            # Format numbers with thousands separator
+            total_samples_str = f"{total_samples:,}"
+            
+            # Clean dataset name for LaTeX (replace underscores)
+            dataset_latex = dataset.replace('_', '\\_')
+            
+            f.write(f"    {dataset_latex} & {num_features} & {total_samples_str} & {num_classes} & "
+                   f"{train_acc} & {test_acc} & {constraints_str} \\\\\n")
+        
+        f.write("    \\bottomrule\n")
+        f.write("  \\end{tabular}\n")
+        f.write("\\end{table}\n")
+    
+    print(f"✓ Exported LaTeX table to: {latex_path}")
     
     # Also export a summary statistics file
     summary_path = os.path.join(OUTPUT_DIR, 'rf_model_summary.txt')
