@@ -363,13 +363,14 @@ def plot_heatmap_differences(
     sns.heatmap(
         diff_mat_norm_plot,
         annot=diff_mat_plot.round(2),
-        fmt=".2f",
+        fmt=".1f",
         cmap="coolwarm",
         vmin=-1, vmax=1,
         center=0,
         linewidths=0.5,
         linecolor="gray",
         cbar_kws={"label": "Column-wise scaled difference"},
+        annot_kws={"fontsize": 9},
         ax=ax
     )
 
