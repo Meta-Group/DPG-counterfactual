@@ -73,7 +73,11 @@ from scripts.compare_techniques import (
 
 from utils.config_manager import load_config
 
-from CounterFactualVisualizer import heatmap_techniques, plot_pca_with_counterfactuals_comparison
+from CounterFactualVisualizer import (
+    heatmap_techniques, 
+    plot_pca_with_counterfactuals_comparison,
+    plot_sample_and_counterfactual_comparison
+)
 from utils.dataset_loader import load_dataset
 from utils.config_manager import DictConfig
 from sklearn.ensemble import RandomForestClassifier
@@ -85,6 +89,9 @@ WANDB_PROJECT = 'CounterFactualDPG'
 SELECTED_DATASETS = None  # No filter - fetch all
 MIN_CREATED_AT = "2026-01-31T22:00:00" # Fetch runs created after this date
 APPLY_EXCLUDED_DATASETS = True
+
+# Dataset to export individual counterfactual comparison plots
+DATASET_FOR_CF_COMPARISON = 'diabetes'
 
 # Output directory
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -1068,6 +1075,130 @@ def export_heatmap_techniques(raw_df, dataset, dataset_viz_dir):
         return False
 
 
+def export_sample_cf_comparison(raw_df, dataset, dataset_viz_dir):
+    """Export individual counterfactual comparison plots for each CF."""
+    
+    # Load dataset and model
+    dataset_model_info = load_dataset_and_model(dataset)
+    if dataset_model_info is None:
+        print(f"  ⚠ {dataset}: Could not load dataset/model, skipping sample CF comparison")
+        return False
+    
+    model = dataset_model_info['model']
+    
+    # Get sample and counterfactuals from cache or local data
+    if args.local_only:
+        # Try to load from WandB data cache first
+        if dataset in _WANDB_DATA_CACHE:
+            cached_data = _WANDB_DATA_CACHE[dataset]
+            sample = cached_data['sample']
+            dpg_cfs = cached_data['dpg_cfs']
+            dice_cfs = cached_data['dice_cfs']
+            restrictions = cached_data.get('restrictions')
+        else:
+            # Fallback to local pkl files
+            try:
+                dpg_data = _load_local_viz_data(dataset, 'dpg')
+                dice_data = _load_local_viz_data(dataset, 'dice')
+                
+                if not dpg_data or not dice_data:
+                    print(f"  ⚠ {dataset}: Sample CF comparison in local-only mode requires cached data")
+                    return False
+                
+                sample = dpg_data.get('original_sample')
+                restrictions = dpg_data.get('restrictions')
+                
+                dpg_cfs = []
+                for viz in dpg_data.get('visualizations', []):
+                    for cf_data in viz.get('counterfactuals', []):
+                        cf = cf_data.get('counterfactual')
+                        if cf:
+                            dpg_cfs.append(cf)
+                
+                dice_cfs = []
+                for viz in dice_data.get('visualizations', []):
+                    for cf_data in viz.get('counterfactuals', []):
+                        cf = cf_data.get('counterfactual')
+                        if cf:
+                            dice_cfs.append(cf)
+            except Exception as e:
+                print(f"  ⚠ {dataset}: Error loading local data: {e}")
+                return False
+    else:
+        # WandB mode - check cache first
+        if dataset in _WANDB_DATA_CACHE:
+            cached_data = _WANDB_DATA_CACHE[dataset]
+            sample = cached_data['sample']
+            dpg_cfs = cached_data['dpg_cfs']
+            dice_cfs = cached_data['dice_cfs']
+            restrictions = cached_data.get('restrictions')
+        else:
+            print(f"  ⚠ {dataset}: Data not in cache, run heatmap generation first")
+            return False
+    
+    if not sample or not dpg_cfs or not dice_cfs:
+        print(f"  ⚠ {dataset}: Missing required data for CF comparison")
+        return False
+    
+    # Create subdirectories for each technique
+    dpg_cf_dir = os.path.join(dataset_viz_dir, 'dpg_counterfactuals')
+    dice_cf_dir = os.path.join(dataset_viz_dir, 'dice_counterfactuals')
+    os.makedirs(dpg_cf_dir, exist_ok=True)
+    os.makedirs(dice_cf_dir, exist_ok=True)
+    
+    sample_df = pd.DataFrame([sample])
+    
+    # Export DPG counterfactuals
+    dpg_count = 0
+    for i, cf in enumerate(dpg_cfs[:10]):  # Limit to first 10
+        try:
+            fig = plot_sample_and_counterfactual_comparison(
+                model=model,
+                sample=sample,
+                sample_df=sample_df,
+                counterfactual=cf,
+                constraints=None,  # Could add constraints here if needed
+                class_colors_list=None,
+                generation=None
+            )
+            
+            if fig:
+                output_path = os.path.join(dpg_cf_dir, f'cf_comparison_{i+1}.png')
+                fig.savefig(output_path, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+                dpg_count += 1
+        except Exception as e:
+            print(f"    Warning: Failed to create DPG CF {i+1} comparison: {e}")
+    
+    # Export DiCE counterfactuals
+    dice_count = 0
+    for i, cf in enumerate(dice_cfs[:10]):  # Limit to first 10
+        try:
+            fig = plot_sample_and_counterfactual_comparison(
+                model=model,
+                sample=sample,
+                sample_df=sample_df,
+                counterfactual=cf,
+                constraints=None,
+                class_colors_list=None,
+                generation=None
+            )
+            
+            if fig:
+                output_path = os.path.join(dice_cf_dir, f'cf_comparison_{i+1}.png')
+                fig.savefig(output_path, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+                dice_count += 1
+        except Exception as e:
+            print(f"    Warning: Failed to create DiCE CF {i+1} comparison: {e}")
+    
+    if dpg_count > 0 or dice_count > 0:
+        print(f"  ✓ {dataset}: Exported {dpg_count} DPG + {dice_count} DiCE counterfactual comparisons")
+        return True
+    
+    return False
+
+
 def export_pca_comparison(raw_df, dataset, dataset_viz_dir):
     """Export PCA comparison plot with counterfactuals from both DPG and DiCE."""
     
@@ -1432,6 +1563,10 @@ def export_dataset_visualizations(comparison_df, raw_df):
         
         # Export PCA comparison (loads dataset and model automatically)
         export_pca_comparison(raw_df, dataset, dataset_viz_dir)
+        
+        # Export individual counterfactual comparisons for specified dataset
+        if dataset == DATASET_FOR_CF_COMPARISON:
+            export_sample_cf_comparison(raw_df, dataset, dataset_viz_dir)
         
         # Fetch WandB visualizations (comparison, pca_clean, heatmap)
         wandb_viz = fetch_wandb_visualizations(raw_df, dataset, dataset_viz_dir)
