@@ -1590,7 +1590,8 @@ def heatmap_techniques(sample, class_sample, cf_list_1, cf_list_2, technique_nam
         linewidths=1.0,
         linecolor='k',
         vmin=vmin,
-        vmax=vmax
+        cbar_kws={"label": "Magnitude difference"},
+        vmax=vmax,
     )
 
     # Add restriction icons below the heatmap if provided
@@ -1608,7 +1609,7 @@ def heatmap_techniques(sample, class_sample, cf_list_1, cf_list_2, technique_nam
                        fontweight='bold', fontsize=14, transform=ax.transData)
 
     plt.title(f'Technique Comparison - Original (Class {class_sample}) vs Counterfactuals', fontsize=14, fontweight='bold')
-    plt.xticks(rotation=45, ha="right")
+    plt.xticks(rotation=30, ha="right")
     plt.yticks(rotation=0, va="center")
     plt.tight_layout()
     plt.close(fig)
