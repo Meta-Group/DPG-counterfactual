@@ -24,6 +24,8 @@ Outputs are saved to: outputs/comparison_results/
   - WandB visualizations (comparison, pca_clean, heatmap, etc.)
 - metadata.pkl: Saved run metadata for local-only regeneration
 - comparison_summary.txt: Console summary output
+- rf_model_information.csv: Random Forest model information (train/test split, accuracies, hyperparameters)
+- rf_model_summary.txt: Summary statistics of RF models across all datasets
 
 Usage:
     python scripts/export_comparison_results.py                    # Full export (fetches from WandB)
@@ -146,6 +148,15 @@ def load_dataset_and_model(dataset_name):
             - dataset: Full features DataFrame
             - target: Target labels array
             - feature_names: List of feature names
+            - train_features: Training features DataFrame
+            - test_features: Test features DataFrame
+            - train_labels: Training labels array
+            - test_labels: Test labels array
+            - train_accuracy: Model accuracy on training set
+            - test_accuracy: Model accuracy on test set
+            - test_size: Test set size (proportion)
+            - random_state: Random state used for splitting
+            - model_params: Model hyperparameters
     """
     # Check cache first
     if dataset_name in _DATASET_CACHE:
@@ -197,11 +208,24 @@ def load_dataset_and_model(dataset_name):
         # Train model
         model.fit(train_features, train_labels)
         
+        # Calculate accuracies
+        train_accuracy = model.score(train_features, train_labels)
+        test_accuracy = model.score(test_features, test_labels)
+        
         result = {
             'model': model,
             'dataset': features_df,
             'target': labels,
             'feature_names': feature_names,
+            'train_features': train_features,
+            'test_features': test_features,
+            'train_labels': train_labels,
+            'test_labels': test_labels,
+            'train_accuracy': train_accuracy,
+            'test_accuracy': test_accuracy,
+            'test_size': test_size,
+            'random_state': random_state,
+            'model_params': model_params,
         }
         
         # Cache the result
@@ -1681,6 +1705,128 @@ def export_comparison_summary(comparison_df):
     print(f"✓ Exported comparison summary to: {output_path}")
 
 
+def export_model_information(raw_df, comparison_df):
+    """Export Random Forest model information for each dataset.
+    
+    Exports information about:
+    - Train/test split configuration
+    - Train and test accuracies
+    - Model hyperparameters
+    - Dataset statistics
+    
+    Works in both online and local-only modes.
+    """
+    print("\n" + "="*80)
+    print("EXPORTING RANDOM FOREST MODEL INFORMATION")
+    print("="*80)
+    
+    datasets = sorted(comparison_df['dataset'].unique()) if len(comparison_df) > 0 else []
+    if len(datasets) == 0:
+        datasets = sorted(raw_df['dataset'].unique()) if len(raw_df) > 0 else []
+    
+    if len(datasets) == 0:
+        print("⚠ No datasets found, skipping model information export")
+        return
+    
+    model_info_data = []
+    
+    for dataset in datasets:
+        print(f"  Processing {dataset}...")
+        
+        # Load dataset and train model (or get from cache)
+        dataset_model_info = load_dataset_and_model(dataset)
+        
+        if dataset_model_info is None:
+            print(f"  ⚠ {dataset}: Could not load dataset/model")
+            continue
+        
+        # Extract model parameters for display
+        model_params = dataset_model_info.get('model_params', {})
+        
+        # Create info record
+        info = {
+            'Dataset': dataset,
+            'Train Size': len(dataset_model_info['train_features']),
+            'Test Size': len(dataset_model_info['test_features']),
+            'Total Size': len(dataset_model_info['dataset']),
+            'Test Size %': f"{dataset_model_info['test_size'] * 100:.1f}%",
+            'Train Accuracy': f"{dataset_model_info['train_accuracy']:.4f}",
+            'Test Accuracy': f"{dataset_model_info['test_accuracy']:.4f}",
+            'Random State': dataset_model_info['random_state'],
+            'Num Features': len(dataset_model_info['feature_names']),
+            'Num Classes': len(np.unique(dataset_model_info['target'])),
+        }
+        
+        # Add key RF hyperparameters
+        for param_name in ['n_estimators', 'max_depth', 'min_samples_split', 
+                          'min_samples_leaf', 'max_features', 'random_state']:
+            if param_name in model_params:
+                info[f'RF_{param_name}'] = model_params[param_name]
+        
+        model_info_data.append(info)
+        print(f"  ✓ {dataset}: Train Acc={info['Train Accuracy']}, Test Acc={info['Test Accuracy']}")
+    
+    # Create DataFrame
+    model_info_df = pd.DataFrame(model_info_data)
+    
+    # Export to CSV
+    output_path = os.path.join(OUTPUT_DIR, 'rf_model_information.csv')
+    model_info_df.to_csv(output_path, index=False)
+    print(f"\n✓ Exported RF model information to: {output_path}")
+    print(f"  {len(model_info_data)} datasets processed")
+    
+    # Also export a summary statistics file
+    summary_path = os.path.join(OUTPUT_DIR, 'rf_model_summary.txt')
+    with open(summary_path, 'w') as f:
+        f.write("="*80 + "\n")
+        f.write("RANDOM FOREST MODEL SUMMARY\n")
+        f.write("="*80 + "\n\n")
+        
+        f.write(f"Total Datasets: {len(model_info_data)}\n\n")
+        
+        # Convert accuracy strings back to float for statistics
+        train_accs = [float(info['Train Accuracy']) for info in model_info_data]
+        test_accs = [float(info['Test Accuracy']) for info in model_info_data]
+        
+        f.write("Train Accuracy Statistics:\n")
+        f.write(f"  Mean:   {np.mean(train_accs):.4f}\n")
+        f.write(f"  Median: {np.median(train_accs):.4f}\n")
+        f.write(f"  Std:    {np.std(train_accs):.4f}\n")
+        f.write(f"  Min:    {np.min(train_accs):.4f}\n")
+        f.write(f"  Max:    {np.max(train_accs):.4f}\n\n")
+        
+        f.write("Test Accuracy Statistics:\n")
+        f.write(f"  Mean:   {np.mean(test_accs):.4f}\n")
+        f.write(f"  Median: {np.median(test_accs):.4f}\n")
+        f.write(f"  Std:    {np.std(test_accs):.4f}\n")
+        f.write(f"  Min:    {np.min(test_accs):.4f}\n")
+        f.write(f"  Max:    {np.max(test_accs):.4f}\n\n")
+        
+        f.write("="*80 + "\n")
+        f.write("DETAILED MODEL INFORMATION\n")
+        f.write("="*80 + "\n\n")
+        
+        for info in model_info_data:
+            f.write(f"Dataset: {info['Dataset']}\n")
+            f.write(f"  Train/Test Split: {info['Train Size']}/{info['Test Size']} "
+                   f"({info['Test Size %']})\n")
+            f.write(f"  Accuracies: Train={info['Train Accuracy']}, "
+                   f"Test={info['Test Accuracy']}\n")
+            f.write(f"  Features: {info['Num Features']}, Classes: {info['Num Classes']}\n")
+            
+            # Show RF params if present
+            rf_params = {k: v for k, v in info.items() if k.startswith('RF_')}
+            if rf_params:
+                f.write(f"  RF Params: ")
+                param_strs = [f"{k.replace('RF_', '')}={v}" for k, v in rf_params.items()]
+                f.write(", ".join(param_strs) + "\n")
+            f.write("\n")
+    
+    print(f"✓ Exported RF model summary to: {summary_path}")
+    
+    return model_info_df
+
+
 def main():
     """Main execution flow."""
     global _WANDB_DATA_CACHE
@@ -1787,6 +1933,9 @@ def main():
 
     # export_radar_charts(comparison_df)
     export_dataset_visualizations(comparison_df, raw_df)
+    
+    # Export Random Forest model information
+    export_model_information(raw_df, comparison_df)
     
     # Run statistical analysis (Wilcoxon tests, LaTeX tables, etc.)
     print("\n" + "="*80)
