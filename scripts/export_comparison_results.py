@@ -27,6 +27,8 @@ Outputs are saved to: outputs/comparison_results/
 - rf_model_information.csv: Random Forest model information (train/test split, accuracies, hyperparameters)
 - rf_model_summary.txt: Summary statistics of RF models across all datasets
 - dataset_overview.tex: LaTeX table with dataset overview (features, samples, classes, accuracies, constraints)
+- dpg_constraints/<dataset>_dpg_constraints.json: DPG-learned constraints (min/max bounds) per dataset as JSON
+- dpg_constraints/<dataset>_dpg_constraints.csv: DPG-learned constraints (min/max bounds) per dataset as CSV
 
 Usage:
     python scripts/export_comparison_results.py                    # Full export (fetches from WandB)
@@ -2130,6 +2132,111 @@ def get_dpg_constraints_formatted(dataset_name):
         return "None"
 
 
+def export_dpg_constraints(comparison_df):
+    """Export DPG constraints for all datasets as JSON and CSV files.
+    
+    Exports the DPG-learned constraints (min/max bounds per feature per class)
+    to individual files per dataset.
+    """
+    print("\n" + "="*80)
+    print("EXPORTING DPG CONSTRAINTS")
+    print("="*80)
+    
+    datasets = sorted(comparison_df['dataset'].unique()) if len(comparison_df) > 0 else []
+    
+    if len(datasets) == 0:
+        print("⚠ No datasets found, skipping DPG constraints export")
+        return
+    
+    # Create constraints subdirectory
+    constraints_dir = os.path.join(OUTPUT_DIR, 'dpg_constraints')
+    os.makedirs(constraints_dir, exist_ok=True)
+    
+    constraints_found = 0
+    constraints_not_found = 0
+    
+    for dataset in datasets:
+        # Look for dpg_constraints_normalized.json in outputs/{dataset}_dpg/{sample_id}/
+        outputs_base = os.path.join(REPO_ROOT, 'outputs')
+        dpg_dir = os.path.join(outputs_base, f"{dataset}_dpg")
+        
+        if not os.path.exists(dpg_dir):
+            print(f"  ✗ {dataset}: No DPG output directory found")
+            constraints_not_found += 1
+            continue
+        
+        # Find the most recent sample directory (highest number)
+        sample_dirs = []
+        for name in os.listdir(dpg_dir):
+            sample_path = os.path.join(dpg_dir, name)
+            if os.path.isdir(sample_path):
+                try:
+                    sample_dirs.append((int(name), sample_path))
+                except ValueError:
+                    continue
+        
+        if not sample_dirs:
+            print(f"  ✗ {dataset}: No sample directories found")
+            constraints_not_found += 1
+            continue
+        
+        # Get most recent (highest sample ID)
+        sample_dirs.sort(key=lambda x: x[0], reverse=True)
+        sample_id, sample_dir = sample_dirs[0]
+        
+        # Load constraints from JSON
+        constraints_path = os.path.join(sample_dir, 'dpg_constraints_normalized.json')
+        if not os.path.exists(constraints_path):
+            print(f"  ✗ {dataset}: No constraints file found")
+            constraints_not_found += 1
+            continue
+        
+        try:
+            with open(constraints_path, 'r') as f:
+                constraints = json.load(f)
+            
+            if not constraints:
+                print(f"  ✗ {dataset}: Empty constraints")
+                constraints_not_found += 1
+                continue
+            
+            # Export as JSON
+            json_output_path = os.path.join(constraints_dir, f"{dataset}_dpg_constraints.json")
+            with open(json_output_path, 'w') as f:
+                json.dump(constraints, f, indent=2)
+            
+            # Export as CSV (flattened format)
+            csv_output_path = os.path.join(constraints_dir, f"{dataset}_dpg_constraints.csv")
+            csv_rows = []
+            
+            for class_name, class_constraints in constraints.items():
+                for feature, bounds in class_constraints.items():
+                    csv_rows.append({
+                        'class': class_name,
+                        'feature': feature,
+                        'min': bounds.get('min'),
+                        'max': bounds.get('max')
+                    })
+            
+            if csv_rows:
+                df_constraints = pd.DataFrame(csv_rows)
+                df_constraints.to_csv(csv_output_path, index=False)
+            
+            num_features = len(set(row['feature'] for row in csv_rows))
+            print(f"  ✓ {dataset}: Exported {num_features} constrained features from sample {sample_id}")
+            constraints_found += 1
+            
+        except Exception as e:
+            print(f"  ✗ {dataset}: Error exporting constraints: {e}")
+            constraints_not_found += 1
+            continue
+    
+    print(f"\n✓ Exported DPG constraints for {constraints_found} datasets")
+    print(f"  Directory: {constraints_dir}")
+    if constraints_not_found > 0:
+        print(f"  ⚠ {constraints_not_found} datasets had no constraints available")
+
+
 def export_model_information(raw_df, comparison_df):
     """Export Random Forest model information for each dataset.
     
@@ -2414,6 +2521,9 @@ def main():
     
     # Export Random Forest model information
     export_model_information(raw_df, comparison_df)
+    
+    # Export DPG constraints for all datasets
+    export_dpg_constraints(comparison_df)
     
     # Run statistical analysis (Wilcoxon tests, LaTeX tables, etc.)
     print("\n" + "="*80)
