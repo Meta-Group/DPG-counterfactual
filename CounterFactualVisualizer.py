@@ -1579,7 +1579,8 @@ def heatmap_techniques(sample, class_sample, cf_list_1, cf_list_2, technique_nam
         vmin = -1
 
     # Create the heatmap using diff_matrix for colors, full_df values for annotations
-    fig = plt.figure(figsize=(12, max(6, 2 + len(cf_list_1) + len(cf_list_2))))
+    fig = plt.figure(figsize=(12, max(6, 2 + 0.2 * len(cf_list_1) + len(cf_list_2))))
+
     ax = sns.heatmap(
         diff_matrix,  # Use diff_matrix for coloring (first row = 0 = neutral)
         annot=full_df.values,  # Show actual values as annotations
