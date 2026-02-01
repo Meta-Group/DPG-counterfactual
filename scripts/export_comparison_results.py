@@ -1108,6 +1108,193 @@ def export_heatmap_techniques(raw_df, dataset, dataset_viz_dir):
         return False
 
 
+def export_constraints_with_first_cfs(raw_df, dataset, dataset_viz_dir):
+    """Export constraints overview combined with first CF from each method.
+    
+    Overlays the first DPG and DiCE counterfactuals on the constraints overview plot
+    using the same markers and colors as the PCA comparison visualization.
+    """
+    from DPG.dpg import plot_dpg_constraints_overview
+    
+    # Get sample and counterfactuals from cache or local data
+    if args.local_only:
+        # Try to load from WandB data cache first
+        if dataset in _WANDB_DATA_CACHE:
+            cached_data = _WANDB_DATA_CACHE[dataset]
+            sample = cached_data['sample']
+            dpg_cfs = cached_data['dpg_cfs']
+            dice_cfs = cached_data['dice_cfs']
+            restrictions = cached_data.get('restrictions')
+            constraints = cached_data.get('constraints')
+        else:
+            # Fallback to local pkl files
+            try:
+                dpg_data = _load_local_viz_data(dataset, 'dpg')
+                dice_data = _load_local_viz_data(dataset, 'dice')
+                
+                if not dpg_data or not dice_data:
+                    print(f"  ⚠ {dataset}: Constraints+CFs in local-only mode requires cached data")
+                    return False
+                
+                sample = dpg_data.get('original_sample')
+                restrictions = dpg_data.get('restrictions')
+                constraints = dpg_data.get('constraints')
+                
+                dpg_cfs = []
+                for viz in dpg_data.get('visualizations', []):
+                    for cf_data in viz.get('counterfactuals', []):
+                        cf = cf_data.get('counterfactual')
+                        if cf:
+                            dpg_cfs.append(cf)
+                
+                dice_cfs = []
+                for viz in dice_data.get('visualizations', []):
+                    for cf_data in viz.get('counterfactuals', []):
+                        cf = cf_data.get('counterfactual')
+                        if cf:
+                            dice_cfs.append(cf)
+            except Exception as e:
+                print(f"  ⚠ {dataset}: Error loading local data: {e}")
+                return False
+    else:
+        # WandB mode - check cache first
+        if dataset in _WANDB_DATA_CACHE:
+            cached_data = _WANDB_DATA_CACHE[dataset]
+            sample = cached_data['sample']
+            dpg_cfs = cached_data['dpg_cfs']
+            dice_cfs = cached_data['dice_cfs']
+            restrictions = cached_data.get('restrictions')
+            constraints = cached_data.get('constraints')
+        else:
+            print(f"  ⚠ {dataset}: Data not in cache, run heatmap generation first")
+            return False
+    
+    if not sample or not dpg_cfs or not dice_cfs or not constraints:
+        print(f"  ⚠ {dataset}: Missing required data for constraints+CFs visualization")
+        print(f"     Have: sample={bool(sample)}, dpg_cfs={len(dpg_cfs) if dpg_cfs else 0}, dice_cfs={len(dice_cfs) if dice_cfs else 0}, constraints={bool(constraints)}")
+        return False
+    
+    try:
+        # Load dataset to get feature names and model for predictions
+        dataset_model_info = load_dataset_and_model(dataset)
+        if dataset_model_info is None:
+            print(f"  ⚠ {dataset}: Could not load dataset/model")
+            return False
+        
+        model = dataset_model_info['model']
+        feature_names = dataset_model_info['feature_names']
+        
+        # Get original and target classes
+        sample_df = pd.DataFrame([sample])
+        original_class = model.predict(sample_df)[0]
+        
+        # Predict classes for first CFs
+        first_dpg_cf = dpg_cfs[0]
+        first_dice_cf = dice_cfs[0]
+        dpg_cf_df = pd.DataFrame([first_dpg_cf])
+        dice_cf_df = pd.DataFrame([first_dice_cf])
+        dpg_cf_class = model.predict(dpg_cf_df)[0]
+        dice_cf_class = model.predict(dice_cf_df)[0]
+        
+        # Determine target class (use DPG CF class as target)
+        target_class = dpg_cf_class
+        
+        # Define class colors (matching PCA comparison)
+        class_colors_list = ['purple', 'green', 'orange']
+        
+        # Create constraints overview plot
+        fig = plot_dpg_constraints_overview(
+            normalized_constraints=constraints,
+            feature_names=feature_names,
+            class_colors_list=class_colors_list,
+            original_sample=sample,
+            original_class=original_class,
+            target_class=target_class,
+            title=f"{dataset}: Constraints with First Counterfactuals"
+        )
+        
+        if fig is None:
+            print(f"  ⚠ {dataset}: Could not create constraints overview")
+            return False
+        
+        # Get the axis from the figure
+        ax = fig.axes[0]
+        
+        # Get feature positions (y-axis) from the plot
+        # The plot shows features in order, we need to map feature names to y positions
+        features_with_constraints = []
+        for feat in feature_names:
+            has_constraint = any(
+                feat in constraints.get(cname, {})
+                for cname in constraints.keys()
+            )
+            if has_constraint:
+                features_with_constraints.append(feat)
+        
+        n_features = len(features_with_constraints)
+        y_positions = np.arange(n_features)
+        
+        # Create mapping from feature name to y position
+        feature_to_y = {feat: y_positions[i] for i, feat in enumerate(features_with_constraints)}
+        
+        # Overlay markers matching PCA comparison style
+        # DPG: triangle down (v), orange edge
+        # DiCE: square (s), blue edge
+        dpg_color = "#FC8600"  # Orange (matching PCA)
+        dice_color = "#006DAC"  # Blue (matching PCA)
+        marker_size = 150
+        linewidth = 2.5
+        
+        # Plot first DPG CF values
+        for feat in features_with_constraints:
+            if feat in first_dpg_cf and feat in feature_to_y:
+                y = feature_to_y[feat]
+                x = first_dpg_cf[feat]
+                ax.scatter(x, y, marker='v', s=marker_size, 
+                          edgecolor=dpg_color, facecolor='none',
+                          linewidths=linewidth, zorder=10)
+        
+        # Plot first DiCE CF values
+        for feat in features_with_constraints:
+            if feat in first_dice_cf and feat in feature_to_y:
+                y = feature_to_y[feat]
+                x = first_dice_cf[feat]
+                ax.scatter(x, y, marker='s', s=marker_size,
+                          edgecolor=dice_color, facecolor='none',
+                          linewidths=linewidth, zorder=10)
+        
+        # Add legend
+        from matplotlib.lines import Line2D
+        legend_elements = [
+            Line2D([0], [0], marker='o', color='w',
+                   markerfacecolor='black', markersize=12,
+                   markeredgecolor='black', markeredgewidth=linewidth,
+                   label='Original Sample'),
+            Line2D([0], [0], marker='v', color='w', 
+                   markerfacecolor='none', markersize=12,
+                   markeredgecolor=dpg_color, markeredgewidth=linewidth,
+                   label='DPG CF #1'),
+            Line2D([0], [0], marker='s', color='w',
+                   markerfacecolor='none', markersize=12,
+                   markeredgecolor=dice_color, markeredgewidth=linewidth,
+                   label='DiCE CF #1'),
+        ]
+        ax.legend(handles=legend_elements, loc='best', fontsize=11, framealpha=0.9)
+        
+        # Save figure
+        output_path = os.path.join(dataset_viz_dir, 'constraints_with_first_cfs.png')
+        fig.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        
+        print(f"  ✓ {dataset}: Exported constraints overview with first CFs overlaid")
+        return True
+        
+    except Exception as e:
+        print(f"  ⚠ {dataset}: Error creating constraints+CFs visualization: {e}")
+        traceback.print_exc()
+        return False
+
+
 def export_sample_cf_comparison(raw_df, dataset, dataset_viz_dir):
     """Export individual counterfactual comparison plots for each CF."""
     
@@ -1635,6 +1822,10 @@ def export_dataset_visualizations(comparison_df, raw_df):
         
         # Export heatmap comparing DPG vs DiCE counterfactuals
         export_heatmap_techniques(raw_df, dataset, dataset_viz_dir)
+        
+        # Export constraints overview with first CFs (only for DATASET_FOR_CF_COMPARISON)
+        if dataset == DATASET_FOR_CF_COMPARISON:
+            export_constraints_with_first_cfs(raw_df, dataset, dataset_viz_dir)
         
         # Export PCA comparison (loads dataset and model automatically)
         export_pca_comparison(raw_df, dataset, dataset_viz_dir)
