@@ -1282,13 +1282,35 @@ def plot_sample_and_counterfactual_comparison_combined(model, sample, sample_df,
     ax.set_xlabel('Feature Value', fontsize=12, fontweight='bold')
     ax.set_title(f'Feature Comparison: Original (Class {predicted_class}) vs {method_names[0]} CF (Class {dpg_cf_class}) vs {method_names[1]} CF (Class {dice_cf_class})', 
                  fontsize=13, fontweight='bold')
-    ax.legend(loc='lower right', fontsize=10)
+    
+    # Create custom legend including constraint indicators
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Rectangle
+    
+    legend_elements = [
+        Rectangle((0, 0), 1, 1, fc=original_color, ec='black', alpha=0.7, linewidth=1.5, label='Original Sample'),
+        Rectangle((0, 0), 1, 1, fc=dpg_color, ec='black', alpha=0.7, linewidth=1.5, label=f'{method_names[0]} CF'),
+        Rectangle((0, 0), 1, 1, fc=dice_color, ec='black', alpha=0.7, linewidth=1.5, label=f'{method_names[1]} CF'),
+    ]
+    
+    # Add constraint legend entries for each class if constraints are present
+    if constraints is not None:
+        # Get unique classes involved
+        unique_classes = sorted(set([predicted_class, dpg_cf_class, dice_cf_class]))
+        for class_idx in unique_classes:
+            class_name = f'Class {class_idx}'
+            if class_name in constraints:
+                constraint_color = class_colors_list[class_idx]
+                legend_elements.append(Line2D([0], [0], color=constraint_color, linewidth=6, 
+                                             alpha=0.8, label=f'Class {class_idx} Constraints'))
+    
+    ax.legend(handles=legend_elements, loc='lower right', fontsize=10, framealpha=0.95)
     ax.grid(axis='x', alpha=0.3, linestyle='--')
     ax.invert_yaxis()
     
     # Set main title with generation number if provided
     if generation is not None:
-        fig.suptitle(f'Counterfactual Comparison - CF #{generation}', fontsize=16, fontweight='bold', y=0.98)
+        fig.suptitle(f'Counterfactual Comparison', fontsize=16, fontweight='bold', y=0.98)
     else:
         fig.suptitle(f'Counterfactual Comparison - All Features', fontsize=16, fontweight='bold', y=0.98)
     
@@ -1308,7 +1330,7 @@ def plot_sample_and_counterfactual_heatmap(sample, class_sample, counterfactual,
         is_valid (bool): Whether the counterfactual is valid (reached target class). Default True.
     """
     # Create DataFrame from the samples
-    sample_df = pd.DataFrame([sample], index=['Original'])
+    sample_df = pd.DataFrame([sample], index=['Original Sample'])
     cf_df = pd.DataFrame([counterfactual], index=['Counterfactual'])
 
     # Calculate differences
