@@ -2015,6 +2015,121 @@ def count_actionability_constraints(dataset_name):
         return None
 
 
+def get_dpg_constraints_formatted(dataset_name):
+    """Get DPG constraints formatted for LaTeX table display.
+    
+    Extracts the DPG-learned constraints (min/max bounds per feature per class)
+    from the dpg_constraints_normalized.json file and formats them compactly.
+    
+    Args:
+        dataset_name: Name of the dataset
+        
+    Returns:
+        Formatted string for LaTeX table or "None" if no constraints
+    """
+    try:
+        # Look for dpg_constraints_normalized.json in outputs/{dataset}_dpg/{sample_id}/
+        outputs_base = os.path.join(REPO_ROOT, 'outputs')
+        dpg_dir = os.path.join(outputs_base, f"{dataset_name}_dpg")
+        
+        if not os.path.exists(dpg_dir):
+            return "None"
+        
+        # Find the most recent sample directory (highest number)
+        sample_dirs = []
+        for name in os.listdir(dpg_dir):
+            sample_path = os.path.join(dpg_dir, name)
+            if os.path.isdir(sample_path):
+                try:
+                    sample_dirs.append((int(name), sample_path))
+                except ValueError:
+                    continue
+        
+        if not sample_dirs:
+            return "None"
+        
+        # Get most recent (highest sample ID)
+        sample_dirs.sort(key=lambda x: x[0], reverse=True)
+        _, sample_dir = sample_dirs[0]
+        
+        # Load constraints from JSON
+        constraints_path = os.path.join(sample_dir, 'dpg_constraints_normalized.json')
+        if not os.path.exists(constraints_path):
+            return "None"
+        
+        with open(constraints_path, 'r') as f:
+            constraints = json.load(f)
+        
+        if not constraints:
+            return "None"
+        
+        # Extract features that have min/max bounds across all classes
+        # Format: "Feature: [min, max]" for features with non-trivial bounds
+        features_with_bounds = {}
+        all_features = set()
+        
+        for class_name, class_constraints in constraints.items():
+            for feature, bounds in class_constraints.items():
+                all_features.add(feature)
+                if feature not in features_with_bounds:
+                    features_with_bounds[feature] = {
+                        'min': [],
+                        'max': []
+                    }
+                
+                min_val = bounds.get('min')
+                max_val = bounds.get('max')
+                
+                if min_val is not None:
+                    features_with_bounds[feature]['min'].append(min_val)
+                if max_val is not None:
+                    features_with_bounds[feature]['max'].append(max_val)
+        
+        # Format constraints compactly - only show features with bounds
+        constraints_list = []
+        for feature in sorted(all_features):
+            bounds = features_with_bounds[feature]
+            
+            # Skip features with no bounds
+            if not bounds['min'] and not bounds['max']:
+                continue
+            
+            # Clean feature name for LaTeX
+            feature_clean = feature.replace('_', '\\_')
+            
+            # Simplify - just count how many features have bounds
+            constraints_list.append(feature_clean)
+        
+        if not constraints_list:
+            return "None"
+        
+        # For compact display, just show count of constrained features
+        num_constrained = len(constraints_list)
+        
+        # If few features, list them; otherwise just show count
+        if num_constrained <= 4:
+            # List features with line breaks for readability
+            if num_constrained <= 2:
+                return ", ".join(constraints_list)
+            else:
+                result = []
+                for i, feature in enumerate(constraints_list):
+                    result.append(feature)
+                    if (i + 1) % 2 == 0 and i < num_constrained - 1:
+                        result.append("\\newline ")
+                    elif i < num_constrained - 1:
+                        result.append(", ")
+                return "".join(result)
+        else:
+            # Show count + first few features
+            first_few = ", ".join(constraints_list[:3])
+            return f"{num_constrained} features\\newline ({first_few}, ...)"
+        
+    except Exception as e:
+        print(f"    Warning: Error loading DPG constraints for {dataset_name}: {e}")
+        return "None"
+
+
 def export_model_information(raw_df, comparison_df):
     """Export Random Forest model information for each dataset.
     
@@ -2091,13 +2206,13 @@ def export_model_information(raw_df, comparison_df):
         f.write("\\begin{table}[ht]\n")
         f.write("  \\centering\n")
         f.write(f"  \\caption{{Overview of the {len(model_info_data)} benchmark datasets used in the experimental evaluation, ")
-        f.write("including the number of features, samples, classes, train/test split, accuracies, and actionability restrictions ")
-        f.write("specified for each dataset.}\n")
+        f.write("including the number of features, samples, classes, train/test split, accuracies, actionability restrictions, ")
+        f.write("and DPG constraints (ND=Non-Decreasing, NI=Non-Increasing, NC=No Change).}\n")
         f.write("  \\label{tab:datasets}\n")
         f.write("  \\small\n")
-        f.write("  \\begin{tabular}{lrrrlrrp{2.5cm}}\n")
+        f.write("  \\begin{tabular}{lrrrlrrp{2cm}p{3.5cm}}\n")
         f.write("    \\toprule\n")
-        f.write("    Dataset & \\# Features & \\# Samples & \\# Classes & Train/Test & Train Acc. & Test Acc. & Actionability Restrictions \\\\\n")
+        f.write("    Dataset & \\# Features & \\# Samples & \\# Classes & Train/Test & Train Acc. & Test Acc. & Actionability Restrictions & DPG Constraints \\\\\n")
         f.write("    \\midrule\n")
         
         # Sort datasets alphabetically
@@ -2120,6 +2235,9 @@ def export_model_information(raw_df, comparison_df):
             num_restrictions = count_actionability_constraints(dataset)
             restrictions_str = str(num_restrictions) if num_restrictions is not None and num_restrictions > 0 else "None"
             
+            # Get formatted DPG constraints
+            dpg_constraints_str = get_dpg_constraints_formatted(dataset)
+            
             # Format numbers with thousands separator
             total_samples_str = f"{total_samples:,}"
             
@@ -2127,7 +2245,7 @@ def export_model_information(raw_df, comparison_df):
             dataset_latex = dataset.replace('_', '\\_')
             
             f.write(f"    {dataset_latex} & {num_features} & {total_samples_str} & {num_classes} & "
-                   f"{train_test_split} & {train_acc} & {test_acc} & {restrictions_str} \\\\\n")
+                   f"{train_test_split} & {train_acc} & {test_acc} & {restrictions_str} & {dpg_constraints_str} \\\\\n")
         
         f.write("    \\bottomrule\n")
         f.write("  \\end{tabular}\n")
