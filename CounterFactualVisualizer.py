@@ -894,21 +894,11 @@ def plot_sample_and_counterfactual_comparison_simple(model, sample, sample_df, c
     l2_distance = np.linalg.norm(changes)
     l1_distance = np.sum(np.abs(changes))
     
-    # Filter out features with zero change
-    # Only filter if there are more than 6 features
-    if len(feature_list) <= 6:
-        # Keep all features when 6 or fewer
-        feature_list_filtered = feature_list
-        original_values_filtered = original_values
-        counterfactual_values_filtered = counterfactual_values
-        changes_filtered = changes
-    else:
-        # Filter out unchanged features when more than 6
-        non_zero_mask = np.abs(changes) > 0.001
-        feature_list_filtered = [f for f, mask in zip(feature_list, non_zero_mask) if mask]
-        original_values_filtered = original_values[non_zero_mask]
-        counterfactual_values_filtered = counterfactual_values[non_zero_mask]
-        changes_filtered = changes[non_zero_mask]
+    # Show all features (no filtering based on value changes)
+    feature_list_filtered = feature_list
+    original_values_filtered = original_values
+    counterfactual_values_filtered = counterfactual_values
+    changes_filtered = changes
     
     # Calculate figure height proportionally based on number of features
     num_features = len(feature_list_filtered)
