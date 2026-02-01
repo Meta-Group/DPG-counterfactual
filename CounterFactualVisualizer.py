@@ -1170,24 +1170,6 @@ def plot_sample_and_counterfactual_comparison_combined(model, sample, sample_df,
                         label=f'{method_names[1]} CF', color=dice_color, 
                         alpha=0.7, edgecolor='black', linewidth=1.5)
     
-    # Add arrows and change values for DPG
-    for i, (orig, cf_val, change) in enumerate(zip(original_values, dpg_values, dpg_changes)):
-        if abs(change) > 0.01:  # Only show arrow if change is significant
-            arrow_color = 'darkgreen' if change < 0 else 'darkred'
-            # Arrow from original to DPG CF
-            ax.annotate('', xy=(cf_val, i), xytext=(orig, i - width),
-                        arrowprops=dict(arrowstyle='->', color=arrow_color, 
-                                      lw=1.5, alpha=0.5))
-    
-    # Add arrows and change values for DiCE
-    for i, (orig, cf_val, change) in enumerate(zip(original_values, dice_values, dice_changes)):
-        if abs(change) > 0.01:  # Only show arrow if change is significant
-            arrow_color = 'darkgreen' if change < 0 else 'darkred'
-            # Arrow from original to DiCE CF
-            ax.annotate('', xy=(cf_val, i + width), xytext=(orig, i - width),
-                        arrowprops=dict(arrowstyle='->', color=arrow_color, 
-                                      lw=1.5, alpha=0.5))
-    
     # Add value labels on bars
     for bars in [bars_orig, bars_dpg, bars_dice]:
         for bar in bars:
