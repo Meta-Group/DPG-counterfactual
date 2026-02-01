@@ -1560,6 +1560,13 @@ def heatmap_techniques(sample, class_sample, cf_list_1, cf_list_2, technique_nam
     # Combine all rows
     full_df = pd.concat(all_rows)
 
+    # Sort features alphabetically
+    full_df = full_df[sorted(full_df.columns)]
+
+    # Reorder restrictions to match sorted features
+    if restrictions:
+        restrictions = {feat: restrictions[feat] for feat in sorted(full_df.columns) if feat in restrictions}
+
     # Calculate differences from original for color highlighting
     # First row (original) = 0 for neutral color, other rows = delta from original
     diff_matrix = full_df.copy()
@@ -1602,14 +1609,14 @@ def heatmap_techniques(sample, class_sample, cf_list_1, cf_list_2, technique_nam
             'non_decreasing': '⬆️'
         }
         for i, (feat, restr) in enumerate(restrictions.items()):
-            # print(f"DEBUG: Feature '{feat}' has restriction '{restr}'")
+            print(f"DEBUG: Feature '{feat}' has restriction '{restr}'")
             if restr in symbol_map:
                 ax.text(i + 0.5, len(full_df) + 0.5, symbol_map[restr],
                        ha='center', va='top', color='black',
                        fontweight='bold', fontsize=14, transform=ax.transData)
 
     plt.title(f'Technique Comparison - Original (Class {class_sample}) vs Counterfactuals', fontsize=14, fontweight='bold')
-    plt.xticks(rotation=30, ha="right")
+    plt.xticks(rotation=35, ha="right")
     plt.yticks(rotation=0, va="center")
     plt.tight_layout()
     plt.close(fig)
