@@ -2201,22 +2201,38 @@ def plot_ridge_comparison(
     for ax in g.axes.flat:
         ax.axhline(y=0, color="black", linewidth=1, clip_on=False)
     
+    # Compute KDE for each feature to get y-values for markers
+    from scipy.stats import gaussian_kde
+    feature_kdes = {}
+    for feat in feature_names:
+        feat_values = df[df['feature'] == feat]['value'].values
+        if len(feat_values) > 1 and np.std(feat_values) > 0:
+            kde = gaussian_kde(feat_values, bw_method=0.5)  # Match bw_adjust=0.5
+            feature_kdes[feat] = kde
+        else:
+            feature_kdes[feat] = None
+    
     # Apply sample marker and counterfactual markers to each facet (using normalized values)
     for ax, feat in zip(g.axes.flat, feature_names):
+        kde = feature_kdes.get(feat)
+        
         # Original sample marker
         sample_val = normalize(sample[feat], feat)
+        sample_y = kde(sample_val)[0] if kde else 0
         ax.axvline(x=sample_val, color=sample_color, linewidth=2.5, linestyle='--', alpha=0.8, zorder=10)
-        ax.scatter([sample_val], [0], marker='o', s=100, color=sample_color, edgecolor='white', linewidth=1.5, zorder=15, clip_on=False)
+        ax.scatter([sample_val], [sample_y], marker='o', s=100, color=sample_color, edgecolor='white', linewidth=1.5, zorder=15, clip_on=False)
         
         # Plot counterfactuals from method 1 (DPG) - triangles
         for cf in cf_list_1:
             cf_val = normalize(cf[feat], feat)
-            ax.scatter([cf_val], [0], marker='v', s=80, color=method_1_color, edgecolor='white', linewidth=1, zorder=12, clip_on=False, alpha=0.8)
+            cf_y = kde(cf_val)[0] if kde else 0
+            ax.scatter([cf_val], [cf_y], marker='v', s=80, color=method_1_color, edgecolor='white', linewidth=1, zorder=12, clip_on=False, alpha=0.8)
         
         # Plot counterfactuals from method 2 (DiCE) - squares
         for cf in cf_list_2:
             cf_val = normalize(cf[feat], feat)
-            ax.scatter([cf_val], [0], marker='s', s=60, color=method_2_color, edgecolor='white', linewidth=1, zorder=11, clip_on=False, alpha=0.8)
+            cf_y = kde(cf_val)[0] if kde else 0
+            ax.scatter([cf_val], [cf_y], marker='s', s=60, color=method_2_color, edgecolor='white', linewidth=1, zorder=11, clip_on=False, alpha=0.8)
         
         ax.set_xlim(-0.1, 1.1)  # Set consistent x-axis range with small margin
     
