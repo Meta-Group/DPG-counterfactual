@@ -2067,6 +2067,159 @@ def heatmap_techniques(sample, class_sample, cf_list_1, cf_list_2, technique_nam
     plt.close(fig)
     return fig
 
+def plot_ridge_comparison(
+    sample, 
+    cf_list_1, 
+    cf_list_2, 
+    technique_names=('DPG', 'DiCE'),
+    method_1_color="#FC8600", 
+    method_2_color="#006DAC",
+    sample_color="#333333",
+    figsize=None
+):
+    """
+    Plot a ridge plot (joy plot) comparing the original sample with counterfactuals
+    from two different techniques. Each row represents a different feature.
+    
+    Args:
+        sample (dict): Original sample values.
+        cf_list_1 (list): List of counterfactual dictionaries from technique 1 (e.g., DPG).
+        cf_list_2 (list): List of counterfactual dictionaries from technique 2 (e.g., DiCE).
+        technique_names (tuple): Names of the two techniques (default: ('DPG', 'DiCE')).
+        method_1_color (str): Color for technique 1 (default: orange).
+        method_2_color (str): Color for technique 2 (default: blue).
+        sample_color (str): Color for the original sample marker (default: dark gray).
+        figsize (tuple, optional): Figure size. If None, calculated based on number of features.
+    
+    Returns:
+        matplotlib.figure.Figure: The generated ridge plot figure.
+    """
+    # Get feature names sorted alphabetically
+    feature_names = sorted(sample.keys())
+    n_features = len(feature_names)
+    
+    # Calculate figure size if not provided
+    if figsize is None:
+        figsize = (10, max(6, n_features * 0.8))
+    
+    # Prepare data for seaborn FacetGrid
+    data_rows = []
+    
+    # Add original sample
+    for feat in feature_names:
+        data_rows.append({
+            'feature': feat,
+            'value': sample[feat],
+            'type': 'Original',
+            'technique': 'Original'
+        })
+    
+    # Add counterfactuals from technique 1
+    for i, cf in enumerate(cf_list_1):
+        for feat in feature_names:
+            data_rows.append({
+                'feature': feat,
+                'value': cf[feat],
+                'type': 'CF',
+                'technique': technique_names[0]
+            })
+    
+    # Add counterfactuals from technique 2
+    for i, cf in enumerate(cf_list_2):
+        for feat in feature_names:
+            data_rows.append({
+                'feature': feat,
+                'value': cf[feat],
+                'type': 'CF',
+                'technique': technique_names[1]
+            })
+    
+    df = pd.DataFrame(data_rows)
+    
+    # Set up the plot style
+    sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
+    
+    # Create color palette
+    palette = {
+        technique_names[0]: method_1_color,
+        technique_names[1]: method_2_color
+    }
+    
+    # Initialize the FacetGrid with features as rows
+    g = sns.FacetGrid(
+        df[df['type'] == 'CF'],  # Only CFs for KDE
+        row="feature", 
+        hue="technique", 
+        aspect=12, 
+        height=0.7, 
+        palette=palette,
+        row_order=feature_names
+    )
+    
+    # Draw the densities with filled KDE 
+    g.map(sns.kdeplot, "value", bw_adjust=0.5, clip_on=False, fill=True, alpha=0.6, linewidth=1.5)
+    g.map(sns.kdeplot, "value", bw_adjust=0.5, clip_on=False, color="w", lw=2)
+    
+    # Add horizontal reference line at y=0
+    def add_baseline(data, **kwargs):
+        plt.axhline(y=0, color="black", linewidth=1, clip_on=False)
+    g.map(add_baseline)
+    
+    # Add original sample marker
+    def add_sample_marker(data, feature=None, **kwargs):
+        ax = plt.gca()
+        sample_val = sample[feature]
+        # Draw vertical line at sample value
+        ax.axvline(x=sample_val, color=sample_color, linewidth=2.5, linestyle='--', alpha=0.8, zorder=10)
+        # Add marker
+        ax.scatter([sample_val], [0], marker='o', s=100, color=sample_color, edgecolor='white', linewidth=1.5, zorder=15)
+    
+    # Apply sample marker to each facet
+    for ax, feat in zip(g.axes.flat, feature_names):
+        sample_val = sample[feat]
+        ax.axvline(x=sample_val, color=sample_color, linewidth=2.5, linestyle='--', alpha=0.8, zorder=10)
+        ax.scatter([sample_val], [0], marker='o', s=100, color=sample_color, edgecolor='white', linewidth=1.5, zorder=15, clip_on=False)
+    
+    # Overlap the plots vertically for the ridge effect
+    g.figure.subplots_adjust(hspace=-0.25)
+    
+    # Remove axes details
+    g.set_titles("")
+    g.set(yticks=[], ylabel="")
+    g.despine(bottom=True, left=True)
+    
+    # Add feature names on the left
+    for ax, feat in zip(g.axes.flat, feature_names):
+        # Clean feature name for display
+        clean_name = feat.replace(' (cm)', '').replace('_', ' ')
+        ax.text(-0.02, 0.2, clean_name, fontweight="bold", color="black",
+                ha="right", va="center", transform=ax.transAxes, fontsize=10)
+    
+    # Add legend
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color=method_1_color, lw=4, alpha=0.6, label=f'{technique_names[0]} CFs'),
+        Line2D([0], [0], color=method_2_color, lw=4, alpha=0.6, label=f'{technique_names[1]} CFs'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor=sample_color, markersize=10, 
+               markeredgecolor='white', markeredgewidth=1.5, linestyle='--', 
+               linewidth=2, label='Original Sample'),
+    ]
+    g.figure.legend(handles=legend_elements, loc='upper right', fontsize=10, framealpha=0.95,
+                   bbox_to_anchor=(0.98, 0.98))
+    
+    # Add title
+    g.figure.suptitle(f'Feature Distribution: {technique_names[0]} vs {technique_names[1]} Counterfactuals', 
+                      fontsize=14, fontweight='bold', y=1.02)
+    
+    fig = g.figure
+    plt.close(fig)
+    
+    # Reset seaborn style to avoid affecting other plots
+    sns.reset_defaults()
+    
+    return fig
+
+
 # Example usage:
 # Assuming model, X, y, sample, counterfactuals_df are appropriately defined
 #plot_pca_with_counterfactuals(model, pd.DataFrame(X), y, sample, counterfactuals_df)

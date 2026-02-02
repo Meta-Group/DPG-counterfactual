@@ -85,7 +85,8 @@ from CounterFactualVisualizer import (
     plot_pca_with_counterfactuals_comparison,
     plot_sample_and_counterfactual_comparison,
     plot_sample_and_counterfactual_comparison_simple,
-    plot_sample_and_counterfactual_comparison_combined
+    plot_sample_and_counterfactual_comparison_combined,
+    plot_ridge_comparison
 )
 from utils.dataset_loader import load_dataset
 from utils.config_manager import DictConfig
@@ -1772,6 +1773,105 @@ def export_pca_comparison(raw_df, dataset, dataset_viz_dir):
         return False
 
 
+def export_ridge_comparison(raw_df, dataset, dataset_viz_dir):
+    """Export ridge plot comparing feature distributions from DPG and DiCE counterfactuals.
+    
+    Creates a ridge plot (joy plot) where each row is a feature, showing the distribution
+    of values for counterfactuals from both DPG and DiCE methods, with the original sample
+    marked as a reference point.
+    
+    Args:
+        raw_df: DataFrame with run metadata
+        dataset: Name of the dataset
+        dataset_viz_dir: Output directory for visualizations
+    
+    Returns:
+        bool: True if export succeeded, False otherwise
+    """
+    # Handle local-only mode by loading from cache or disk
+    if args.local_only:
+        # Try to load from WandB data cache first
+        if dataset in _WANDB_DATA_CACHE:
+            cached_data = _WANDB_DATA_CACHE[dataset]
+            sample = cached_data['sample']
+            dpg_cfs = cached_data['dpg_cfs']
+            dice_cfs = cached_data['dice_cfs']
+        else:
+            # Fallback to local pkl files
+            try:
+                dpg_data = _load_local_viz_data(dataset, 'dpg')
+                dice_data = _load_local_viz_data(dataset, 'dice')
+                
+                if not dpg_data or not dice_data:
+                    print(f"  ⚠ {dataset}: Ridge plot in local-only mode requires cached data")
+                    return False
+                
+                sample = dpg_data.get('original_sample')
+                
+                dpg_cfs = []
+                for viz in dpg_data.get('visualizations', []):
+                    for cf_data in viz.get('counterfactuals', []):
+                        cf = cf_data.get('counterfactual')
+                        if cf:
+                            dpg_cfs.append(cf)
+                
+                dice_cfs = []
+                for viz in dice_data.get('visualizations', []):
+                    for cf_data in viz.get('counterfactuals', []):
+                        cf = cf_data.get('counterfactual')
+                        if cf:
+                            dice_cfs.append(cf)
+            except Exception as e:
+                print(f"  ⚠ {dataset}: Error loading local data for ridge plot: {e}")
+                return False
+    else:
+        # WandB mode - check cache first
+        if dataset in _WANDB_DATA_CACHE:
+            cached_data = _WANDB_DATA_CACHE[dataset]
+            sample = cached_data['sample']
+            dpg_cfs = cached_data['dpg_cfs']
+            dice_cfs = cached_data['dice_cfs']
+        else:
+            print(f"  ⚠ {dataset}: Data not in cache, run heatmap generation first")
+            return False
+    
+    if not sample or not dpg_cfs or not dice_cfs:
+        print(f"  ⚠ {dataset}: Missing required data for ridge plot")
+        return False
+    
+    # Need at least 2 counterfactuals from each method for meaningful KDE
+    if len(dpg_cfs) < 2 or len(dice_cfs) < 2:
+        print(f"  ⚠ {dataset}: Not enough counterfactuals for ridge plot (DPG: {len(dpg_cfs)}, DiCE: {len(dice_cfs)})")
+        return False
+    
+    try:
+        # Create ridge plot
+        fig = plot_ridge_comparison(
+            sample=sample,
+            cf_list_1=dpg_cfs,
+            cf_list_2=dice_cfs,
+            technique_names=('DPG', 'DiCE'),
+            method_1_color="#FC8600",  # Orange for DPG
+            method_2_color="#006DAC"   # Blue for DiCE
+        )
+        
+        if fig:
+            output_path = os.path.join(dataset_viz_dir, 'ridge_comparison.png')
+            fig.savefig(output_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            print(f"  ✓ {dataset}: Exported ridge comparison plot")
+            return True
+        else:
+            print(f"  ⚠ {dataset}: Could not create ridge plot")
+            return False
+            
+    except Exception as e:
+        print(f"  ⚠ {dataset}: Error exporting ridge plot: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def export_winner_heatmap_csv(comparison_df, metrics_to_include=None, filename_suffix=''):
     """Export winner heatmap data to CSV.
     
@@ -1908,6 +2008,10 @@ def export_dataset_visualizations(comparison_df, raw_df):
         # Export individual counterfactual comparisons for specified dataset
         if dataset == DATASET_FOR_CF_COMPARISON:
             export_sample_cf_comparison(raw_df, dataset, dataset_viz_dir)
+        
+        # Export ridge comparison plot for specified dataset
+        if dataset == DATASET_FOR_CF_COMPARISON:
+            export_ridge_comparison(raw_df, dataset, dataset_viz_dir)
         
         # Fetch WandB visualizations (comparison, pca_clean, heatmap)
         wandb_viz = fetch_wandb_visualizations(raw_df, dataset, dataset_viz_dir)
