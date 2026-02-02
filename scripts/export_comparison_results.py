@@ -1876,6 +1876,14 @@ def export_ridge_comparison(raw_df, dataset, dataset_viz_dir):
         print(f"  ⚠ {dataset}: Not enough counterfactuals for ridge plot (DPG: {len(dpg_cfs)}, DiCE: {len(dice_cfs)})")
         return False
     
+    # Load dataset for distribution
+    dataset_model_info = load_dataset_and_model(dataset)
+    if dataset_model_info is None:
+        print(f"  ⚠ {dataset}: Could not load dataset for ridge plot")
+        return False
+    
+    dataset_df = dataset_model_info['dataset']
+    
     try:
         # Create ridge plot
         fig = plot_ridge_comparison(
@@ -1884,7 +1892,8 @@ def export_ridge_comparison(raw_df, dataset, dataset_viz_dir):
             cf_list_2=dice_cfs,
             technique_names=('DPG', 'DiCE'),
             method_1_color="#FC8600",  # Orange for DPG
-            method_2_color="#006DAC"   # Blue for DiCE
+            method_2_color="#006DAC",  # Blue for DiCE
+            dataset_df=dataset_df
         )
         
         if fig:

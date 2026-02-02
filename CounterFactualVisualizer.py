@@ -2075,11 +2075,16 @@ def plot_ridge_comparison(
     method_1_color="#FC8600", 
     method_2_color="#006DAC",
     sample_color="#333333",
+    dataset_df=None,
+    dataset_color="#7B68EE",
     figsize=None
 ):
     """
     Plot a ridge plot (joy plot) comparing the original sample with counterfactuals
     from two different techniques. Each row represents a different feature.
+    
+    Currently plots the full dataset distribution. Counterfactual data is prepared
+    but not plotted yet (for future use).
     
     Args:
         sample (dict): Original sample values.
@@ -2089,6 +2094,8 @@ def plot_ridge_comparison(
         method_1_color (str): Color for technique 1 (default: orange).
         method_2_color (str): Color for technique 2 (default: blue).
         sample_color (str): Color for the original sample marker (default: dark gray).
+        dataset_df (pd.DataFrame, optional): Full dataset DataFrame to show distribution.
+        dataset_color (str): Color for the dataset distribution (default: purple).
         figsize (tuple, optional): Figure size. If None, calculated based on number of features.
     
     Returns:
@@ -2103,12 +2110,15 @@ def plot_ridge_comparison(
         figsize = (10, max(6, n_features * 0.8))
     
     # Compute min/max per feature for normalization (0-1 range)
+    # Include dataset values if provided
     feature_min = {}
     feature_max = {}
     for feat in feature_names:
         all_values = [sample[feat]]
         all_values.extend([cf[feat] for cf in cf_list_1])
         all_values.extend([cf[feat] for cf in cf_list_2])
+        if dataset_df is not None and feat in dataset_df.columns:
+            all_values.extend(dataset_df[feat].dropna().tolist())
         feature_min[feat] = min(all_values)
         feature_max[feat] = max(all_values)
     
@@ -2120,12 +2130,12 @@ def plot_ridge_comparison(
             return 0.5  # Constant feature -> center it
         return (value - min_val) / (max_val - min_val)
     
-    # Prepare data for seaborn FacetGrid (normalized)
-    data_rows = []
+    # Prepare counterfactual data (kept for future use, not plotted currently)
+    cf_data_rows = []
     
     # Add original sample (normalized)
     for feat in feature_names:
-        data_rows.append({
+        cf_data_rows.append({
             'feature': feat,
             'value': normalize(sample[feat], feat),
             'type': 'Original',
@@ -2135,7 +2145,7 @@ def plot_ridge_comparison(
     # Add counterfactuals from technique 1 (normalized)
     for i, cf in enumerate(cf_list_1):
         for feat in feature_names:
-            data_rows.append({
+            cf_data_rows.append({
                 'feature': feat,
                 'value': normalize(cf[feat], feat),
                 'type': 'CF',
@@ -2145,37 +2155,46 @@ def plot_ridge_comparison(
     # Add counterfactuals from technique 2 (normalized)
     for i, cf in enumerate(cf_list_2):
         for feat in feature_names:
-            data_rows.append({
+            cf_data_rows.append({
                 'feature': feat,
                 'value': normalize(cf[feat], feat),
                 'type': 'CF',
                 'technique': technique_names[1]
             })
     
-    df = pd.DataFrame(data_rows)
+    cf_df = pd.DataFrame(cf_data_rows)  # Kept for future use
+    
+    # Prepare dataset data for plotting
+    if dataset_df is None:
+        print("Warning: No dataset_df provided, cannot create ridge plot")
+        return None
+    
+    dataset_rows = []
+    for feat in feature_names:
+        if feat in dataset_df.columns:
+            for val in dataset_df[feat].dropna():
+                dataset_rows.append({
+                    'feature': feat,
+                    'value': normalize(val, feat),
+                    'type': 'Dataset'
+                })
+    
+    df = pd.DataFrame(dataset_rows)
     
     # Set up the plot style
     sns.set_theme(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
     
-    # Create color palette
-    palette = {
-        technique_names[0]: method_1_color,
-        technique_names[1]: method_2_color
-    }
-    
-    # Initialize the FacetGrid with features as rows
+    # Initialize the FacetGrid with features as rows (dataset distribution)
     g = sns.FacetGrid(
-        df[df['type'] == 'CF'],  # Only CFs for KDE
+        df,
         row="feature", 
-        hue="technique", 
         aspect=12, 
         height=0.7, 
-        palette=palette,
         row_order=feature_names
     )
     
-    # Draw the densities with filled KDE 
-    g.map(sns.kdeplot, "value", bw_adjust=0.5, clip_on=False, fill=True, alpha=0.6, linewidth=1.5)
+    # Draw the densities with filled KDE (single color for dataset)
+    g.map(sns.kdeplot, "value", bw_adjust=0.5, clip_on=False, fill=True, alpha=0.6, linewidth=1.5, color=dataset_color)
     g.map(sns.kdeplot, "value", bw_adjust=0.5, clip_on=False, color="w", lw=2)
     
     # Add horizontal reference line at y=0 to each axis
@@ -2210,8 +2229,7 @@ def plot_ridge_comparison(
     # Add legend with readable styling
     from matplotlib.lines import Line2D
     legend_elements = [
-        Line2D([0], [0], color=method_1_color, lw=4, alpha=0.6, label=f'{technique_names[0]} CFs'),
-        Line2D([0], [0], color=method_2_color, lw=4, alpha=0.6, label=f'{technique_names[1]} CFs'),
+        Line2D([0], [0], color=dataset_color, lw=4, alpha=0.6, label='Dataset Distribution'),
         Line2D([0], [0], marker='o', color=sample_color, markerfacecolor=sample_color, markersize=10, 
                markeredgecolor='white', markeredgewidth=1.5, linestyle='--', 
                linewidth=2, label='Original Sample'),
@@ -2223,7 +2241,7 @@ def plot_ridge_comparison(
         text.set_color('black')
     
     # Add title
-    g.figure.suptitle(f'Feature Distribution: {technique_names[0]} vs {technique_names[1]} Counterfactuals', 
+    g.figure.suptitle('Feature Distribution: Dataset Overview', 
                       fontsize=14, fontweight='bold', y=1.02)
     
     fig = g.figure
@@ -2233,10 +2251,5 @@ def plot_ridge_comparison(
     sns.reset_defaults()
     
     return fig
-
-
-# Example usage:
-# Assuming model, X, y, sample, counterfactuals_df are appropriately defined
-#plot_pca_with_counterfactuals(model, pd.DataFrame(X), y, sample, counterfactuals_df)
 
 
