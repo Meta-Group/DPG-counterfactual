@@ -2102,34 +2102,52 @@ def plot_ridge_comparison(
     if figsize is None:
         figsize = (10, max(6, n_features * 0.8))
     
-    # Prepare data for seaborn FacetGrid
+    # Compute min/max per feature for normalization (0-1 range)
+    feature_min = {}
+    feature_max = {}
+    for feat in feature_names:
+        all_values = [sample[feat]]
+        all_values.extend([cf[feat] for cf in cf_list_1])
+        all_values.extend([cf[feat] for cf in cf_list_2])
+        feature_min[feat] = min(all_values)
+        feature_max[feat] = max(all_values)
+    
+    def normalize(value, feat):
+        """Normalize value to [0, 1] range for a given feature."""
+        min_val = feature_min[feat]
+        max_val = feature_max[feat]
+        if max_val == min_val:
+            return 0.5  # Constant feature -> center it
+        return (value - min_val) / (max_val - min_val)
+    
+    # Prepare data for seaborn FacetGrid (normalized)
     data_rows = []
     
-    # Add original sample
+    # Add original sample (normalized)
     for feat in feature_names:
         data_rows.append({
             'feature': feat,
-            'value': sample[feat],
+            'value': normalize(sample[feat], feat),
             'type': 'Original',
             'technique': 'Original'
         })
     
-    # Add counterfactuals from technique 1
+    # Add counterfactuals from technique 1 (normalized)
     for i, cf in enumerate(cf_list_1):
         for feat in feature_names:
             data_rows.append({
                 'feature': feat,
-                'value': cf[feat],
+                'value': normalize(cf[feat], feat),
                 'type': 'CF',
                 'technique': technique_names[0]
             })
     
-    # Add counterfactuals from technique 2
+    # Add counterfactuals from technique 2 (normalized)
     for i, cf in enumerate(cf_list_2):
         for feat in feature_names:
             data_rows.append({
                 'feature': feat,
-                'value': cf[feat],
+                'value': normalize(cf[feat], feat),
                 'type': 'CF',
                 'technique': technique_names[1]
             })
@@ -2164,28 +2182,23 @@ def plot_ridge_comparison(
     for ax in g.axes.flat:
         ax.axhline(y=0, color="black", linewidth=1, clip_on=False)
     
-    # Add original sample marker
-    def add_sample_marker(data, feature=None, **kwargs):
-        ax = plt.gca()
-        sample_val = sample[feature]
-        # Draw vertical line at sample value
-        ax.axvline(x=sample_val, color=sample_color, linewidth=2.5, linestyle='--', alpha=0.8, zorder=10)
-        # Add marker
-        ax.scatter([sample_val], [0], marker='o', s=100, color=sample_color, edgecolor='white', linewidth=1.5, zorder=15)
-    
-    # Apply sample marker to each facet
+    # Apply sample marker to each facet (using normalized values)
     for ax, feat in zip(g.axes.flat, feature_names):
-        sample_val = sample[feat]
+        sample_val = normalize(sample[feat], feat)
         ax.axvline(x=sample_val, color=sample_color, linewidth=2.5, linestyle='--', alpha=0.8, zorder=10)
         ax.scatter([sample_val], [0], marker='o', s=100, color=sample_color, edgecolor='white', linewidth=1.5, zorder=15, clip_on=False)
+        ax.set_xlim(-0.1, 1.1)  # Set consistent x-axis range with small margin
     
     # Overlap the plots vertically for the ridge effect
     g.figure.subplots_adjust(hspace=-0.25)
     
     # Remove axes details
     g.set_titles("")
-    g.set(yticks=[], ylabel="")
+    g.set(yticks=[], ylabel="", xlabel="")
     g.despine(bottom=True, left=True)
+    
+    # Set x-axis label on the bottom plot only
+    g.axes[-1, 0].set_xlabel("Normalized Value (0-1)", fontsize=11)
     
     # Add feature names on the left
     for ax, feat in zip(g.axes.flat, feature_names):
