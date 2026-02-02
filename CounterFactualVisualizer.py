@@ -2203,7 +2203,7 @@ def plot_ridge_comparison(
     
     # Add horizontal reference line at y=0 to each axis (10% wider than data)
     for ax in g.axes.flat:
-        ax.plot([-0.1, 1.1], [0, 0], color="black", linewidth=1, clip_on=False)
+        ax.plot([-0.08, 1.08], [-0.2, -0.2], color="#7B68EE", linewidth=0.1, clip_on=False)
     
     # Compute KDE for each feature to get y-values for markers
     # Use scipy's gaussian_kde with Scott's factor adjusted by 0.5 to match seaborn's bw_adjust=0.5
@@ -2226,13 +2226,13 @@ def plot_ridge_comparison(
         # Original sample marker
         sample_val = normalize(sample[feat], feat)
         sample_y = kde(sample_val)[0] if kde else 0
-        ax.scatter([sample_val], [sample_y], marker='o', s=100, color=sample_color, edgecolor='white', linewidth=1.5, zorder=15, clip_on=False)
+        ax.scatter([sample_val], [sample_y], marker='o', s=95, color=sample_color, edgecolor='white', linewidth=1.5, zorder=15, clip_on=False)
         
         # Plot counterfactuals from method 1 (DPG) - triangles
         for cf in cf_list_1:
             cf_val = normalize(cf[feat], feat)
             cf_y = kde(cf_val)[0] if kde else 0
-            ax.scatter([cf_val], [cf_y], marker='v', s=80, color=method_1_color, edgecolor='white', linewidth=1, zorder=12, clip_on=False, alpha=0.8)
+            ax.scatter([cf_val], [cf_y], marker='v', s=90, color=method_1_color, edgecolor='white', linewidth=1, zorder=12, clip_on=False, alpha=0.9)
         
         # Plot counterfactuals from method 2 (DiCE) - squares
         for cf in cf_list_2:
