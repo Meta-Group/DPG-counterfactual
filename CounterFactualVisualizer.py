@@ -2280,15 +2280,13 @@ def plot_ridge_comparison(
     # Limit y-axis height - cap at a reasonable fixed value to prevent overflow
     for ax in g.axes.flat:
         ylim = ax.get_ylim()
-        ax.set_ylim(min(ylim[0], 0), min(ylim[1], 12))
+        ax.set_ylim(min(ylim[0], 0), min(ylim[1], 20))
     
     # Remove axes details
     g.set_titles("")
     g.set(yticks=[], ylabel="", xlabel="")
     g.despine(bottom=True, left=True)
     
-    # Set x-axis label on the bottom plot only
-    g.axes[-1, 0].set_xlabel("Normalized Value (0-1)", fontsize=11)
     
     # Add feature names on the left with more margin
     for ax, feat in zip(g.axes.flat, feature_names):
