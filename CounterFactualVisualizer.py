@@ -2284,18 +2284,16 @@ def plot_ridge_comparison(
     
     # Remove axes details
     g.set_titles("")
-    g.set(yticks=[], ylabel="", xlabel="")
+    g.set(yticks=[], ylabel="", xticks=[], xlabel="")
     g.despine(bottom=True, left=True)
     
     
-    # Add feature names on the left with more margin
     for ax, feat in zip(g.axes.flat, feature_names):
         # Clean feature name for display
         clean_name = feat.replace(' (cm)', '').replace('_', ' ')
         ax.text(-0.08, 0.2, clean_name, fontweight="bold", color="black",
                 ha="right", va="center", transform=ax.transAxes, fontsize=10)
     
-    # Add legend with readable styling
     from matplotlib.lines import Line2D
     legend_elements = [
         Line2D([0], [0], color=dataset_color, lw=4, alpha=0.6, label='Dataset Distribution'),
@@ -2321,7 +2319,7 @@ def plot_ridge_comparison(
                              bbox_to_anchor=(0.98, 0.98))
     for text in legend.get_texts():
         text.set_color('black')
-    
+        
     # Add title
     g.figure.suptitle(f'Feature Distribution: {technique_names[0]} vs {technique_names[1]} Counterfactuals', 
                       fontsize=14, fontweight='bold', y=1.02)
