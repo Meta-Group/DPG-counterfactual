@@ -143,6 +143,7 @@ class CounterFactualModel:
             verbose=verbose,
             min_probability_margin=min_probability_margin,
             diversity_lambda=diversity_lambda,
+            constraint_validator=self.constraint_validator,
         )
         # Minimum probability margin for accepting counterfactuals
         self.min_probability_margin = min_probability_margin

@@ -183,6 +183,7 @@ class HeuristicRunner:
         verbose=False,
         min_probability_margin=0.001,
         diversity_lambda=0.5,
+        constraint_validator=None,
     ):
         """
         Initialize the heuristic runner.
@@ -199,6 +200,8 @@ class HeuristicRunner:
             diversity_lambda (float): Weight for diversity vs proximity trade-off (0-1).
                 Higher values prioritize diversity, lower values prioritize fitness/proximity.
                 Default 0.5 for balanced selection.
+            constraint_validator: Optional ConstraintValidator instance for validating
+                that accepted CFs meet target class constraints.
         """
         self.model = model
         self.constraints = constraints
@@ -207,6 +210,7 @@ class HeuristicRunner:
         self.verbose = verbose
         self.min_probability_margin = min_probability_margin
         self.diversity_lambda = diversity_lambda
+        self.constraint_validator = constraint_validator
 
         # Tracking attributes
         self.best_fitness_list = []
@@ -717,6 +721,16 @@ class HeuristicRunner:
                 if self.verbose:
                     print(f"[VERBOSE-DPG] Candidate rejected: prediction error {e}")
                 continue
+            
+            # Validate target class constraints - reject CFs that violate any constraint
+            if self.constraint_validator is not None:
+                is_valid_constraint, constraint_penalty = self.constraint_validator.validate_constraints(
+                    cf_dict, sample, target_class, original_class=original_class, strict_mode=False
+                )
+                if not is_valid_constraint:
+                    if self.verbose:
+                        print(f"[VERBOSE-DPG] Candidate rejected: violates target class constraints (penalty={constraint_penalty:.4f})")
+                    continue
             
             # Calculate fitness for this candidate
             fitness = calculate_fitness_func(
