@@ -2207,17 +2207,20 @@ def plot_ridge_comparison(
         ax.text(-0.02, 0.2, clean_name, fontweight="bold", color="black",
                 ha="right", va="center", transform=ax.transAxes, fontsize=10)
     
-    # Add legend
+    # Add legend with readable styling
     from matplotlib.lines import Line2D
     legend_elements = [
         Line2D([0], [0], color=method_1_color, lw=4, alpha=0.6, label=f'{technique_names[0]} CFs'),
         Line2D([0], [0], color=method_2_color, lw=4, alpha=0.6, label=f'{technique_names[1]} CFs'),
-        Line2D([0], [0], marker='o', color='w', markerfacecolor=sample_color, markersize=10, 
+        Line2D([0], [0], marker='o', color=sample_color, markerfacecolor=sample_color, markersize=10, 
                markeredgecolor='white', markeredgewidth=1.5, linestyle='--', 
                linewidth=2, label='Original Sample'),
     ]
-    g.figure.legend(handles=legend_elements, loc='upper right', fontsize=10, framealpha=0.95,
-                   bbox_to_anchor=(0.98, 0.98))
+    legend = g.figure.legend(handles=legend_elements, loc='upper right', fontsize=10, 
+                             framealpha=1.0, facecolor='white', edgecolor='gray',
+                             bbox_to_anchor=(0.98, 0.98))
+    for text in legend.get_texts():
+        text.set_color('black')
     
     # Add title
     g.figure.suptitle(f'Feature Distribution: {technique_names[0]} vs {technique_names[1]} Counterfactuals', 
