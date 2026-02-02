@@ -2280,8 +2280,7 @@ def plot_ridge_comparison(
     # Limit y-axis height - cap at a reasonable fixed value to prevent overflow
     for ax in g.axes.flat:
         ylim = ax.get_ylim()
-        # Cap max height at 6.0 (higher value = shorter visual distribution)
-        ax.set_ylim(min(ylim[0], 0), min(ylim[1], 3.0))
+        ax.set_ylim(min(ylim[0], 0), min(ylim[1], 8.0))
     
     # Remove axes details
     g.set_titles("")
@@ -2317,7 +2316,7 @@ def plot_ridge_comparison(
         from matplotlib.patches import Patch
         legend_elements.append(
             Patch(facecolor=constraint_color, alpha=0.15, edgecolor=constraint_color,
-                  linestyle='--', linewidth=1.5, label='DPG Valid Range')
+                  linestyle='--', linewidth=1.5, label='DPG Constrainsts')
         )
     legend = g.figure.legend(handles=legend_elements, loc='upper right', fontsize=10, 
                              framealpha=1.0, facecolor='white', edgecolor='gray',
