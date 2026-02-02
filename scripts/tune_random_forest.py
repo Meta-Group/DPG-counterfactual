@@ -8,6 +8,8 @@ Usage:
     python scripts/tune_random_forest.py --dataset iris
     python scripts/tune_random_forest.py --dataset german_credit --n-iter 50
     python scripts/tune_random_forest.py --dataset diabetes --cv 10 --scoring f1_weighted
+    python scripts/tune_random_forest.py --dataset iris --scoring accuracy dpg_constraints --refit dpg_constraints
+    python scripts/tune_random_forest.py --dataset iris --scoring accuracy dpg_constraints --weights 0.5 0.5
 """
 
 from __future__ import annotations
@@ -93,9 +95,10 @@ PARAM_DISTRIBUTIONS = {
 }
 
 # Default RandomizedSearchCV settings
-DEFAULT_N_ITER = 500  # Number of parameter combinations to try
+DEFAULT_N_ITER = 100  # Number of parameter combinations to try
 DEFAULT_CV = 10  # Number of cross-validation folds
-DEFAULT_SCORING = 'accuracy'  # Default scoring metric
+DEFAULT_SCORING = ['accuracy']  # Default scoring metrics (list for multi-metric support)
+DEFAULT_REFIT = 'accuracy'  # Default metric to use for selecting best model
 DEFAULT_N_JOBS = -1  # Use all available cores
 DEFAULT_RANDOM_STATE = 42
 
@@ -184,6 +187,40 @@ def make_dpg_constraint_scorer(feature_names: list, dpg_config: dict = None):
     return dpg_constraint_scorer
 
 
+def make_weighted_scorer(scorers: dict, weights: list, scorer_names: list):
+    """Create a weighted combination scorer from multiple scorers.
+    
+    Args:
+        scorers: Dictionary mapping metric names to scorer functions
+        weights: List of weights for each scorer (must sum to 1.0)
+        scorer_names: List of scorer names in order
+    
+    Returns:
+        A weighted scorer function
+    """
+    # Normalize weights to sum to 1.0
+    weight_sum = sum(weights)
+    normalized_weights = [w / weight_sum for w in weights]
+    
+    def weighted_scorer(estimator, X, y):
+        """Compute weighted combination of multiple scores."""
+        total_score = 0.0
+        for name, weight in zip(scorer_names, normalized_weights):
+            scorer = scorers[name]
+            # Handle both callable scorers and string metric names
+            if callable(scorer):
+                score = scorer(estimator, X, y)
+            else:
+                # Import make_scorer to handle string metrics
+                from sklearn.metrics import get_scorer
+                sklearn_scorer = get_scorer(scorer)
+                score = sklearn_scorer(estimator, X, y)
+            total_score += weight * score
+        return total_score
+    
+    return weighted_scorer
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -194,6 +231,8 @@ Examples:
     python scripts/tune_random_forest.py --dataset iris
     python scripts/tune_random_forest.py --dataset german_credit --n-iter 50
     python scripts/tune_random_forest.py --dataset diabetes --cv 10 --scoring f1_weighted
+    python scripts/tune_random_forest.py --dataset iris --scoring accuracy dpg_constraints --refit dpg_constraints
+    python scripts/tune_random_forest.py --dataset iris --scoring accuracy dpg_constraints --weights 0.5 0.5
     python scripts/tune_random_forest.py --dataset iris --output results/tuning
         """
     )
@@ -222,9 +261,25 @@ Examples:
     parser.add_argument(
         '--scoring', '-s',
         type=str,
+        nargs='+',
         default=DEFAULT_SCORING,
         choices=AVAILABLE_SCORING,
-        help=f'Scoring metric for optimization (default: {DEFAULT_SCORING})'
+        help=f'Scoring metric(s) for evaluation (can specify multiple, default: {DEFAULT_SCORING})'
+    )
+    
+    parser.add_argument(
+        '--refit',
+        type=str,
+        default=None,
+        help='Metric to use for selecting best model when using multiple scorers (default: first scoring metric). Ignored if --weights is specified.'
+    )
+    
+    parser.add_argument(
+        '--weights',
+        type=float,
+        nargs='+',
+        default=None,
+        help='Weights for each scoring metric (must match number of --scoring metrics). Creates a weighted combination scorer. Example: --weights 0.5 0.5'
     )
     
     parser.add_argument(
@@ -364,13 +419,42 @@ def main():
     """Main function to run hyperparameter tuning."""
     args = parse_args()
     
+    # Handle scoring arguments
+    scoring_metrics = args.scoring if isinstance(args.scoring, list) else [args.scoring]
+    
+    # Handle weights if provided
+    use_weighted_scoring = args.weights is not None
+    if use_weighted_scoring:
+        if len(args.weights) != len(scoring_metrics):
+            raise ValueError(
+                f"Number of weights ({len(args.weights)}) must match number of scoring metrics ({len(scoring_metrics)}). "
+                f"Metrics: {scoring_metrics}, Weights: {args.weights}"
+            )
+        if any(w < 0 for w in args.weights):
+            raise ValueError("All weights must be non-negative")
+        if sum(args.weights) == 0:
+            raise ValueError("At least one weight must be positive")
+        refit_metric = 'weighted_score'
+    else:
+        refit_metric = args.refit if args.refit else scoring_metrics[0]
+        # Validate refit metric
+        if refit_metric not in scoring_metrics:
+            raise ValueError(f"--refit metric '{refit_metric}' must be one of the --scoring metrics: {scoring_metrics}")
+    
     print("=" * 70)
     print("RandomForest Hyperparameter Tuning")
     print("=" * 70)
     print(f"Dataset: {args.dataset}")
     print(f"Iterations: {args.n_iter}")
     print(f"CV Folds: {args.cv}")
-    print(f"Scoring: {args.scoring}")
+    print(f"Scoring: {', '.join(scoring_metrics)}")
+    if use_weighted_scoring:
+        print(f"Weights: {args.weights}")
+        normalized_weights = [w / sum(args.weights) for w in args.weights]
+        print(f"Normalized: {[f'{w:.3f}' for w in normalized_weights]}")
+        print(f"Optimization: Weighted combination")
+    elif len(scoring_metrics) > 1:
+        print(f"Refit metric: {refit_metric}")
     print(f"Random State: {args.random_state}")
     print("=" * 70)
     
@@ -426,12 +510,33 @@ def main():
     
     start_time = datetime.now()
     
-    # Determine scoring - use custom scorer for dpg_constraints
-    if args.scoring == 'dpg_constraints':
-        print("Using DPG constraint separation scorer (optimizing for counterfactual generation)")
-        scoring = make_dpg_constraint_scorer(feature_names, dpg_config=None)
+    # Build scoring dictionary for multi-metric support
+    scoring_dict = {}
+    for metric in scoring_metrics:
+        if metric == 'dpg_constraints':
+            print(f"Configuring DPG constraint separation scorer for '{metric}'")
+            scoring_dict[metric] = make_dpg_constraint_scorer(feature_names, dpg_config=None)
+        else:
+            scoring_dict[metric] = metric
+    
+    # Handle weighted scoring
+    if use_weighted_scoring:
+        # Add weighted combination scorer
+        scoring_dict['weighted_score'] = make_weighted_scorer(
+            scoring_dict, args.weights, scoring_metrics
+        )
+        # Keep individual metrics for reporting
+        scoring = scoring_dict
+        refit = 'weighted_score'
+        print(f"Using weighted combination scorer for optimization")
+    # Use single scorer if only one metric, otherwise use dict
+    elif len(scoring_dict) == 1:
+        scoring = list(scoring_dict.values())[0]
+        refit = True
     else:
-        scoring = args.scoring
+        scoring = scoring_dict
+        refit = refit_metric
+        print(f"Using multi-metric evaluation, optimizing for: {refit_metric}")
     
     random_search = RandomizedSearchCV(
         estimator=base_clf,
@@ -439,6 +544,7 @@ def main():
         n_iter=args.n_iter,
         cv=cv,
         scoring=scoring,
+        refit=refit,
         n_jobs=args.n_jobs,
         verbose=args.verbose,
         random_state=args.random_state,
@@ -451,14 +557,30 @@ def main():
     elapsed_time = datetime.now() - start_time
     print(f"\nSearch completed in {elapsed_time}")
     
-    # Best parameters and score
+    # Best parameters and scores
     print("\n" + "=" * 70)
     print("BEST PARAMETERS")
     print("=" * 70)
     for param, value in sorted(random_search.best_params_.items()):
         print(f"  {param}: {value}")
     
-    print(f"\nBest CV Score ({args.scoring}): {random_search.best_score_:.4f}")
+    print(f"\nBest CV Score ({refit_metric}): {random_search.best_score_:.4f}")
+    
+    # Show all metric scores if multi-metric or weighted
+    if len(scoring_metrics) > 1 or use_weighted_scoring:
+        print("\nAll CV Scores for Best Model:")
+        best_idx = random_search.best_index_
+        for metric in scoring_metrics:
+            score_key = f'mean_test_{metric}'
+            if score_key in random_search.cv_results_:
+                score = random_search.cv_results_[score_key][best_idx]
+                std = random_search.cv_results_[f'std_test_{metric}'][best_idx]
+                weight_info = ""
+                if use_weighted_scoring:
+                    weight_idx = scoring_metrics.index(metric)
+                    normalized_weight = args.weights[weight_idx] / sum(args.weights)
+                    weight_info = f" [weight: {normalized_weight:.3f}]"
+                print(f"  {metric}: {score:.4f} (+/- {std:.4f}){weight_info}")
     
     # Evaluate on test set
     print("\n" + "=" * 70)
@@ -471,9 +593,9 @@ def main():
     for metric_name, metric_value in test_metrics.items():
         print(f"  {metric_name}: {metric_value:.4f}")
     
-    # Compute final DPG constraint score on full training set
+    # Compute final DPG constraint score on full training set if used
     final_constraint_score = None
-    if args.scoring == 'dpg_constraints':
+    if 'dpg_constraints' in scoring_metrics:
         print("\n" + "=" * 70)
         print("FINAL DPG CONSTRAINT SCORE (on full training set)")
         print("=" * 70)
@@ -509,6 +631,24 @@ def main():
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    # Collect all CV scores if multi-metric
+    all_cv_scores = {}
+    if len(scoring_metrics) > 1 or use_weighted_scoring:
+        best_idx = random_search.best_index_
+        for metric in scoring_metrics:
+            score_key = f'mean_test_{metric}'
+            if score_key in random_search.cv_results_:
+                all_cv_scores[metric] = {
+                    'mean': float(random_search.cv_results_[score_key][best_idx]),
+                    'std': float(random_search.cv_results_[f'std_test_{metric}'][best_idx])
+                }
+        # Add weighted score if used
+        if use_weighted_scoring and 'mean_test_weighted_score' in random_search.cv_results_:
+            all_cv_scores['weighted_score'] = {
+                'mean': float(random_search.cv_results_['mean_test_weighted_score'][best_idx]),
+                'std': float(random_search.cv_results_['std_test_weighted_score'][best_idx])
+            }
+    
     # Save best parameters
     results = {
         'dataset': args.dataset,
@@ -516,12 +656,15 @@ def main():
         'search_params': {
             'n_iter': args.n_iter,
             'cv': args.cv,
-            'scoring': args.scoring,
+            'scoring': scoring_metrics,
+            'refit': refit_metric,
+            'weights': args.weights if use_weighted_scoring else None,
             'random_state': args.random_state,
             'test_size': args.test_size,
         },
         'best_params': random_search.best_params_,
         'best_cv_score': float(random_search.best_score_),
+        'all_cv_scores': all_cv_scores if all_cv_scores else None,
         'test_metrics': {k: float(v) for k, v in test_metrics.items()},
         'feature_importances': {
             feature_names[i]: float(importances[i])
