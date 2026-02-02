@@ -16,24 +16,14 @@ experiment:
   - obesity_levels
   name: obesity_levels
 methods:
+  dpg:
+    overgeneration_factor: 20
   _default:
     actionability:
       Age: non_decreasing
       Gender: no_change
       Height: no_change
-      Weight: actionable
-      CALC: actionable
-      FAVC: actionable
-      FCVC: actionable
-      NCP: actionable
-      SCC: actionable
-      SMOKE: actionable
-      CH2O: actionable
       family_history_with_overweight: no_change
-      FAF: actionable
-      TUE: actionable
-      CAEC: actionable
-      MTRANS: actionable
 model:
   type: RandomForestClassifier
   n_estimators: 7
