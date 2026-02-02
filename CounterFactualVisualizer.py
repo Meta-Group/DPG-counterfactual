@@ -2239,7 +2239,7 @@ def plot_ridge_comparison(
         
         ax.set_xlim(-0.1, 1.1)  # Set consistent x-axis range with small margin
     
-    # Draw DPG constraints (min/max bounds) as vertical lines
+    # Draw DPG constraints as shaded valid region between min and max
     constraint_color = "#228B22"  # Forest green
     has_constraints = False
     if constraints:
@@ -2259,19 +2259,17 @@ def plot_ridge_comparison(
                     max_val = feat_constraints.get('max')
                     
                     # Normalize constraint values
-                    if min_val is not None:
-                        min_norm = normalize(min_val, feat)
-                        # Draw min constraint as left-pointing triangle at baseline
-                        ax.axvline(x=min_norm, color=constraint_color, linewidth=2, linestyle='-', alpha=0.7, zorder=5)
-                        ax.scatter([min_norm], [0], marker='<', s=100, color=constraint_color, edgecolor='white', linewidth=1, zorder=16, clip_on=False)
-                        has_constraints = True
+                    min_norm = normalize(min_val, feat) if min_val is not None else -0.1
+                    max_norm = normalize(max_val, feat) if max_val is not None else 1.1
                     
+                    # Draw shaded band for valid constraint region
+                    ax.axvspan(min_norm, max_norm, color=constraint_color, alpha=0.15, zorder=1)
+                    # Draw boundary lines at min and max
+                    if min_val is not None:
+                        ax.axvline(x=min_norm, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
                     if max_val is not None:
-                        max_norm = normalize(max_val, feat)
-                        # Draw max constraint as right-pointing triangle at baseline
-                        ax.axvline(x=max_norm, color=constraint_color, linewidth=2, linestyle='-', alpha=0.7, zorder=5)
-                        ax.scatter([max_norm], [0], marker='>', s=100, color=constraint_color, edgecolor='white', linewidth=1, zorder=16, clip_on=False)
-                        has_constraints = True
+                        ax.axvline(x=max_norm, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
+                    has_constraints = True
     
     # Overlap the plots vertically for the ridge effect
     g.figure.subplots_adjust(hspace=-0.25)
@@ -2305,17 +2303,12 @@ def plot_ridge_comparison(
                markeredgecolor='white', markeredgewidth=1, linestyle='None',
                label=f'{technique_names[1]} CFs'),
     ]
-    # Add constraint legend entries if constraints were drawn
+    # Add constraint legend entry if constraints were drawn
     if has_constraints:
+        from matplotlib.patches import Patch
         legend_elements.append(
-            Line2D([0], [0], marker='<', color=constraint_color, markerfacecolor=constraint_color, markersize=10,
-                   markeredgecolor='white', markeredgewidth=1, linestyle='-',
-                   linewidth=2, label='DPG Min Bound')
-        )
-        legend_elements.append(
-            Line2D([0], [0], marker='>', color=constraint_color, markerfacecolor=constraint_color, markersize=10,
-                   markeredgecolor='white', markeredgewidth=1, linestyle='-',
-                   linewidth=2, label='DPG Max Bound')
+            Patch(facecolor=constraint_color, alpha=0.15, edgecolor=constraint_color,
+                  linestyle='--', linewidth=1.5, label='DPG Valid Range')
         )
     legend = g.figure.legend(handles=legend_elements, loc='upper right', fontsize=10, 
                              framealpha=1.0, facecolor='white', edgecolor='gray',
