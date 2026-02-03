@@ -2274,12 +2274,12 @@ def plot_ridge_comparison(
                     if min_val is not None:
                         ax.axvline(x=min_norm, ymin=0.1, ymax=0.7, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
                         # Add triangle pointing inward (to the right) from min constraint
-                        ax.scatter([min_norm + 0.008], [0.4], marker='>', s=80, 
+                        ax.scatter([min_norm + 0.008], [0.5], marker='>', s=80, 
                                   color=constraint_color, alpha=1.0, zorder=6)
                     if max_val is not None:
                         ax.axvline(x=max_norm, ymin=0.1, ymax=0.7, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
                         # Add triangle pointing inward (to the left) from max constraint
-                        ax.scatter([max_norm - 0.008], [0.4], marker='<', s=80, 
+                        ax.scatter([max_norm - 0.008], [0.5], marker='<', s=80, 
                                   color=constraint_color, alpha=1.0, zorder=6)
                     
                     # Draw orange boundary region when original sample is outside constraints
@@ -2368,7 +2368,7 @@ def plot_ridge_comparison(
         from matplotlib.patches import Patch
         legend_elements.append(
             Patch(facecolor=constraint_color, alpha=0.15, edgecolor=constraint_color,
-                  linestyle='--', linewidth=1.5, label='DPG Constrainsts')
+                  linestyle='--', linewidth=1.5, label='DPG Constraints')
         )
         # Add orange constraint legend for extended constraints (only if shown)
         if showExtendedConstraints:
@@ -2376,6 +2376,15 @@ def plot_ridge_comparison(
                 Patch(facecolor=orange_color, alpha=0.15, edgecolor=orange_color,
                       linestyle='--', linewidth=1.5, label='Extended DPG Constraints')
             )
+    
+    # Always show DPG Constraints legend entry when constraints parameter is provided
+    elif constraints:
+        from matplotlib.patches import Patch
+        legend_elements.append(
+            Patch(facecolor=constraint_color, alpha=0.15, edgecolor=constraint_color,
+                  linestyle='--', linewidth=1.5, label='DPG Constraints')
+        )
+
     legend = g.figure.legend(handles=legend_elements, loc='upper right', fontsize=10, 
                              framealpha=1.0, facecolor='white', edgecolor='gray',
                              bbox_to_anchor=(0.98, 0.98))
