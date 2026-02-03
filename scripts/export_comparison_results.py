@@ -2712,9 +2712,6 @@ def export_model_information(raw_df, comparison_df):
             f.write("% This file shows min/max bounds learned by DPG for each feature and class\n")
             f.write("% These constraints define valid regions in the feature space for each class\n")
             f.write("% and are used to guide counterfactual generation.\n\n")
-            
-            # Start landscape page for this dataset
-            f.write("\\begin{landscape}\n")
             f.write("\\begin{table}[ht]\n")
             f.write("  \\centering\n")
             f.write(f"  \\caption{{DPG-learned constraints (min/max bounds) for {dataset_latex} dataset. ")
@@ -2777,7 +2774,6 @@ def export_model_information(raw_df, comparison_df):
             f.write("    \\bottomrule\n")
             f.write("  \\end{tabular}\n")
             f.write("\\end{table}\n")
-            f.write("\\end{landscape}\n")
         
         print(f"    ✓ {dataset}: {individual_path}")
     
