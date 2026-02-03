@@ -2226,19 +2226,19 @@ def plot_ridge_comparison(
         # Original sample marker
         sample_val = normalize(sample[feat], feat)
         sample_y = kde(sample_val)[0] if kde else 0
-        ax.scatter([sample_val], [sample_y], marker='o', s=95, color=sample_color, edgecolor='white', linewidth=1.5, zorder=15, clip_on=False)
+        ax.scatter([sample_val], [sample_y], marker='o', s=70, color=sample_color, edgecolor='white', linewidth=1, zorder=15, clip_on=False)
         
         # Plot counterfactuals from method 1 (DPG) - triangles
         for cf in cf_list_1:
             cf_val = normalize(cf[feat], feat)
             cf_y = kde(cf_val)[0] if kde else 0
-            ax.scatter([cf_val], [cf_y], marker='v', s=90, color=method_1_color, edgecolor='white', linewidth=1, zorder=12, clip_on=False, alpha=0.9)
+            ax.scatter([cf_val], [cf_y + 0.5], marker='v', s=90, color=method_1_color, edgecolor='white', linewidth=1, zorder=12, clip_on=False, alpha=0.9)
         
         # Plot counterfactuals from method 2 (DiCE) - squares
         for cf in cf_list_2:
             cf_val = normalize(cf[feat], feat)
             cf_y = kde(cf_val)[0] if kde else 0
-            ax.scatter([cf_val], [cf_y], marker='s', s=60, color=method_2_color, edgecolor='white', linewidth=1, zorder=11, clip_on=False, alpha=0.8)
+            ax.scatter([cf_val], [cf_y - 0.5], marker='^', s=90, color=method_2_color, edgecolor='white', linewidth=1, zorder=11, clip_on=False, alpha=0.8)
         
         ax.set_xlim(0, 1)  # Set consistent x-axis range (0-1 normalized)
     
@@ -2266,12 +2266,12 @@ def plot_ridge_comparison(
                     max_norm = normalize(max_val, feat) if max_val is not None else 1
                     
                     # Draw shaded band for valid constraint region (limit height to avoid overlap)
-                    ax.axvspan(min_norm, max_norm, ymin=0, ymax=0.7, color=constraint_color, alpha=0.15, zorder=1)
+                    ax.axvspan(min_norm, max_norm, ymin=0.1, ymax=0.7, color=constraint_color, alpha=0.15, zorder=1)
                     # Draw boundary lines at min and max (also limited in height)
                     if min_val is not None:
-                        ax.axvline(x=min_norm, ymin=0, ymax=0.7, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
+                        ax.axvline(x=min_norm, ymin=0.1, ymax=0.7, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
                     if max_val is not None:
-                        ax.axvline(x=max_norm, ymin=0, ymax=0.7, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
+                        ax.axvline(x=max_norm, ymin=0.1, ymax=0.7, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
                     has_constraints = True
     
     # Overlap the plots vertically for the ridge effect (reduced overlap to prevent spillover)
@@ -2303,7 +2303,7 @@ def plot_ridge_comparison(
         Line2D([0], [0], marker='v', color='w', markerfacecolor=method_1_color, markersize=10,
                markeredgecolor='white', markeredgewidth=1, linestyle='None',
                label=f'{technique_names[0]} CFs'),
-        Line2D([0], [0], marker='s', color='w', markerfacecolor=method_2_color, markersize=9,
+        Line2D([0], [0], marker='^', color='w', markerfacecolor=method_2_color, markersize=9,
                markeredgecolor='white', markeredgewidth=1, linestyle='None',
                label=f'{technique_names[1]} CFs'),
     ]
