@@ -2083,6 +2083,7 @@ def plot_ridge_comparison(
     figsize=None,
     target=None,
     show_per_class_distribution=True,
+    show_overall_distribution=True,
     class_colors_list=None
 ):
     """
@@ -2107,6 +2108,7 @@ def plot_ridge_comparison(
         figsize (tuple, optional): Figure size. If None, calculated based on number of features.
         target (array-like, optional): Class labels for each sample in dataset_df. Required for per-class distributions.
         show_per_class_distribution (bool, optional): Whether to show per-class distributions. Default True.
+        show_overall_distribution (bool, optional): Whether to show overall dataset distribution. Default True.
         class_colors_list (list, optional): List of colors for each class. If None, uses default palette.
     
     Returns:
@@ -2260,21 +2262,23 @@ def plot_ridge_comparison(
                         ax=ax
                     )
             
-            # Also draw the overall dataset distribution (lighter, as background)
-            sns.kdeplot(
-                data=feat_df['value'],
-                bw_adjust=0.5,
-                clip_on=False,
-                fill=True,
-                alpha=0.2,
-                linewidth=0.8,
-                color=dataset_color,
-                ax=ax
-            )
+            # Also draw the overall dataset distribution (lighter, as background) if enabled
+            if show_overall_distribution:
+                sns.kdeplot(
+                    data=feat_df['value'],
+                    bw_adjust=0.5,
+                    clip_on=False,
+                    fill=True,
+                    alpha=0.2,
+                    linewidth=0.8,
+                    color=dataset_color,
+                    ax=ax
+                )
     else:
-        # Draw only the overall densities (original behavior)
-        g.map(sns.kdeplot, "value", bw_adjust=0.5, clip_on=False, fill=True, alpha=0.6, linewidth=1.5, color=dataset_color)
-        g.map(sns.kdeplot, "value", bw_adjust=0.5, clip_on=False, color="w", lw=2)
+        # Draw only the overall densities if enabled (original behavior)
+        if show_overall_distribution:
+            g.map(sns.kdeplot, "value", bw_adjust=0.5, clip_on=False, fill=True, alpha=0.6, linewidth=1.5, color=dataset_color)
+            g.map(sns.kdeplot, "value", bw_adjust=0.5, clip_on=False, color="w", lw=2)
     
     # Add horizontal reference line at y=0 to each axis (10% wider than data)
     for ax in g.axes.flat:
@@ -2460,15 +2464,17 @@ def plot_ridge_comparison(
             legend_elements.append(
                 Line2D([0], [0], color=class_color, lw=4, alpha=0.6, label=f'Class {class_idx} Distribution')
             )
-        # Add overall dataset as background
-        legend_elements.append(
-            Line2D([0], [0], color=dataset_color, lw=3, alpha=0.3, label='Overall Distribution')
-        )
+        # Add overall dataset as background if enabled
+        if show_overall_distribution:
+            legend_elements.append(
+                Line2D([0], [0], color=dataset_color, lw=3, alpha=0.3, label='Overall Distribution')
+            )
     else:
-        # Show only overall dataset
-        legend_elements.append(
-            Line2D([0], [0], color=dataset_color, lw=4, alpha=0.6, label='Dataset Distribution')
-        )
+        # Show only overall dataset if enabled
+        if show_overall_distribution:
+            legend_elements.append(
+                Line2D([0], [0], color=dataset_color, lw=4, alpha=0.6, label='Dataset Distribution')
+            )
     
     # Add constraint legend entries if constraints were drawn
     if has_constraints:
