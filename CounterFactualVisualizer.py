@@ -2244,6 +2244,7 @@ def plot_ridge_comparison(
     
     # Draw DPG constraints as shaded valid region between min and max
     constraint_color = "#228B22"  # Forest green
+    orange_color = "#FF8C00"  # Dark orange for out-of-constraint indicator
     has_constraints = False
     if constraints:
         # Determine which class constraints to use
@@ -2272,7 +2273,53 @@ def plot_ridge_comparison(
                         ax.axvline(x=min_norm, ymin=0.1, ymax=0.7, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
                     if max_val is not None:
                         ax.axvline(x=max_norm, ymin=0.1, ymax=0.7, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
-                    has_constraints = True
+                    
+                    # Draw orange boundary region when original sample is outside constraints
+                    # Get normalized value of original sample for this feature
+                    sample_val_norm = normalize(sample[feat], feat)
+                    
+                    # Check if original value is outside constraints
+                    is_outside = False
+                    target_norm = None
+                    
+                    if min_val is not None and max_val is not None:
+                        # Both constraints exist, check if outside range
+                        if sample_val_norm < min_norm:
+                            is_outside = True
+                            target_norm = min_norm  # Point toward min
+                        elif sample_val_norm > max_norm:
+                            is_outside = True
+                            target_norm = max_norm  # Point toward max
+                    elif min_val is not None:
+                        # Only min constraint, check if below
+                        if sample_val_norm < min_norm:
+                            is_outside = True
+                            target_norm = min_norm  # Point toward min
+                    elif max_val is not None:
+                        # Only max constraint, check if above
+                        if sample_val_norm > max_norm:
+                            is_outside = True
+                            target_norm = max_norm  # Point toward max
+                    
+                    # Draw orange shaded region and boundary lines similar to green constraints
+                    if is_outside and target_norm is not None:
+                        # Determine the range for the orange shaded region
+                        if sample_val_norm < target_norm:
+                            # Original is below, shade from original to min
+                            orange_min, orange_max = sample_val_norm, target_norm
+                        else:
+                            # Original is above, shade from max to original
+                            orange_min, orange_max = target_norm, sample_val_norm
+                        
+                        # Draw shaded band for extended constraint region (similar style to green)
+                        ax.axvspan(orange_min, orange_max, ymin=0.1, ymax=0.7, 
+                                  color=orange_color, alpha=0.15, zorder=2)
+                        
+                        # Draw boundary line at original sample position (solid, like constraint lines)
+                        ax.axvline(x=sample_val_norm, ymin=0.1, ymax=0.7, 
+                                  color=orange_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=6)
+
+                        has_constraints = True
     
     # Overlap the plots vertically for the ridge effect (reduced overlap to prevent spillover)
     g.figure.subplots_adjust(hspace=-0.15)
@@ -2307,12 +2354,17 @@ def plot_ridge_comparison(
                markeredgecolor='white', markeredgewidth=1, linestyle='None',
                label=f'{technique_names[1]} CFs'),
     ]
-    # Add constraint legend entry if constraints were drawn
+    # Add constraint legend entries if constraints were drawn
     if has_constraints:
         from matplotlib.patches import Patch
         legend_elements.append(
             Patch(facecolor=constraint_color, alpha=0.15, edgecolor=constraint_color,
                   linestyle='--', linewidth=1.5, label='DPG Constrainsts')
+        )
+        # Add orange constraint legend for extended constraints
+        legend_elements.append(
+            Patch(facecolor=orange_color, alpha=0.15, edgecolor=orange_color,
+                  linestyle='--', linewidth=1.5, label='Extended DPG Constraints')
         )
     legend = g.figure.legend(handles=legend_elements, loc='upper right', fontsize=10, 
                              framealpha=1.0, facecolor='white', edgecolor='gray',
