@@ -104,7 +104,7 @@ PARAM_DISTRIBUTIONS = {
 }
 
 # Default RandomizedSearchCV settings
-DEFAULT_N_ITER = 10  # Number of parameter combinations to try
+DEFAULT_N_ITER = 300  # Number of parameter combinations to try
 DEFAULT_CV = 10  # Number of cross-validation folds
 DEFAULT_SCORING = ['accuracy']  # Default scoring metrics (list for multi-metric support)
 DEFAULT_REFIT = 'accuracy'  # Default metric to use for selecting best model
