@@ -1119,7 +1119,7 @@ def main():
         if args.datasets or args.methods or args.priority_only:
             print("WARNING: --config-dir is specified; ignoring --datasets, --methods, and --priority-only")
         
-        config_dir_path = pathlib.Path(args.config_dir)
+        config_dir_path = pathlib.Path(args.config_dir).resolve()  # Make absolute
         if not config_dir_path.exists():
             print(f"ERROR: Config directory not found: {args.config_dir}")
             return 1
@@ -1141,8 +1141,8 @@ def main():
         # Build experiments list for config files
         experiments = []
         for yaml_file in yaml_files:
-            # Use the config file path directly (relative to repo root for cleaner display)
-            experiments.append({'config': str(yaml_file.relative_to(REPO_ROOT))})
+            # Use the absolute path for robustness
+            experiments.append({'config': str(yaml_file)})
         
         # Set up a custom dataset name for display
         dataset_name = config_dir_path.name
@@ -1393,20 +1393,6 @@ def main():
                 print(f"  ✗ Exception: {e}")
                 
                 if not args.continue_on_error:
-                    print("\nERROR: Stopping. Use --continue-on-error to keep going.")
-                    break
-            
-            if result['success']:
-                print(f"  ✓ {result['message']}")
-                exp_obj.status = ExperimentStatus.COMPLETED
-                results['success'].append(experiment_key)
-            else:
-                print(f"  ✗ {result['message']}")
-                exp_obj.status = ExperimentStatus.FAILED
-                exp_obj.last_log_line = result.get('message', 'Unknown error')
-                results['failed'].append(experiment_key)
-                
-                if not args.continue_on_error and not args.dry_run:
                     print("\nERROR: Stopping. Use --continue-on-error to keep going.")
                     break
     
