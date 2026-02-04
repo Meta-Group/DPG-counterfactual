@@ -30,10 +30,16 @@ Outputs are saved to: outputs/comparison_results/
 - dataset_dpg_constraints.tex: LaTeX table with detailed DPG constraints per dataset (landscape, one dataset per page)
 - dpg_constraints/<dataset>_dpg_constraints.json: DPG-learned constraints (min/max bounds) per dataset as JSON
 
+When using --multiple-max flag:
+- visualizations/cf_values_heatmap_<dataset>_<method>.png: Heatmap comparing all CF feature values across runs
+- visualizations/metrics_heatmap_<dataset>_<method>.png: Heatmap comparing combination metrics across runs
+- visualizations/metrics_data_<dataset>_<method>.csv: Metrics data as CSV
+
 Usage:
     python scripts/export_comparison_results.py                    # Full export (fetches from WandB)
     python scripts/export_comparison_results.py --local-only         # Regenerate images only from disk
     python scripts/export_comparison_results.py --ids <yaml_file>  # Fetch specific run IDs from YAML
+    python scripts/export_comparison_results.py --dataset diabetes --method dpg --multiple-max 300  # Fetch last 300 DPG runs for diabetes
 """
 
 import sys
@@ -43,6 +49,7 @@ import argparse
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 import warnings
 import re
 import tempfile
@@ -62,6 +69,12 @@ parser.add_argument('--local-only', action='store_true',
                     help='Only regenerate visualizations from existing data, do not fetch from WandB')
 parser.add_argument('--ids', type=str, default=None,
                     help='Path to YAML file containing specific run IDs to fetch (disregards min_created_at)')
+parser.add_argument('--multiple-max', type=int, default=None,
+                    help='Fetch the last X runs from the specified dataset and method combination')
+parser.add_argument('--dataset', type=str, default=None,
+                    help='Dataset name to use with --multiple-max')
+parser.add_argument('--method', type=str, default=None,
+                    help='Method name (dpg or dice) to use with --multiple-max')
 args = parser.parse_args()
 
 from scripts.compare_techniques import (
@@ -485,6 +498,112 @@ def ensure_output_dir():
     print(f"Output directory: {OUTPUT_DIR}")
 
 
+def fetch_multiple_runs(dataset, method, max_runs):
+    """Fetch the last max_runs runs from WandB for a specific dataset and method.
+    
+    Args:
+        dataset: Dataset name
+        method: Method name (dpg or dice)
+        max_runs: Maximum number of runs to fetch
+    
+    Returns:
+        DataFrame with run data
+    """
+    api = wandb.Api(timeout=60)
+    runs_data = []
+    
+    print(f"\nFetching last {max_runs} runs for dataset={dataset}, method={method}...")
+    
+    # Query WandB for runs with this dataset
+    all_runs = api.runs(
+        f"{WANDB_ENTITY}/{WANDB_PROJECT}",
+        filters={
+            "state": "finished",
+            "config.data.dataset_name": dataset
+        },
+        order="-created_at",
+        per_page=500
+    )
+    
+    runs_found = 0
+    for run in all_runs:
+        if runs_found >= max_runs:
+            break
+        
+        config = run.config
+        if 'data' not in config:
+            continue
+        
+        # Check if this is the right method
+        data_config = config['data']
+        run_method = data_config.get('method', '').lower()
+        
+        # Also check run name as fallback
+        if not run_method:
+            run_name_lower = run.name.lower()
+            if '_dpg' in run_name_lower or run_name_lower.endswith('dpg'):
+                run_method = 'dpg'
+            elif '_dice' in run_name_lower or run_name_lower.endswith('dice'):
+                run_method = 'dice'
+        
+        if run_method != method.lower():
+            continue
+        
+        # Extract run data
+        summary = run.summary._json_dict
+        
+        run_data = {
+            'run_id': run.id,
+            'run_name': run.name,
+            'dataset': dataset,
+            'technique': method.lower(),
+            'state': run.state,
+            'created_at': run.created_at,
+        }
+        
+        # Extract per-counterfactual metrics
+        for metric_key, metric_info in COMPARISON_METRICS.items():
+            value = None
+            wandb_keys = metric_info.get('wandb_keys', [f'metrics/{metric_key}', f'combo_metrics/{metric_key}'])
+            for wkey in wandb_keys:
+                if wkey in summary:
+                    value = summary[wkey]
+                    break
+            run_data[metric_key] = value
+        
+        # Extract sample and counterfactuals
+        sample = config.get('sample') or summary.get('sample') or summary.get('original_sample')
+        counterfactuals = summary.get('final_counterfactuals', [])
+        if isinstance(counterfactuals, str):
+            try:
+                counterfactuals = json.loads(counterfactuals)
+            except:
+                counterfactuals = []
+        
+        # Convert list format to dict if needed
+        feature_names = config.get('feature_names', [])
+        if feature_names:
+            if isinstance(sample, list):
+                sample = dict(zip(feature_names, sample))
+            if counterfactuals and isinstance(counterfactuals[0], list):
+                counterfactuals = [dict(zip(feature_names, cf)) for cf in counterfactuals]
+        
+        run_data['sample'] = sample
+        run_data['counterfactuals'] = counterfactuals
+        
+        runs_data.append(run_data)
+        runs_found += 1
+        print(f"  ✓ Run {runs_found}/{max_runs}: {run.id} ({run.created_at})")
+    
+    print(f"\n✓ Fetched {runs_found} runs")
+    
+    if runs_found == 0:
+        print("❌ No runs found")
+        return pd.DataFrame()
+    
+    return pd.DataFrame(runs_data)
+
+
 def fetch_and_filter_data():
     """Fetch data from WandB and apply filters."""
     print("\n" + "="*80)
@@ -492,6 +611,15 @@ def fetch_and_filter_data():
     print("="*80)
     print(f"Entity: {WANDB_ENTITY}")
     print(f"Project: {WANDB_PROJECT}")
+    
+    # Check if --multiple-max flag was provided
+    if args.multiple_max is not None:
+        if not args.dataset or not args.method:
+            print("❌ --multiple-max requires --dataset and --method flags")
+            print("   Example: --dataset diabetes --method dpg --multiple-max 300")
+            return pd.DataFrame()
+        
+        return fetch_multiple_runs(args.dataset, args.method, args.multiple_max)
     
     # Check if --ids flag was provided
     if args.ids:
@@ -2042,6 +2170,166 @@ def export_comparison_numeric_csv(comparison_df, metrics_to_include=None, filena
     return numeric_df
 
 
+def export_multiple_runs_heatmaps(runs_df):
+    """Export heatmaps for multiple runs comparison.
+    
+    Creates two heatmaps:
+    1. CF values heatmap: Shows all CF feature values across all runs
+    2. Metrics heatmap: Shows combination metrics across all runs
+    
+    Args:
+        runs_df: DataFrame with multiple runs data
+    """
+    print("\n" + "="*80)
+    print("EXPORTING MULTIPLE RUNS HEATMAPS")
+    print("="*80)
+    
+    if len(runs_df) == 0:
+        print("⚠ No runs data available")
+        return
+    
+    dataset = runs_df['dataset'].iloc[0]
+    method = runs_df['technique'].iloc[0]
+    
+    print(f"Dataset: {dataset}")
+    print(f"Method: {method}")
+    print(f"Number of runs: {len(runs_df)}")
+    
+    viz_dir = os.path.join(OUTPUT_DIR, 'visualizations')
+    os.makedirs(viz_dir, exist_ok=True)
+    
+    # 1. Create CF values heatmap
+    print("\nCreating CF values heatmap...")
+    try:
+        # Collect all counterfactuals from all runs
+        all_cfs = []
+        run_labels = []
+        
+        for idx, row in runs_df.iterrows():
+            cfs = row.get('counterfactuals', [])
+            if cfs and len(cfs) > 0:
+                # Take first CF from each run
+                cf = cfs[0]
+                all_cfs.append(cf)
+                run_labels.append(f"Run {idx+1}")
+        
+        if len(all_cfs) == 0:
+            print("  ⚠ No counterfactuals found in runs")
+        else:
+            # Convert to DataFrame
+            cfs_df = pd.DataFrame(all_cfs)
+            cfs_df.index = run_labels
+            
+            # Create heatmap
+            fig, ax = plt.subplots(figsize=(max(12, len(cfs_df.columns) * 0.5), 
+                                           max(8, len(cfs_df) * 0.4)))
+            
+            sns.heatmap(cfs_df.T, annot=True, fmt='.2f', cmap='RdYlGn', 
+                       ax=ax, cbar_kws={'label': 'Feature Value'})
+            
+            ax.set_title(f'Counterfactual Feature Values Across Runs\n{dataset} - {method.upper()}', 
+                        fontsize=14, fontweight='bold')
+            ax.set_xlabel('Run', fontsize=12)
+            ax.set_ylabel('Feature', fontsize=12)
+            
+            plt.tight_layout()
+            
+            output_path = os.path.join(viz_dir, f'cf_values_heatmap_{dataset}_{method}.png')
+            fig.savefig(output_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            
+            print(f"  ✓ Exported CF values heatmap: {output_path}")
+            print(f"    Features: {len(cfs_df.columns)}, Runs: {len(cfs_df)}")
+    except Exception as e:
+        print(f"  ✗ Error creating CF values heatmap: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # 2. Create metrics heatmap
+    print("\nCreating metrics heatmap...")
+    try:
+        # Select combination metrics (small list)
+        combination_metrics = [
+            'perc_valid_cf_all',
+            'perc_actionable_cf_all',
+            'plausibility_nbr_cf',
+            'distance_mh',
+            'avg_nbr_changes',
+            'count_diversity_all',
+            'accuracy_knn_sklearn',
+            'runtime'
+        ]
+        
+        # Collect metrics data
+        metrics_data = []
+        run_labels = []
+        
+        for idx, row in runs_df.iterrows():
+            metrics_row = {}
+            has_data = False
+            
+            for metric_key in combination_metrics:
+                if metric_key in row and pd.notna(row[metric_key]):
+                    metric_info = COMPARISON_METRICS.get(metric_key, {})
+                    metric_name = metric_info.get('name', metric_key)
+                    metrics_row[metric_name] = row[metric_key]
+                    has_data = True
+            
+            if has_data:
+                metrics_data.append(metrics_row)
+                run_labels.append(f"Run {idx+1}")
+        
+        if len(metrics_data) == 0:
+            print("  ⚠ No metrics data found in runs")
+        else:
+            # Convert to DataFrame
+            metrics_df = pd.DataFrame(metrics_data)
+            metrics_df.index = run_labels
+            
+            # Normalize metrics for better visualization (0-1 scale per metric)
+            normalized_df = metrics_df.copy()
+            for col in normalized_df.columns:
+                col_min = normalized_df[col].min()
+                col_max = normalized_df[col].max()
+                if col_max > col_min:
+                    normalized_df[col] = (normalized_df[col] - col_min) / (col_max - col_min)
+            
+            # Create heatmap
+            fig, ax = plt.subplots(figsize=(max(12, len(metrics_df.columns) * 1.2), 
+                                           max(8, len(metrics_df) * 0.4)))
+            
+            sns.heatmap(normalized_df, annot=metrics_df.values, fmt='.3f', 
+                       cmap='RdYlGn', ax=ax, 
+                       cbar_kws={'label': 'Normalized Value (0-1)'})
+            
+            ax.set_title(f'Combination Metrics Across Runs\n{dataset} - {method.upper()}', 
+                        fontsize=14, fontweight='bold')
+            ax.set_xlabel('Metric', fontsize=12)
+            ax.set_ylabel('Run', fontsize=12)
+            
+            # Rotate x-axis labels for better readability
+            plt.xticks(rotation=45, ha='right')
+            
+            plt.tight_layout()
+            
+            output_path = os.path.join(viz_dir, f'metrics_heatmap_{dataset}_{method}.png')
+            fig.savefig(output_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            
+            print(f"  ✓ Exported metrics heatmap: {output_path}")
+            print(f"    Metrics: {len(metrics_df.columns)}, Runs: {len(metrics_df)}")
+            
+            # Also export as CSV for reference
+            csv_path = os.path.join(viz_dir, f'metrics_data_{dataset}_{method}.csv')
+            metrics_df.to_csv(csv_path)
+            print(f"  ✓ Exported metrics CSV: {csv_path}")
+            
+    except Exception as e:
+        print(f"  ✗ Error creating metrics heatmap: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def export_dataset_visualizations(comparison_df, raw_df):
     """Export dataset-specific visualizations organized by dataset."""
     print("\n" + "="*80)
@@ -2861,6 +3149,8 @@ def main():
     print("and exports all results to files.")
     if args.local_only:
         print("\n🏠 LOCAL-ONLY MODE: Regenerating visualizations from disk")
+    if args.multiple_max:
+        print(f"\n📊 MULTIPLE RUNS MODE: Fetching last {args.multiple_max} runs for {args.dataset}/{args.method}")
     print()
     
     # Ensure output directory exists
@@ -2871,6 +3161,29 @@ def main():
         _WANDB_DATA_CACHE = load_wandb_data_cache()
         if _WANDB_DATA_CACHE:
             print(f"✓ Loaded WandB data cache with {len(_WANDB_DATA_CACHE)} datasets")
+    
+    # Handle multiple runs mode
+    if args.multiple_max and not args.local_only:
+        raw_df = fetch_and_filter_data()
+        
+        if len(raw_df) == 0:
+            print("\n❌ No data found. Exiting.")
+            return
+        
+        # Export the two custom heatmaps
+        export_multiple_runs_heatmaps(raw_df)
+        
+        print("\n" + "="*80)
+        print("✓ MULTIPLE RUNS HEATMAPS EXPORTED SUCCESSFULLY")
+        print("="*80)
+        print(f"Output directory: {OUTPUT_DIR}")
+        print("\nGenerated files:")
+        viz_dir = os.path.join(OUTPUT_DIR, 'visualizations')
+        if os.path.exists(viz_dir):
+            for filename in sorted(os.listdir(viz_dir)):
+                if args.dataset in filename and args.method in filename:
+                    print(f"  - visualizations/{filename}")
+        return
     
     if args.local_only:
         # Load data from disk
