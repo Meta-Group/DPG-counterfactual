@@ -2577,6 +2577,22 @@ def plot_ridge_comparison(
     g.figure.suptitle(f'Feature Distribution: {technique_names[0]} vs {technique_names[1]} Counterfactuals', 
                       fontsize=14, fontweight='bold', y=1.02)
     
+    # Add background-colored rectangle on the right to align horizontal bars
+    from matplotlib.patches import Rectangle
+    fig_background_color = g.figure.get_facecolor()
+    for ax in g.axes.flat:
+        alignment_rect = Rectangle(
+            xy=(1.07, 0), 
+            width=0.1, 
+            height=1.0,
+            transform=ax.transAxes,
+            facecolor=fig_background_color,
+            edgecolor='none',
+            zorder=20,
+            clip_on=False
+        )
+        ax.add_patch(alignment_rect)
+    
     fig = g.figure
     plt.close(fig)
     
