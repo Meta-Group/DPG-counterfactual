@@ -2390,7 +2390,7 @@ def plot_ridge_comparison(
                         # Use axis coordinates (transform) for y-position to match axvline ymin/ymax
                         ax.scatter([min_norm + 0.008], [0.4], marker='>', s=80, 
                                   color=constraint_color, alpha=1.0, zorder=6, 
-                                  edgecolor='white'
+                                  edgecolor='white',
                                   transform=ax.get_xaxis_transform())
                     if max_val is not None:
                         ax.axvline(x=max_norm, ymin=0.1, ymax=0.7, color=constraint_color, linewidth=1.5, linestyle='--', alpha=0.8, zorder=5)
