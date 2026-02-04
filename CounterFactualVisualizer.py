@@ -2484,7 +2484,8 @@ def plot_ridge_comparison(
                         has_original_constraints = True
     
     # Overlap the plots vertically for the ridge effect (reduced overlap to prevent spillover)
-    g.figure.subplots_adjust(hspace=-0.15)
+    # Also reduce left margin to make the overall figure narrower
+    g.figure.subplots_adjust(hspace=-0.1, left=0.1)
     
     # Limit y-axis height - cap at a reasonable fixed value to prevent overflow
     for ax in g.axes.flat:
@@ -2569,7 +2570,7 @@ def plot_ridge_comparison(
 
     legend = g.figure.legend(handles=legend_elements, loc='upper right', fontsize=10, 
                              framealpha=1.0, facecolor='white', edgecolor='gray',
-                             bbox_to_anchor=(0.98, 0.98))
+                             bbox_to_anchor=(1.02, 0.98))
     for text in legend.get_texts():
         text.set_color('black')
         
