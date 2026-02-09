@@ -99,3 +99,7 @@ nbstripout is recommended to keep notebooks clean of output cells. Install globa
 pip install nbstripout
 nbstripout --install
 ```
+
+## Contributing
+
+This repository and the related DPG projects are under active development. We welcome contributions, bug reports, and suggestions. Please feel free to open issues or submit PRs.
