@@ -24,7 +24,6 @@ import os
 import urllib.request
 import numpy as np
 import pandas as pd
-from sklearn.datasets import load_iris
 from sklearn.preprocessing import LabelEncoder
 
 
@@ -280,29 +279,6 @@ def load_dataset(config, repo_root=None):
             - variable_indices: list of actionable feature indices
     """
     dataset_name = config.data.dataset.lower()
-    
-    # Special case: iris (sklearn built-in, no CSV needed)
-    if dataset_name == "iris":
-        print("INFO: Loading Iris dataset (sklearn built-in)...")
-        iris = load_iris()
-        features = iris.data
-        labels = iris.target
-        feature_names = list(iris.feature_names)
-        features_df = pd.DataFrame(features, columns=feature_names)
-        label_encoders = {}
-        
-        continuous_indices, categorical_indices, variable_indices = determine_feature_types(features_df, config)
-        
-        return {
-            'features': features,
-            'labels': labels,
-            'feature_names': feature_names,
-            'features_df': features_df,
-            'label_encoders': label_encoders,
-            'continuous_indices': continuous_indices,
-            'categorical_indices': categorical_indices,
-            'variable_indices': variable_indices,
-        }
     
     # Generic CSV loader — works for any dataset with a URL or local path.
     dataset_url = getattr(config.data, 'dataset_url', None)
