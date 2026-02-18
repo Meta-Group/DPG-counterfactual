@@ -65,4 +65,7 @@ experiment_results/
 temp/
 
 wandb/
+
+# locally cached datasets (downloaded at runtime from remote sources)
+datasets/
 outputs/
