@@ -10,6 +10,7 @@ dice-ml
 # experiment tracking & configuration
 wandb>=0.16.0
 pyyaml>=6.0
+huggingface_hub
 
 # notebooks
 ipywidgets
