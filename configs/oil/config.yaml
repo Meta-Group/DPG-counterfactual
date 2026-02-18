@@ -1,6 +1,6 @@
 data:
   dataset: oil
-  dataset_path: configs/oil/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/oil/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:
