@@ -1,6 +1,6 @@
 data:
   dataset: fraud_detection_dataset
-  dataset_path: configs/fraud_detection_dataset/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/fraud_detection_dataset/resolve/main/dataset.csv
   target_column: Fraudulent
   categorical_features:
   - Country

@@ -1,6 +1,6 @@
 data:
   dataset: satimage
-  dataset_path: configs/satimage/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/satimage/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:

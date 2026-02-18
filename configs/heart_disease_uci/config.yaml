@@ -1,6 +1,6 @@
 data:
   dataset: heart_disease_uci
-  dataset_path: configs/heart_disease_uci/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/heart_disease_uci/resolve/main/dataset.csv
   target_column: num
   categorical_features:
   - sex

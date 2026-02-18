@@ -1,6 +1,6 @@
 data:
   dataset: letter_img
-  dataset_path: configs/letter_img/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/letter_img/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:

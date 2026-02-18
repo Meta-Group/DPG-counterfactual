@@ -1,6 +1,6 @@
 data:
   dataset: libras_move
-  dataset_path: configs/libras_move/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/libras_move/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:

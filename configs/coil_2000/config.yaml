@@ -1,6 +1,6 @@
 data:
   dataset: coil_2000
-  dataset_path: configs/coil_2000/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/coil_2000/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:

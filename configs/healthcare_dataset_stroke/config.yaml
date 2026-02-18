@@ -1,6 +1,6 @@
 data:
   dataset: healthcare_dataset_stroke
-  dataset_path: configs/healthcare_dataset_stroke/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/healthcare_dataset_stroke/resolve/main/dataset.csv
   target_column: stroke
   categorical_features:
   - gender

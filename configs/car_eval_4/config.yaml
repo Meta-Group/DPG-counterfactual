@@ -1,6 +1,6 @@
 data:
   dataset: car_eval_4
-  dataset_path: configs/car_eval_4/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/car_eval_4/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:

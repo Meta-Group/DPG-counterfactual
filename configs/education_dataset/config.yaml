@@ -1,6 +1,6 @@
 data:
   dataset: education_dataset
-  dataset_path: configs/education_dataset/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/education_dataset/resolve/main/dataset.csv
   target_column: PassFail
 experiment:
   tags:

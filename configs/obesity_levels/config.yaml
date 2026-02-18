@@ -1,6 +1,6 @@
 data:
   dataset: obesity_levels
-  dataset_path: configs/obesity_levels/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/obesity_levels/resolve/main/dataset.csv
   target_column: NObeyesdad
   categorical_features:
   - Gender

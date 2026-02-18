@@ -1,6 +1,6 @@
 data:
   dataset: optical_digits
-  dataset_path: configs/optical_digits/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/optical_digits/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:

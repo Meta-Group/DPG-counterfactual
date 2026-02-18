@@ -1,6 +1,6 @@
 data:
   dataset: red_wine_quality
-  dataset_path: configs/red_wine_quality/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/red_wine_quality/resolve/main/dataset.csv
   target_column: quality
 experiment:
   tags:

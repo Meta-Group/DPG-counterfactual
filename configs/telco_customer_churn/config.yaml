@@ -1,6 +1,6 @@
 data:
   dataset: telco_customer_churn
-  dataset_path: configs/telco_customer_churn/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/telco_customer_churn/resolve/main/dataset.csv
   target_column: Churn
   categorical_features:
   - gender

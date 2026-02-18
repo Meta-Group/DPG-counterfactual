@@ -1,6 +1,6 @@
 data:
   dataset: us_crime
-  dataset_path: configs/us_crime/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/us_crime/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:

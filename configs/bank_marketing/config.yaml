@@ -1,6 +1,6 @@
 data:
   dataset: bank_marketing
-  dataset_path: configs/bank_marketing/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/bank_marketing/resolve/main/dataset.csv
   target_column: y
   separator: ;
   categorical_features:

@@ -1,6 +1,6 @@
 data:
   dataset: banknote_authentication
-  dataset_path: configs/banknote_authentication/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/banknote_authentication/resolve/main/dataset.csv
   target_column: class
 experiment:
   tags:

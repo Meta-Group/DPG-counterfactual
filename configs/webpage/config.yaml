@@ -1,6 +1,6 @@
 data:
   dataset: webpage
-  dataset_path: configs/webpage/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/webpage/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:

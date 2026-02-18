@@ -1,6 +1,6 @@
 data:
   dataset: isolet
-  dataset_path: configs/isolet/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/isolet/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:

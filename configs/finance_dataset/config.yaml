@@ -1,6 +1,6 @@
 data:
   dataset: finance_dataset
-  dataset_path: configs/finance_dataset/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/finance_dataset/resolve/main/dataset.csv
   target_column: ApprovedLoan
   categorical_features:
   - MaritalStatus

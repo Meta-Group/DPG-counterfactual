@@ -1,6 +1,6 @@
 data:
   dataset: customer_personality_analysis
-  dataset_path: configs/customer_personality_analysis/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/customer_personality_analysis/resolve/main/dataset.csv
   target_column: Response
   separator: "\t"
   categorical_features:

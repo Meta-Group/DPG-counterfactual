@@ -1,6 +1,6 @@
 data:
   dataset: scene
-  dataset_path: configs/scene/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/scene/resolve/main/dataset.csv
   target_column: target
 experiment:
   tags:
