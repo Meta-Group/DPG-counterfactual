@@ -21,10 +21,42 @@ All dataset-specific behavior is controlled via YAML config options:
 """
 
 import os
+import urllib.request
 import numpy as np
 import pandas as pd
 from sklearn.datasets import load_iris
 from sklearn.preprocessing import LabelEncoder
+
+
+def _resolve_local_dataset_path(dataset_name: str, url: str, repo_root=None) -> str:
+    """Return the local cache path for a dataset downloaded from a URL.
+
+    The file is stored under ``datasets/<dataset_name>/<filename>`` where
+    ``<filename>`` is the last component of the URL path.
+    ``repo_root`` is used as the base when provided, falling back to the
+    current working directory.
+    """
+    filename = url.rstrip("/").split("/")[-1] or "dataset.csv"
+    base = repo_root if repo_root else os.getcwd()
+    return os.path.join(base, "datasets", dataset_name, filename)
+
+
+def _ensure_dataset_downloaded(dataset_name: str, url: str, repo_root=None) -> str:
+    """Return the local path to the dataset, downloading from *url* if absent.
+
+    Downloads the file when it is not already present on disk so that
+    subsequent runs skip the network call.
+    """
+    local_path = _resolve_local_dataset_path(dataset_name, url, repo_root)
+    if os.path.exists(local_path):
+        print(f"INFO: Using cached dataset at {local_path}")
+        return local_path
+
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    print(f"INFO: Downloading dataset '{dataset_name}' from {url} …")
+    urllib.request.urlretrieve(url, local_path)
+    print(f"INFO: Dataset saved to {local_path}")
+    return local_path
 
 
 def determine_feature_types(features_df, config=None):
@@ -86,11 +118,16 @@ def _load_csv_dataset(config, repo_root=None):
     """
     dataset_name = config.data.dataset
     print(f"INFO: Loading {dataset_name} dataset...")
-    
-    # Load CSV
-    dataset_path = config.data.dataset_path
-    if not os.path.isabs(dataset_path) and repo_root:
-        dataset_path = os.path.join(repo_root, dataset_path)
+
+    # Resolve the CSV path — prefer dataset_url (downloads on demand) over
+    # dataset_path (legacy local path).
+    dataset_url = getattr(config.data, 'dataset_url', None)
+    if dataset_url:
+        dataset_path = _ensure_dataset_downloaded(dataset_name, dataset_url, repo_root)
+    else:
+        dataset_path = config.data.dataset_path
+        if not os.path.isabs(dataset_path) and repo_root:
+            dataset_path = os.path.join(repo_root, dataset_path)
     
     # Get separator from config (default to comma)
     separator = getattr(config.data, 'separator', ',')
@@ -267,11 +304,13 @@ def load_dataset(config, repo_root=None):
             'variable_indices': variable_indices,
         }
     
-    # Generic CSV loader - works for any dataset with proper config
-    if hasattr(config.data, 'dataset_path') and config.data.dataset_path:
+    # Generic CSV loader — works for any dataset with a URL or local path.
+    dataset_url = getattr(config.data, 'dataset_url', None)
+    dataset_path = getattr(config.data, 'dataset_path', None)
+    if dataset_url or dataset_path:
         return _load_csv_dataset(config, repo_root)
-    
+
     raise ValueError(
-        f"Cannot load dataset '{dataset_name}': no dataset_path specified in config. "
-        f"Add 'data.dataset_path' to your config YAML pointing to the CSV file."
+        f"Cannot load dataset '{dataset_name}': neither 'data.dataset_url' nor "
+        f"'data.dataset_path' is specified in config."
     )
