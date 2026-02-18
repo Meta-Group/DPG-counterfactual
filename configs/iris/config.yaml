@@ -1,7 +1,7 @@
 # iris dataset is the only one that does not come from a csv file, but from the sklearn module
 data:
   dataset: iris
-  dataset_path: configs/iris/dataset.csv
+  dataset_url: https://huggingface.co/datasets/MLLab-TS/iris/resolve/main/dataset.csv
   target_column: target
 model:
   type: RandomForestClassifier
