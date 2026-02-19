@@ -1661,6 +1661,18 @@ def run_experiment(config: DictConfig, wandb_run=None):
             raw_dpg_config = raw_dpg_config._config
 
         # Restructure: flat config -> nested DPG format
+        # NOTE: Always include a visualization section so DPG's class-node label format
+        # stays clean (i.e., matching DPG/config.yaml defaults).  When dpg_config is
+        # passed *without* visualization, DPG overrides the file config which removes the
+        # class_node styling, causing it to append raw Graphviz attributes to node labels.
+        # This breaks GraphMetrics label parsing and leaves class bounds empty.
+        _dpg_vis_defaults = {
+            "graph_attrs": {"bgcolor": "white", "rankdir": "R"},
+            "node_attrs": {"shape": "box", "fillcolor": "#ffc3c3"},
+            "class_node": {"fillcolor": "#a4c2f4", "shape": "box", "style": "rounded, filled"},
+        }
+        vis_config = raw_dpg_config.get("visualization") or {}
+        merged_vis = {**_dpg_vis_defaults, **vis_config}  # method config overrides defaults
         dpg_config = {
             "dpg": {
                 "default": {
@@ -1668,7 +1680,7 @@ def run_experiment(config: DictConfig, wandb_run=None):
                     "decimal_threshold": raw_dpg_config.get("decimal_threshold", 3),
                     "n_jobs": raw_dpg_config.get("n_jobs", -1),
                 },
-                "visualization": raw_dpg_config.get("visualization", {}),
+                "visualization": merged_vis,
             }
         }
 
@@ -1859,7 +1871,7 @@ def run_experiment(config: DictConfig, wandb_run=None):
     # For DICE: only sample generation times (boundary extraction excluded as it's only for viz)
     total_generation_runtime = sum(r["generation_runtime"] for r in results)
     method_name = config.counterfactual.method if hasattr(config.counterfactual, "method") else "unknown"
-    if method_name.lower() == "dpg":
+    if method_name.lower() in ("dpg", "dpg_dice"):
         total_generation_runtime += boundary_extraction_time
     
     # Log experiment-level summary

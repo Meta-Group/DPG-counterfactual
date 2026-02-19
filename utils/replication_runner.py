@@ -18,6 +18,99 @@ from CounterFactualModel import CounterFactualModel
 from utils.config_manager import DictConfig
 
 
+def build_permitted_range_from_dpg_constraints(
+    constraints: Dict,
+    target_class: int,
+    feature_names: list,
+    train_df: pd.DataFrame,
+) -> Dict:
+    """Build a DiCE-compatible permitted_range from DPG target-class constraints.
+
+    DPG constraints are stored as::
+
+        {"Class 0": [{"feature": "f", "min": lo, "max": hi}, ...], ...}
+
+    This function selects the target class's interval list, converts it to the
+    ``{feature: [min, max]}`` format DiCE expects, and clips bounds to the
+    observed training-data range to prevent DiCE internal errors.
+
+    Args:
+        constraints: Raw DPG constraints dict returned by ConstraintParser.
+        target_class: Integer label of the desired counterfactual class.
+        feature_names: Ordered list of feature names.
+        train_df: Training DataFrame (may include '_target_' column).
+
+    Returns:
+        Dict mapping feature names to ``[clipped_min, clipped_max]`` ranges.
+        Features with unbounded (±inf) DPG intervals are omitted.
+    """
+    if not constraints:
+        return {}
+
+    # --- locate the DPG entry for the target class ---
+    # Keys are typically "Class 0", "Class 1", etc., but DPG may append Graphviz
+    # visualization attributes to the label, producing e.g.
+    # "Class 0 fontsize=20 style=filled]\n".  Robust token-based matching handles both.
+    target_prefix = f"Class {target_class}"
+
+    def _matches_class_key(k: str, tgt_int: int) -> bool:
+        """Return True if key k identifies class tgt_int."""
+        if k == f"Class {tgt_int}":
+            return True
+        tokens = k.split()
+        return len(tokens) >= 2 and tokens[0] == "Class" and tokens[1] == str(tgt_int)
+
+    target_key = None
+    if target_prefix in constraints:
+        target_key = target_prefix
+    else:
+        for k in constraints:
+            if _matches_class_key(k, int(target_class)):
+                target_key = k
+                break
+
+    if target_key is None:
+        return {}  # DPG has no entry for this class
+
+    class_constraints = constraints[target_key]  # list of {feature, min, max}
+    if not class_constraints:
+        return {}
+
+    # Precompute training data min/max for clipping (drop non-feature columns)
+    feature_cols = [f for f in feature_names if f in train_df.columns]
+    train_feature_df = train_df[feature_cols]
+    train_min = train_feature_df.min()
+    train_max = train_feature_df.max()
+
+    permitted_range = {}
+    for entry in class_constraints:
+        feat = entry.get("feature") or entry.get("Feature")
+        lo_raw = entry.get("min")
+        hi_raw = entry.get("max")
+
+        # DPG stores None for truly unbounded sides (not float("-inf"))
+        lo = lo_raw if lo_raw is not None else float("-inf")
+        hi = hi_raw if hi_raw is not None else float("inf")
+
+        if feat not in feature_names:
+            continue
+        if lo == float("-inf") and hi == float("inf"):
+            continue  # DPG has no real constraint on this feature
+
+        # Clip to observed training range
+        data_min = float(train_min.get(feat, lo))
+        data_max = float(train_max.get(feat, hi))
+        clipped_lo = max(lo if lo != float("-inf") else data_min, data_min)
+        clipped_hi = min(hi if hi != float("inf") else data_max, data_max)
+
+        if clipped_lo >= clipped_hi:
+            continue  # Degenerate interval — skip
+
+        permitted_range[feat] = [clipped_lo, clipped_hi]
+
+    return permitted_range
+
+
 def build_permitted_range_from_actionability(
     dict_non_actionable: Dict,
     original_sample: Dict,
@@ -463,6 +556,250 @@ def run_counterfactual_generation_dice(args):
         return None
 
 
+def run_counterfactual_generation_dpg_dice(args):
+    """Run DiCE CF generation constrained by DPG-extracted target-class bounds.
+
+    This hybrid approach uses DPG to extract the learned feature intervals for
+    the *target* class from the trained ensemble, then passes those intervals as
+    DiCE's ``permitted_range``.  Actionability rules and any explicit
+    ``permitted_range`` entries in the config are merged on top with increasing
+    priority::
+
+        DPG bounds  <  actionability  <  config overrides
+
+    Args:
+        args: Same tuple as ``run_counterfactual_generation_dice``.
+
+    Returns:
+        Dict with generation results (``method='dpg_dice'``) or None if failed.
+    """
+    if not DICE_AVAILABLE:
+        print("ERROR: dice-ml not available. Install with: pip install dice-ml")
+        return None
+
+    (
+        ORIGINAL_SAMPLE,
+        TARGET_CLASS,
+        FEATURES_NAMES,
+        dict_non_actionable,
+        config_dict,
+        model,
+        constraints,
+        train_df,
+        continuous_features,
+        categorical_features,
+    ) = args
+
+    config = DictConfig(config_dict)
+
+    try:
+        # ------------------------------------------------------------------
+        # 1. DPG-derived permitted_range for the target class
+        # ------------------------------------------------------------------
+        dpg_permitted_range = build_permitted_range_from_dpg_constraints(
+            constraints, TARGET_CLASS, FEATURES_NAMES, train_df
+        )
+        if dpg_permitted_range:
+            print(
+                f"INFO [dpg_dice]: Applied DPG bounds for {len(dpg_permitted_range)}"
+                f"/{len(FEATURES_NAMES)} features: {list(dpg_permitted_range.keys())}"
+            )
+        else:
+            print(
+                "INFO [dpg_dice]: No DPG bounds extracted for target class"
+                f" {TARGET_CLASS}; falling back to plain DiCE constraints."
+            )
+
+        # ------------------------------------------------------------------
+        # 2. Actionability-derived permitted_range (overrides DPG per feature)
+        # ------------------------------------------------------------------
+        actionability_range = build_permitted_range_from_actionability(
+            dict_non_actionable, ORIGINAL_SAMPLE, train_df, FEATURES_NAMES
+        )
+
+        # ------------------------------------------------------------------
+        # 3. Merge: DPG < actionability
+        #    For features present in both, intersect the intervals so that both
+        #    constraints are satisfied simultaneously.
+        # ------------------------------------------------------------------
+        permitted_range = dict(dpg_permitted_range)  # start with DPG bounds
+        for feat, act_range in actionability_range.items():
+            if feat in permitted_range:
+                dpg_lo, dpg_hi = permitted_range[feat]
+                act_lo, act_hi = act_range
+                merged_lo = max(dpg_lo, act_lo)
+                merged_hi = min(dpg_hi, act_hi)
+                if merged_lo < merged_hi:
+                    permitted_range[feat] = [merged_lo, merged_hi]
+                else:
+                    # Intersection is empty — actionability constraint is stricter,
+                    # use actionability only (trusts the user's explicit rule).
+                    permitted_range[feat] = act_range
+            else:
+                permitted_range[feat] = act_range
+
+        # ------------------------------------------------------------------
+        # 4. Config-specified overrides (highest priority)
+        # ------------------------------------------------------------------
+        config_permitted_range = {}
+        if hasattr(config.counterfactual, 'permitted_range') and config.counterfactual.permitted_range:
+            pr_cfg = config.counterfactual.permitted_range
+            if hasattr(pr_cfg, '_config'):
+                config_permitted_range = pr_cfg._config
+            elif hasattr(pr_cfg, 'to_dict'):
+                config_permitted_range = pr_cfg.to_dict()
+            else:
+                config_permitted_range = dict(pr_cfg) if pr_cfg else {}
+            permitted_range.update(config_permitted_range)
+            if config_permitted_range:
+                print(f"INFO [dpg_dice]: Config permitted_range overrides applied: {config_permitted_range}")
+
+        # ------------------------------------------------------------------
+        # 5. Build features_to_vary from actionability
+        # ------------------------------------------------------------------
+        features_to_vary = [
+            feat for feat in FEATURES_NAMES
+            if dict_non_actionable.get(feat, "none") != "no_change"
+        ]
+        if len(features_to_vary) == len(FEATURES_NAMES):
+            features_to_vary = 'all'
+        elif not features_to_vary:
+            print("WARNING [dpg_dice]: No actionable features!")
+            return None
+
+        # ------------------------------------------------------------------
+        # 6. Feature weights
+        # ------------------------------------------------------------------
+        feature_weights = {}
+        if hasattr(config.counterfactual, 'feature_weights') and config.counterfactual.feature_weights:
+            fw_cfg = config.counterfactual.feature_weights
+            if hasattr(fw_cfg, '_config'):
+                feature_weights = fw_cfg._config
+            elif hasattr(fw_cfg, 'to_dict'):
+                feature_weights = fw_cfg.to_dict()
+            else:
+                feature_weights = dict(fw_cfg) if fw_cfg else {}
+        if not feature_weights:
+            feature_weights = {feat: 1.0 for feat in FEATURES_NAMES}
+
+        # ------------------------------------------------------------------
+        # 7. DiCE data / model objects
+        # ------------------------------------------------------------------
+        outcome_name = '_target_'
+        train_df_with_target = train_df.copy()
+
+        continuous_feature_names = [FEATURES_NAMES[i] for i in continuous_features] if continuous_features else []
+        categorical_feature_names = [FEATURES_NAMES[i] for i in categorical_features] if categorical_features else []
+
+        for feat in continuous_feature_names:
+            if feat in train_df_with_target.columns:
+                train_df_with_target[feat] = train_df_with_target[feat].astype(float)
+
+        continuous_features_precision = {feat: 4 for feat in continuous_feature_names}
+
+        d = dice_ml.Data(
+            dataframe=train_df_with_target,
+            continuous_features=continuous_feature_names,
+            outcome_name=outcome_name,
+            continuous_features_precision=continuous_features_precision,
+        )
+        m = dice_ml.Model(model=model, backend='sklearn')
+
+        # ------------------------------------------------------------------
+        # 8. DiCE generation
+        # ------------------------------------------------------------------
+        requested_counterfactuals = getattr(config.experiment_params, 'requested_counterfactuals', 5)
+        proximity_weight = getattr(config.counterfactual, 'proximity_weight', 0.5)
+        diversity_weight = getattr(config.counterfactual, 'diversity_weight', 1.0)
+        generation_method = getattr(config.counterfactual, 'generation_method', 'genetic')
+        maxiterations = getattr(config.counterfactual, 'maxiterations', 500)
+        posthoc_sparsity_algorithm = getattr(config.counterfactual, 'posthoc_sparsity_algorithm', 'linear')
+        verbose_dice = getattr(config.counterfactual, 'verbose_dice', False)
+
+        exp = dice_ml.Dice(d, m, method=generation_method)
+        query_df = pd.DataFrame([ORIGINAL_SAMPLE])
+
+        dice_exp = exp.generate_counterfactuals(
+            query_df,
+            total_CFs=requested_counterfactuals,
+            desired_class=int(TARGET_CLASS),
+            features_to_vary=features_to_vary,
+            permitted_range=permitted_range if permitted_range else None,
+            proximity_weight=proximity_weight,
+            diversity_weight=diversity_weight,
+            feature_weights=feature_weights,
+            maxiterations=maxiterations,
+            posthoc_sparsity_algorithm=posthoc_sparsity_algorithm,
+            verbose=verbose_dice,
+        )
+
+        # ------------------------------------------------------------------
+        # 9. Extract and sort results
+        # ------------------------------------------------------------------
+        if not (dice_exp.cf_examples_list and len(dice_exp.cf_examples_list) > 0):
+            print("WARNING [dpg_dice]: No counterfactuals in DiCE result")
+            return None
+
+        cf_df = dice_exp.cf_examples_list[0].final_cfs_df
+        if cf_df is None or len(cf_df) == 0:
+            print("WARNING [dpg_dice]: DiCE returned empty CF DataFrame")
+            return None
+
+        if outcome_name in cf_df.columns:
+            cf_df = cf_df.drop(columns=[outcome_name])
+
+        sorted_cfs = []
+        for _, row in cf_df.iterrows():
+            cf_dict = {feat: float(row[feat]) for feat in FEATURES_NAMES if feat in row}
+            cf_pred = model.predict(pd.DataFrame([cf_dict]))[0]
+            if cf_pred == TARGET_CLASS:
+                dist = sum((ORIGINAL_SAMPLE[f] - cf_dict[f]) ** 2 for f in FEATURES_NAMES) ** 0.5
+                sorted_cfs.append((dist, cf_dict))
+
+        sorted_cfs.sort(key=lambda x: x[0])
+        all_counterfactuals = [cf for _, cf in sorted_cfs]
+
+        if not all_counterfactuals:
+            # Fallback: include all even if class not matched (upstream filter will catch)
+            all_counterfactuals = [
+                {feat: float(row[feat]) for feat in FEATURES_NAMES if feat in row}
+                for _, row in cf_df.iterrows()
+            ]
+
+        best_cf = all_counterfactuals[0] if all_counterfactuals else None
+        print(f"DEBUG [dpg_dice]: Generated {len(all_counterfactuals)} counterfactuals")
+
+        return {
+            'counterfactual': best_cf,
+            'all_counterfactuals': all_counterfactuals,
+            'evolution_history': [best_cf] if best_cf else [],
+            'best_fitness_list': [],
+            'average_fitness_list': [],
+            'dict_non_actionable': dict_non_actionable,
+            'method': 'dpg_dice',
+            'constraints': constraints,
+            'feature_names': FEATURES_NAMES,
+            'requested_counterfactuals': requested_counterfactuals,
+            'proximity_weight': proximity_weight,
+            'diversity_weight': diversity_weight,
+            'generation_method': generation_method,
+            # Dummy DPG params for downstream compatibility
+            'repulsion_weight': 0.0,
+            'boundary_weight': 0.0,
+            'distance_factor': 0.0,
+            'sparsity_factor': 0.0,
+            'constraints_factor': 0.0,
+            'original_escape_weight': 0.0,
+            'escape_pressure': 0.0,
+            'prioritize_non_overlapping': False,
+        }
+
+    except Exception as exc:
+        print(f"WARNING [dpg_dice]: Generation failed: {exc}")
+        traceback.print_exc()
+        return None
+
+
 def run_counterfactual_generation(args):
     """Dispatcher for running counterfactual generation - routes to DPG or DiCE.
     
@@ -479,5 +816,7 @@ def run_counterfactual_generation(args):
     
     if method == 'dice':
         return run_counterfactual_generation_dice(args)
+    elif method == 'dpg_dice':
+        return run_counterfactual_generation_dpg_dice(args)
     else:
         return run_counterfactual_generation_dpg(args)
