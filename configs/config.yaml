@@ -119,3 +119,15 @@ methods:
     # proximity_weight: 0.5
     # diversity_weight: 1.0
     generation_method: genetic
+  dpg_dice:
+    # DiCE + DPG hybrid: DPG target-class bounds feed DiCE's permitted_range.
+    # Merge priority (lowest→highest): DPG bounds < actionability < config overrides.
+    generation_method: genetic
+    # proximity_weight: 0.5
+    # diversity_weight: 1.0
+    # maxiterations: 500
+    # posthoc_sparsity_algorithm: linear
+    config:
+      perc_var: 0.0000001
+      decimal_threshold: 3
+      n_jobs: -1
