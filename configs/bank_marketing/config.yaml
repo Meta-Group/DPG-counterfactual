@@ -1,3 +1,11 @@
+# Configuration for bank_marketing dataset
+# Only dataset-specific overrides are included here.
+# Base defaults are loaded from configs/config.yaml
+#
+# Usage:
+#   python scripts/run_experiment.py --dataset bank_marketing --method dpg
+#   python scripts/run_experiment.py --dataset bank_marketing --method dice
+
 data:
   dataset: bank_marketing
   dataset_url: https://huggingface.co/datasets/MLLab-TS/bank_marketing/resolve/main/dataset.csv
@@ -42,7 +50,6 @@ methods:
       euribor3m: actionable
       nr.employed: actionable
 model:
-  type: RandomForestClassifier
   n_estimators: 7
   min_impurity_decrease: 0.0
   max_features: null

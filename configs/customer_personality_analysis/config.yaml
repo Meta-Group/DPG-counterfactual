@@ -1,3 +1,11 @@
+# Configuration for customer_personality_analysis dataset
+# Only dataset-specific overrides are included here.
+# Base defaults are loaded from configs/config.yaml
+#
+# Usage:
+#   python scripts/run_experiment.py --dataset customer_personality_analysis --method dpg
+#   python scripts/run_experiment.py --dataset customer_personality_analysis --method dice
+
 data:
   dataset: customer_personality_analysis
   dataset_url: https://huggingface.co/datasets/MLLab-TS/customer_personality_analysis/resolve/main/dataset.csv
@@ -46,7 +54,6 @@ methods:
     overgeneration_factor: 2
     verbose: true
 model:
-  type: RandomForestClassifier
   n_estimators: 20
   min_impurity_decrease: 0.0
   max_features: 0.5
