@@ -77,7 +77,7 @@ parser.add_argument('--method', type=str, default=None,
                     help='Method name (dpg or dice) to use with --multiple-max')
 args = parser.parse_args()
 
-from scripts.compare_techniques import (
+from utils.compare_techniques import (
     fetch_all_runs,
     create_comparison_table,
     create_method_metrics_table,
@@ -89,7 +89,7 @@ from scripts.compare_techniques import (
     filter_to_latest_run_per_combo,
 )
 
-from scripts.statistical_analysis import run_full_analysis as run_statistical_analysis
+from utils.statistical_analysis import run_full_analysis as run_statistical_analysis
 
 from utils.config_manager import load_config
 
@@ -844,7 +844,7 @@ def export_winner_heatmap_small(comparison_df):
 
 def export_radar_chart_for_dataset(comparison_df, dataset, viz_dir):
     """Export radar chart for a specific dataset."""
-    from scripts.compare_techniques import plot_radar_chart
+    from utils.compare_techniques import plot_radar_chart
     
     safe_name = dataset.replace('/', '_').replace(' ', '_')
     output_path = os.path.join(viz_dir, f'radar_{safe_name}.png')
@@ -2404,7 +2404,7 @@ def export_dataset_visualizations(comparison_df, raw_df):
             # 'runtime'
         }
         
-        from scripts.compare_techniques import plot_grouped_bar_chart
+        from utils.compare_techniques import plot_grouped_bar_chart
         metrics_exported = []
         for metric_key in small_metrics:
             if f'{metric_key}_dpg' in comparison_df.columns and f'{metric_key}_dice' in comparison_df.columns:
