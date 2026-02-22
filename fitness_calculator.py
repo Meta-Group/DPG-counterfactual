@@ -10,17 +10,9 @@ import pandas as pd
 from scipy.spatial.distance import euclidean, cityblock, cosine
 
 from utils.feature_utils import normalize_feature_name, features_match
-from constants import (
-    INVALID_FITNESS,
-    CLASS_PENALTY_SOFT_BASE,
-    CLASS_PENALTY_HARD_BOOST,
-    BOUNDARY_PENALTY_THRESHOLD,
-    BOUNDARY_PENALTY_VALUE,
-    CONSTRAINT_VIOLATION_MULTIPLIER,
-    DEFAULT_BOUNDARY_DISTANCE,
-    FITNESS_SHARING_BASE_SIGMA,
-    UNCONSTRAINED_CHANGE_PENALTY_FACTOR,
-)
+from utils.config_manager import get_constants as _get_constants
+
+_cfg = _get_constants()
 
 
 class FitnessCalculator:
@@ -40,7 +32,7 @@ class FitnessCalculator:
         constraints_factor=3.0,
         original_escape_weight=2.0,
         max_bonus_cap=10.0,
-        unconstrained_penalty_factor=UNCONSTRAINED_CHANGE_PENALTY_FACTOR,
+        unconstrained_penalty_factor=None,
         constraint_validator=None,
         boundary_analyzer=None,
         verbose=False,
@@ -74,7 +66,7 @@ class FitnessCalculator:
         self.constraints_factor = constraints_factor
         self.original_escape_weight = original_escape_weight
         self.max_bonus_cap = max_bonus_cap
-        self.unconstrained_penalty_factor = unconstrained_penalty_factor
+        self.unconstrained_penalty_factor = unconstrained_penalty_factor if unconstrained_penalty_factor is not None else _cfg['unconstrained_change_penalty_factor']
         self.constraint_validator = constraint_validator
         self.boundary_analyzer = boundary_analyzer
         self.verbose = verbose
@@ -415,7 +407,7 @@ class FitnessCalculator:
             return boundary_distance
         except:
             # Fallback if model doesn't support predict_proba
-            return DEFAULT_BOUNDARY_DISTANCE
+            return _cfg['default_boundary_distance']
 
     def calculate_fitness(
         self,
@@ -464,13 +456,13 @@ class FitnessCalculator:
         ):
             if self.verbose:
                 print(f"[VERBOSE-DPG] Fitness: INVALID (non-actionable change)")
-            return INVALID_FITNESS
+            return _cfg['invalid_fitness']
 
         # Check if sample is identical to original
         if np.array_equal(features.flatten(), original_features.flatten()):
             if self.verbose:
                 print(f"[VERBOSE-DPG] Fitness: INVALID (identical to original)")
-            return INVALID_FITNESS
+            return _cfg['invalid_fitness']
 
         # Check the constraints (pass original_class for smart overlap handling)
         is_valid_constraint = True
@@ -495,11 +487,11 @@ class FitnessCalculator:
             # Soft class penalty: penalize low probability for target class
             # Range: 0 (target_prob=1) to large value (target_prob=0)
             # Use exponential to strongly penalize low probabilities
-            class_penalty = CLASS_PENALTY_SOFT_BASE * (1.0 - target_prob) ** 2
+            class_penalty = _cfg['class_penalty_soft_base'] * (1.0 - target_prob) ** 2
 
             # Additional hard penalty if not predicting target class
             if predicted_class != target_class:
-                class_penalty += CLASS_PENALTY_HARD_BOOST
+                class_penalty += _cfg['class_penalty_hard_boost']
 
         except Exception:
             # Fallback: use hard prediction
@@ -508,7 +500,7 @@ class FitnessCalculator:
                     features.flatten(), original_features.flatten(), target_class
                 )
                 if not is_valid_class:
-                    return INVALID_FITNESS
+                    return _cfg['invalid_fitness']
             class_penalty = 0.0
 
         # Calculate core components
@@ -596,8 +588,8 @@ class FitnessCalculator:
 
             # Penalty for being too far from boundary (only if not yet predicting target)
             boundary_penalty = (
-                BOUNDARY_PENALTY_VALUE
-                if dist_line > BOUNDARY_PENALTY_THRESHOLD and class_penalty > 0
+                _cfg['boundary_penalty_value']
+                if dist_line > _cfg['boundary_penalty_threshold'] and class_penalty > 0
                 else 0.0
             )
 
@@ -611,7 +603,7 @@ class FitnessCalculator:
             # Dynamic sigma_share: scale with sqrt(n_features) to account for dimensionality
             n_features = len(individual)
             sigma_share = max(
-                FITNESS_SHARING_BASE_SIGMA, np.sqrt(n_features) * 1.5
+                _cfg['fitness_sharing_base_sigma'], np.sqrt(n_features) * 1.5
             )  # Scale sharing radius with dimensionality (increased multiplier)
             niche_count = 1.0  # Start at 1 (counting self)
 
@@ -637,8 +629,8 @@ class FitnessCalculator:
         # Additional penalty for constraint violations
         constraint_violation_multiplier = 1.0
         if not is_valid_constraint:
-            fitness *= CONSTRAINT_VIOLATION_MULTIPLIER
-            constraint_violation_multiplier = CONSTRAINT_VIOLATION_MULTIPLIER
+            fitness *= _cfg['constraint_violation_multiplier']
+            constraint_violation_multiplier = _cfg['constraint_violation_multiplier']
 
         # If component breakdown requested, build and return it
         if return_components:

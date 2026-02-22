@@ -9,8 +9,11 @@ No iterative evolution - single-pass candidate generation and evaluation.
 import numpy as np
 import pandas as pd
 
-from constants import INVALID_FITNESS
+from utils.config_manager import get_constants as _get_constants
 from utils.feature_utils import correct_escape_direction
+
+_cfg = _get_constants()
+_INVALID_FITNESS = _cfg['invalid_fitness']
 
 
 class Fitness:
@@ -73,7 +76,7 @@ class DistanceBasedHOF:
             # Skip invalid fitness individuals
             if not hasattr(ind, 'fitness') or not ind.fitness.valid:
                 continue
-            if ind.fitness.values[0] >= INVALID_FITNESS:
+            if ind.fitness.values[0] >= _INVALID_FITNESS:
                 continue
             
             # CRITICAL: Validate target class constraints BEFORE adding to HOF
@@ -347,7 +350,7 @@ class HeuristicRunner:
             fitnesses.append(fitness)
 
         # Compute statistics for tracking (single generation)
-        valid_fitnesses = [f for f in fitnesses if f < INVALID_FITNESS and not np.isinf(f)]
+        valid_fitnesses = [f for f in fitnesses if f < _INVALID_FITNESS and not np.isinf(f)]
         if valid_fitnesses:
             best_fitness = min(valid_fitnesses)
             avg_fitness = np.mean(valid_fitnesses)
@@ -363,7 +366,7 @@ class HeuristicRunner:
 
         # Track best individual for evolution history
         best_ind = min(population, key=lambda x: x.fitness.values[0])
-        if best_ind.fitness.values[0] < INVALID_FITNESS:
+        if best_ind.fitness.values[0] < _INVALID_FITNESS:
             entry = dict(best_ind)
             entry["_fitness"] = best_ind.fitness.values[0]
             self.evolution_history = [entry]

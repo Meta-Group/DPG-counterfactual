@@ -10,12 +10,9 @@ import pandas as pd
 from scipy.spatial.distance import cdist
 
 from utils.feature_utils import normalize_feature_name, features_match, correct_escape_direction
-from constants import (
-    MUTATION_EPSILON,
-    SAMPLE_GEN_RANGE_SCALE,
-    SAMPLE_GEN_ESCAPE_BIAS,
-    ACTIONABILITY_RANGE_ADJUST,
-)
+from utils.config_manager import get_constants as _get_constants
+
+_cfg = _get_constants()
 
 
 class SampleGenerator:
@@ -922,13 +919,13 @@ class SampleGenerator:
                     min_value = max(min_value, original_value)
                     if min_value > max_value:
                         max_value = (
-                            min_value + min_value * ACTIONABILITY_RANGE_ADJUST
+                            min_value + min_value * _cfg['actionability_range_adjust']
                         )  # Adjust to ensure valid range
                 elif actionability == "non_increasing":
                     max_value = min(max_value, original_value)
                     if max_value < min_value:
                         min_value = (
-                            max_value + max_value * ACTIONABILITY_RANGE_ADJUST
+                            max_value + max_value * _cfg['actionability_range_adjust']
                         )  # Adjust to ensure valid range
                 elif actionability == "no_change":
                     adjusted_sample[feature] = original_value
@@ -938,18 +935,18 @@ class SampleGenerator:
 
             # If no explicit min/max constraints, use range around original value
             if min_value == -np.inf:
-                min_value = original_value - SAMPLE_GEN_RANGE_SCALE * (
+                min_value = original_value - _cfg['sample_gen_range_scale'] * (
                     abs(original_value) + 1.0
                 )
             if max_value == np.inf:
-                max_value = original_value + SAMPLE_GEN_RANGE_SCALE * (
+                max_value = original_value + _cfg['sample_gen_range_scale'] * (
                     abs(original_value) + 1.0
                 )
 
             # Determine target value based on escape direction and dual-boundary awareness
             # Key insight: we need to move FROM original bounds TO target bounds
             # Use a small epsilon to step just outside origin bounds
-            epsilon = MUTATION_EPSILON
+            epsilon = _cfg['mutation_epsilon']
 
             if escape_dir == "increase":
                 # Target requires higher values - start at target's min boundary
@@ -959,7 +956,7 @@ class SampleGenerator:
                 else:
                     # No target min bound - use midpoint biased upward
                     target_value = min_value + (max_value - min_value) * (
-                        0.5 + SAMPLE_GEN_ESCAPE_BIAS * self.escape_pressure
+                        0.5 + _cfg['sample_gen_escape_bias'] * self.escape_pressure
                     )
 
             elif escape_dir == "decrease":
@@ -970,7 +967,7 @@ class SampleGenerator:
                 else:
                     # No target max bound - use midpoint biased downward
                     target_value = min_value + (max_value - min_value) * (
-                        0.5 - SAMPLE_GEN_ESCAPE_BIAS * self.escape_pressure
+                        0.5 - _cfg['sample_gen_escape_bias'] * self.escape_pressure
                     )
             else:
                 # Default (escape_dir == "both"): minimal change principle

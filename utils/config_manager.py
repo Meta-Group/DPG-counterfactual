@@ -6,7 +6,16 @@ including support for unified configs, method selection, and CLI overrides.
 
 import os
 import yaml
-from typing import List, Optional
+from typing import Dict, List, Optional
+
+
+def get_constants() -> Dict:
+    """Return the 'constants' section from configs/config.yaml."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    yaml_path = os.path.join(here, '..', 'configs', 'config.yaml')
+    with open(yaml_path, 'r') as f:
+        data = yaml.safe_load(f) or {}
+    return data['constants']
 
 
 class DictConfig:

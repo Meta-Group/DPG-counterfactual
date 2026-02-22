@@ -30,7 +30,9 @@ import json
 import numpy as np
 from itertools import combinations
 from typing import Dict, List, Optional, Tuple, Union
-from constants import COVERAGE_WEIGHT, SEPARATION_WEIGHT
+from utils.config_manager import get_constants as _get_constants
+
+_cfg = _get_constants()
 
 
 def load_constraints_from_json(path: str) -> Dict:
@@ -325,8 +327,8 @@ def compute_constraint_score(
     # ==========================================================================
     
     overall_score = (
-        COVERAGE_WEIGHT * coverage_score +
-        SEPARATION_WEIGHT * separation_score
+        _cfg['coverage_weight'] * coverage_score +
+        _cfg['separation_weight'] * separation_score
     )
     
     result = {
@@ -474,7 +476,7 @@ if __name__ == "__main__":
         print(f"\n{'='*70}")
         print("CONSTRAINT SCORE COMPARISON")
         print(f"{'='*70}")
-        print(f"Weights: coverage={COVERAGE_WEIGHT:.1f}, separation={SEPARATION_WEIGHT:.1f}")
+        print(f"Weights: coverage={_cfg['coverage_weight']:.1f}, separation={_cfg['separation_weight']:.1f}")
         print(f"{'='*70}\n")
         
         for name in [file1, file2]:
@@ -506,7 +508,7 @@ if __name__ == "__main__":
         print(f"\n{'='*70}")
         print("CONSTRAINT QUALITY SCORE")
         print(f"{'='*70}")
-        print(f"Weights: coverage={COVERAGE_WEIGHT:.1f}, separation={SEPARATION_WEIGHT:.1f}")
+        print(f"Weights: coverage={_cfg['coverage_weight']:.1f}, separation={_cfg['separation_weight']:.1f}")
         print(f"{'='*70}\n")
         print(f"File: {args.json_file}")
         print(f"\nSCORE: {result['score']:.4f}")

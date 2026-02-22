@@ -6,7 +6,9 @@ from constraint_validator import ConstraintValidator
 from fitness_calculator import FitnessCalculator
 from sample_generator import SampleGenerator
 from heuristic_runner import HeuristicRunner
-from constants import UNCONSTRAINED_CHANGE_PENALTY_FACTOR
+from utils.config_manager import get_constants as _get_constants
+
+_cfg = _get_constants()
 
 
 class CounterFactualModel:
@@ -26,7 +28,7 @@ class CounterFactualModel:
         escape_pressure=0.5,
         prioritize_non_overlapping=True,
         max_bonus_cap=10.0,
-        unconstrained_penalty_factor=UNCONSTRAINED_CHANGE_PENALTY_FACTOR,
+        unconstrained_penalty_factor=None,
         min_probability_margin=0.001,
         overgeneration_factor=20,
         requested_counterfactuals=5,
@@ -85,7 +87,7 @@ class CounterFactualModel:
         self.distance_factor = distance_factor
         self.sparsity_factor = sparsity_factor
         self.constraints_factor = constraints_factor
-        self.unconstrained_penalty_factor = unconstrained_penalty_factor
+        self.unconstrained_penalty_factor = unconstrained_penalty_factor if unconstrained_penalty_factor is not None else _cfg['unconstrained_change_penalty_factor']
         # Dual-boundary parameters
         self.original_escape_weight = original_escape_weight
         self.escape_pressure = escape_pressure
@@ -117,7 +119,7 @@ class CounterFactualModel:
             constraints_factor=constraints_factor,
             original_escape_weight=original_escape_weight,
             max_bonus_cap=max_bonus_cap,
-            unconstrained_penalty_factor=unconstrained_penalty_factor,
+            unconstrained_penalty_factor=self.unconstrained_penalty_factor,
             constraint_validator=self.constraint_validator,
             boundary_analyzer=self.boundary_analyzer,
             verbose=verbose,

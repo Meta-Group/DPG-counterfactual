@@ -81,6 +81,35 @@ output:
   save_visualization_images: true
   save_visualizations_per_generation: false
 
+# Tunable constants for counterfactual generation internals
+constants:
+  # Fitness calculation
+  invalid_fitness: 1.0e6
+  class_penalty_soft_base: 100.0
+  class_penalty_hard_boost: 50.0
+  boundary_penalty_threshold: 0.1
+  boundary_penalty_value: 30.0
+  constraint_violation_multiplier: 2.0
+
+  # Sample generation
+  mutation_epsilon: 0.01
+  sample_gen_range_scale: 0.5
+  sample_gen_escape_bias: 0.3
+  actionability_range_adjust: 0.1
+
+  # Probability and validation
+  default_boundary_distance: 0.05
+
+  # Fitness sharing
+  fitness_sharing_base_sigma: 3.0
+
+  # Unconstrained feature penalty
+  unconstrained_change_penalty_factor: 10.0
+
+  # Constraint scorer weights
+  coverage_weight: 0.6
+  separation_weight: 0.4
+
 # Counterfactual method defaults
 methods:
   _default:
