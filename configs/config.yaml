@@ -84,7 +84,7 @@ output:
 # Tunable constants for counterfactual generation internals
 constants:
   # Fitness calculation
-  invalid_fitness: 1.0e6
+  invalid_fitness: 1000000.0
   class_penalty_soft_base: 100.0
   class_penalty_hard_boost: 50.0
   boundary_penalty_threshold: 0.1
