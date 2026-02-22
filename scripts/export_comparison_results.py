@@ -61,7 +61,9 @@ import shutil
 warnings.filterwarnings('ignore')
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _repo_root)
+sys.path.insert(0, os.path.join(_repo_root, 'DPG'))
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description='Export DPG vs DiCE comparison results')
@@ -1257,7 +1259,7 @@ def export_constraints_with_first_cfs(raw_df, dataset, dataset_viz_dir):
     Overlays the first DPG and DiCE counterfactuals on the constraints overview plot
     using the same markers and colors as the PCA comparison visualization.
     """
-    from DPG.dpg import plot_dpg_constraints_overview
+    from DPG.dpg import plot_dpg_constraints_overview  # path already set at module level
     
     # Get sample and counterfactuals from cache or local data
     if args.local_only:

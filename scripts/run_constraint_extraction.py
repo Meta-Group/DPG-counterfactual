@@ -28,6 +28,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Import DPG visualization
 try:
+    sys.path.insert(0, str(REPO_ROOT / 'DPG'))
     from DPG.dpg import plot_dpg_constraints_overview
 
     DPG_PKG_AVAILABLE = True

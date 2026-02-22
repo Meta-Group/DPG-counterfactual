@@ -47,6 +47,7 @@ from constraint_scorer import compute_constraint_score
 
 # Import DPG visualization if available
 try:
+    sys.path.insert(0, str(REPO_ROOT / 'DPG'))
     from DPG.dpg import plot_dpg_constraints_overview
     import matplotlib.pyplot as plt
     DPG_PKG_AVAILABLE = True

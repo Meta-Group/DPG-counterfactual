@@ -46,6 +46,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 
 try:
+    sys.path.insert(0, str(REPO_ROOT / 'DPG'))
     from DPG.dpg import plot_dpg_constraints_overview
 
     DPG_PKG_AVAILABLE = True
@@ -1802,7 +1803,7 @@ def run_experiment(config: DictConfig, wandb_run=None):
 
     # --- Generate DPG Constraints Overview Visualization ---
     # This visualization shows all constraint boundaries before any counterfactual generation
-    if normalized_constraints and getattr(config.output, "save_visualizations", True):
+    if DPG_PKG_AVAILABLE and normalized_constraints and getattr(config.output, "save_visualizations", True):
         try:
             # Create output directory for experiment-level visualizations
             output_dir = getattr(config.output, "local_dir", "outputs")
