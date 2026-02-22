@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 try:
-    from CounterFactualMetrics import evaluate_cf_list as evaluate_cf_list_comprehensive
+    from counterfactual_metrics import evaluate_cf_list as evaluate_cf_list_comprehensive
     COMPREHENSIVE_METRICS_AVAILABLE = True
 except ImportError:
     COMPREHENSIVE_METRICS_AVAILABLE = False

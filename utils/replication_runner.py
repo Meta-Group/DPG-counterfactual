@@ -14,7 +14,7 @@ try:
 except ImportError:
     DICE_AVAILABLE = False
 
-from CounterFactualModel import CounterFactualModel
+from counterfactual_model import CounterFactualModel
 from utils.config_manager import DictConfig
 
 

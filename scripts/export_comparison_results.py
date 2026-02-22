@@ -93,7 +93,7 @@ from utils.statistical_analysis import run_full_analysis as run_statistical_anal
 
 from utils.config_manager import load_config
 
-from CounterFactualVisualizer import (
+from counterfactual_visualizer import (
     heatmap_techniques, 
     plot_pca_with_counterfactuals_comparison,
     plot_sample_and_counterfactual_comparison,

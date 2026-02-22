@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from constants import INVALID_FITNESS
+from utils.feature_utils import correct_escape_direction
 
 
 class Fitness:
@@ -468,30 +469,10 @@ class HeuristicRunner:
                     'range': (feature_max - feature_min) if (feature_min is not None and feature_max is not None) else 1.0
                 }
                 
-                # CRITICAL: Override escape direction based on actual sample position
-                # (same logic as in sample_generator.py)
+                # Override escape direction based on actual sample position
                 norm_feature = normalize_feature_func(feature)
                 escape_dir = raw_escape_directions.get(norm_feature, "both")
-                
-                if raw_target_min is not None and raw_target_max is not None:
-                    if original_value < raw_target_min and escape_dir == "decrease":
-                        # Sample is BELOW target range, must INCREASE not decrease
-                        if self.verbose:
-                            print(f"[HeuristicRunner] OVERRIDE {feature}: escape=decrease→increase (value {original_value:.2f} < target_min {raw_target_min:.2f})")
-                        escape_dir = "increase"
-                    elif original_value > raw_target_max and escape_dir == "increase":
-                        # Sample is ABOVE target range, must DECREASE not increase
-                        if self.verbose:
-                            print(f"[HeuristicRunner] OVERRIDE {feature}: escape=increase→decrease (value {original_value:.2f} > target_max {raw_target_max:.2f})")
-                        escape_dir = "decrease"
-                elif raw_target_min is not None and original_value < raw_target_min and escape_dir == "decrease":
-                    if self.verbose:
-                        print(f"[HeuristicRunner] OVERRIDE {feature}: escape=decrease→increase (value {original_value:.2f} < target_min {raw_target_min:.2f})")
-                    escape_dir = "increase"
-                elif raw_target_max is not None and original_value > raw_target_max and escape_dir == "increase":
-                    if self.verbose:
-                        print(f"[HeuristicRunner] OVERRIDE {feature}: escape=increase→decrease (value {original_value:.2f} > target_max {raw_target_max:.2f})")
-                    escape_dir = "decrease"
+                escape_dir = correct_escape_direction(escape_dir, original_value, raw_target_min, raw_target_max)
                 
                 escape_directions[norm_feature] = escape_dir
             else:

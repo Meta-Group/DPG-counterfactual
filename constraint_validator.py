@@ -44,14 +44,6 @@ class ConstraintValidator:
         self.boundary_analyzer = boundary_analyzer
         self.verbose = verbose
 
-    def _normalize_feature_name(self, feature):
-        """Delegate to feature_utils for feature name normalization."""
-        return normalize_feature_name(feature)
-
-    def _features_match(self, feature1, feature2):
-        """Delegate to feature_utils for feature matching."""
-        return features_match(feature1, feature2)
-
     def is_actionable_change(self, counterfactual_sample, original_sample):
         """
         Check if changes in features are actionable based on constraints.
@@ -169,7 +161,7 @@ class ConstraintValidator:
                 (
                     condition
                     for condition in class_constraints
-                    if self._features_match(condition["feature"], feature)
+                    if features_match(condition["feature"], feature)
                 ),
                 None,
             )
@@ -227,7 +219,7 @@ class ConstraintValidator:
                 original_class, target_class
             )
             non_overlapping_features = set(
-                self._normalize_feature_name(f)
+                normalize_feature_name(f)
                 for f in boundary_analysis.get("non_overlapping", [])
             )
 
@@ -242,7 +234,7 @@ class ConstraintValidator:
 
         for feature, new_value in S_prime.items():
             original_value = sample.get(feature)
-            norm_feature = self._normalize_feature_name(feature)
+            norm_feature = normalize_feature_name(feature)
 
             # Check if the feature value has changed
             if new_value != original_value:
@@ -260,7 +252,7 @@ class ConstraintValidator:
                     (
                         condition
                         for condition in non_target_class_constraints
-                        if self._features_match(condition["feature"], feature)
+                        if features_match(condition["feature"], feature)
                     ),
                     None,
                 )

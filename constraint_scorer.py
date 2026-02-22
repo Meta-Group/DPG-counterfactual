@@ -30,22 +30,7 @@ import json
 import numpy as np
 from itertools import combinations
 from typing import Dict, List, Optional, Tuple, Union
-
-
-# =============================================================================
-# SCORING WEIGHTS - Adjust these to tune the metric behavior
-# =============================================================================
-
-# Weight for coverage component (how many features/classes have constraints)
-# Higher = prefer more constrained features even if they overlap
-COVERAGE_WEIGHT = 0.6
-
-# Weight for separation component (how well intervals are separated)
-# Higher = prefer better separation even if fewer features are constrained
-SEPARATION_WEIGHT = 0.4
-
-# Ensure weights sum to 1.0
-assert abs(COVERAGE_WEIGHT + SEPARATION_WEIGHT - 1.0) < 1e-9, "Weights must sum to 1.0"
+from constants import COVERAGE_WEIGHT, SEPARATION_WEIGHT
 
 
 def load_constraints_from_json(path: str) -> Dict:
@@ -96,24 +81,6 @@ def _compute_interval_overlap(
     overlap_end = min(upper1, upper2)
     
     return max(0.0, overlap_end - overlap_start)
-
-
-def _compute_interval_union_length(
-    interval1: Tuple[float, float],
-    interval2: Tuple[float, float],
-) -> float:
-    """Compute the length of the union of two intervals.
-    
-    Note: This is not the true union for non-overlapping intervals,
-    but the span from min to max (convex hull).
-    """
-    lower1, upper1 = interval1
-    lower2, upper2 = interval2
-    
-    union_start = min(lower1, lower2)
-    union_end = max(upper1, upper2)
-    
-    return max(0.0, union_end - union_start)
 
 
 def _compute_separation_score_for_pair(

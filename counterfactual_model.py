@@ -210,14 +210,6 @@ class CounterFactualModel:
             original_sample, counterfactual_sample, metric
         )
 
-    def _normalize_feature_name(self, feature):
-        """Delegate to feature_utils for feature name normalization."""
-        return normalize_feature_name(feature)
-
-    def _features_match(self, feature1, feature2):
-        """Delegate to feature_utils for feature matching."""
-        return features_match(feature1, feature2)
-
     def validate_constraints(
         self, S_prime, sample, target_class, original_class=None, strict_mode=True
     ):
@@ -312,8 +304,8 @@ class CounterFactualModel:
             create_individual_func=lambda d, _: dict(d),  # Simple dict copy
             calculate_fitness_func=self.calculate_fitness,
             get_valid_sample_func=self.get_valid_sample,
-            normalize_feature_func=self._normalize_feature_name,
-            features_match_func=self._features_match,
+            normalize_feature_func=normalize_feature_name,
+            features_match_func=features_match,
             overgeneration_factor=self.overgeneration_factor,
         )
 

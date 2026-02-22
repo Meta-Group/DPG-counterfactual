@@ -58,3 +58,13 @@ FITNESS_SHARING_BASE_SIGMA = 3.0
 # Penalty multiplier for changing features without target class constraints
 # Higher values make unconstrained feature changes more costly (changed as last resort)
 UNCONSTRAINED_CHANGE_PENALTY_FACTOR = 10.0
+
+# ============================================================================
+# Constraint Scorer Weights
+# ============================================================================
+
+# Weight for coverage component (how many features/classes have constraints)
+COVERAGE_WEIGHT = 0.6
+
+# Weight for separation component (how well intervals are separated)
+SEPARATION_WEIGHT = 0.4

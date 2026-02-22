@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.distance import euclidean, cityblock, cosine
 
+from utils.feature_utils import normalize_feature_name, features_match
 from constants import (
     INVALID_FITNESS,
     CLASS_PENALTY_SOFT_BASE,
@@ -167,8 +168,8 @@ class FitnessCalculator:
 
         for constraint in target_constraints:
             feature_name = constraint.get("feature", "")
-            if feature_name and self.boundary_analyzer:
-                norm_name = self.boundary_analyzer._normalize_feature_name(feature_name)
+            if feature_name:
+                norm_name = normalize_feature_name(feature_name)
                 constrained_features.add(norm_name)
 
         return constrained_features
@@ -212,11 +213,7 @@ class FitnessCalculator:
             # Check if feature changed
             if cf_value != orig_value:
                 # Normalize feature name for comparison
-                norm_feature = (
-                    self.boundary_analyzer._normalize_feature_name(feature)
-                    if self.boundary_analyzer
-                    else feature.lower()
-                )
+                norm_feature = normalize_feature_name(feature)
 
                 if norm_feature not in constrained_features:
                     # Feature has no target constraint - apply higher penalty
@@ -230,6 +227,114 @@ class FitnessCalculator:
 
         # Normalize by number of features to keep penalty scale consistent
         return penalty / total_features if total_features > 0 else 0.0
+
+    def calculate_original_escape_penalty(
+        self, individual, sample, original_class, target_class=None
+    ):
+        """
+        Calculate penalty for features still within original class bounds.
+        Penalizes individuals that haven't escaped the original class boundaries.
+
+        Enhanced: Only penalizes non-overlapping features where escaping is meaningful.
+        For overlapping features, being within both class bounds is acceptable.
+
+        Args:
+            individual (dict): The individual to evaluate.
+            sample (dict): Original sample.
+            original_class (int): The original class of the sample.
+            target_class (int, optional): The target class for overlap analysis.
+
+        Returns:
+            float: Penalty score (higher = worse, more features still in original bounds).
+        """
+        original_constraints = self.boundary_analyzer.constraints.get(f"Class {original_class}", [])
+        if not original_constraints:
+            return 0.0
+
+        # Get non-overlapping features if target_class is provided
+        non_overlapping_features = set()
+        if target_class is not None:
+            boundary_analysis = self.boundary_analyzer.analyze_boundary_overlap(
+                original_class, target_class
+            )
+            non_overlapping_features = set(
+                normalize_feature_name(f)
+                for f in boundary_analysis.get("non_overlapping", [])
+            )
+
+        penalty = 0.0
+
+        for feature, value in individual.items():
+            norm_feature = normalize_feature_name(feature)
+
+            # Only apply escape penalty for non-overlapping features
+            if (
+                target_class is not None
+                and norm_feature not in non_overlapping_features
+            ):
+                continue
+
+            original_value = sample.get(feature, value)
+
+            # Find matching original constraint
+            matching_constraint = next(
+                (
+                    c
+                    for c in original_constraints
+                    if features_match(c.get("feature", ""), feature)
+                ),
+                None,
+            )
+
+            if matching_constraint:
+                orig_min = matching_constraint.get("min")
+                orig_max = matching_constraint.get("max")
+
+                in_original_bounds = True
+
+                if orig_min is not None and orig_max is not None:
+                    if value < orig_min or value > orig_max:
+                        in_original_bounds = False
+                elif orig_min is not None:
+                    if value < orig_min:
+                        in_original_bounds = False
+                elif orig_max is not None:
+                    if value > orig_max:
+                        in_original_bounds = False
+
+                if in_original_bounds:
+                    if orig_min is not None and orig_max is not None:
+                        range_size = orig_max - orig_min
+                        if range_size > 0:
+                            center = (orig_min + orig_max) / 2
+                            dist_from_boundary = 1.0 - abs(value - center) / (
+                                range_size / 2
+                            )
+                            penalty += max(0, dist_from_boundary)
+                    elif orig_min is not None:
+                        if original_value > orig_min:
+                            range_estimate = original_value - orig_min
+                            dist_inside = (
+                                (value - orig_min) / range_estimate
+                                if range_estimate > 0
+                                else 0.5
+                            )
+                            penalty += max(0, min(1, dist_inside))
+                        else:
+                            penalty += 0.5
+                    elif orig_max is not None:
+                        if original_value < orig_max:
+                            range_estimate = orig_max - original_value
+                            dist_inside = (
+                                (orig_max - value) / range_estimate
+                                if range_estimate > 0
+                                else 0.5
+                            )
+                            penalty += max(0, min(1, dist_inside))
+                        else:
+                            penalty += 0.5
+
+        return penalty
 
     def individual_diversity(self, individual, population):
         """
@@ -454,7 +559,7 @@ class FitnessCalculator:
             and self.original_escape_weight > 0
             and self.boundary_analyzer
         ):
-            escape_penalty = self.boundary_analyzer.calculate_original_escape_penalty(
+            escape_penalty = self.calculate_original_escape_penalty(
                 individual, sample, original_class, target_class=target_class
             )
             base_fitness += self.original_escape_weight * escape_penalty

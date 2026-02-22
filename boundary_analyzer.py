@@ -26,14 +26,6 @@ class BoundaryAnalyzer:
         self.verbose = verbose
         self._boundary_analysis_cache = {}
 
-    def _normalize_feature_name(self, feature):
-        """Delegate to feature_utils for feature name normalization."""
-        return normalize_feature_name(feature)
-
-    def _features_match(self, feature1, feature2):
-        """Delegate to feature_utils for feature matching."""
-        return features_match(feature1, feature2)
-
     def analyze_boundary_overlap(self, original_class, target_class):
         """
         Analyze boundary overlap between original and target class constraints.
@@ -64,7 +56,7 @@ class BoundaryAnalyzer:
         orig_bounds = {}
         for c in original_constraints:
             feature = c.get("feature", "")
-            norm_feature = self._normalize_feature_name(feature)
+            norm_feature = normalize_feature_name(feature)
             orig_bounds[norm_feature] = {
                 "min": c.get("min"),
                 "max": c.get("max"),
@@ -74,7 +66,7 @@ class BoundaryAnalyzer:
         # Analyze each target constraint
         for tc in target_constraints:
             feature = tc.get("feature", "")
-            norm_feature = self._normalize_feature_name(feature)
+            norm_feature = normalize_feature_name(feature)
             target_min = tc.get("min")
             target_max = tc.get("max")
 
@@ -185,123 +177,3 @@ class BoundaryAnalyzer:
 
         self._boundary_analysis_cache[cache_key] = analysis
         return analysis
-
-    def calculate_original_escape_penalty(
-        self, individual, sample, original_class, target_class=None
-    ):
-        """
-        Calculate penalty for features still within original class bounds.
-        Penalizes individuals that haven't escaped the original class boundaries.
-
-        Enhanced: Only penalizes non-overlapping features where escaping is meaningful.
-        For overlapping features, being within both class bounds is acceptable.
-
-        Args:
-            individual (dict): The individual to evaluate.
-            sample (dict): Original sample.
-            original_class (int): The original class of the sample.
-            target_class (int, optional): The target class for overlap analysis.
-
-        Returns:
-            float: Penalty score (higher = worse, more features still in original bounds).
-        """
-        original_constraints = self.constraints.get(f"Class {original_class}", [])
-        if not original_constraints:
-            return 0.0
-
-        # Get non-overlapping features if target_class is provided
-        non_overlapping_features = set()
-        if target_class is not None:
-            boundary_analysis = self.analyze_boundary_overlap(
-                original_class, target_class
-            )
-            non_overlapping_features = set(
-                self._normalize_feature_name(f)
-                for f in boundary_analysis.get("non_overlapping", [])
-            )
-
-        penalty = 0.0
-        features_checked = 0
-
-        for feature, value in individual.items():
-            norm_feature = self._normalize_feature_name(feature)
-
-            # Only apply escape penalty for non-overlapping features
-            # For overlapping features, being within original bounds is OK if also in target bounds
-            if (
-                target_class is not None
-                and norm_feature not in non_overlapping_features
-            ):
-                continue
-
-            original_value = sample.get(feature, value)
-
-            # Find matching original constraint
-            matching_constraint = next(
-                (
-                    c
-                    for c in original_constraints
-                    if self._features_match(c.get("feature", ""), feature)
-                ),
-                None,
-            )
-
-            if matching_constraint:
-                orig_min = matching_constraint.get("min")
-                orig_max = matching_constraint.get("max")
-
-                # Check if value is still within original class bounds
-                # For single-bound constraints, only that bound matters
-                in_original_bounds = True
-
-                if orig_min is not None and orig_max is not None:
-                    # Both bounds: check if inside the range
-                    if value < orig_min or value > orig_max:
-                        in_original_bounds = False
-                elif orig_min is not None:
-                    # Only min bound: original class requires value >= orig_min
-                    if value < orig_min:
-                        in_original_bounds = False
-                elif orig_max is not None:
-                    # Only max bound: original class requires value <= orig_max
-                    if value > orig_max:
-                        in_original_bounds = False
-
-                if in_original_bounds:
-                    # Calculate how deep inside the original bounds the value is
-                    if orig_min is not None and orig_max is not None:
-                        range_size = orig_max - orig_min
-                        if range_size > 0:
-                            # Normalized distance from boundary (0 = at boundary, 1 = at center)
-                            center = (orig_min + orig_max) / 2
-                            dist_from_boundary = 1.0 - abs(value - center) / (
-                                range_size / 2
-                            )
-                            penalty += max(0, dist_from_boundary)
-                    elif orig_min is not None:
-                        # Single min bound - penalize being above it (deeper inside = worse)
-                        # Use distance from the boundary relative to original value
-                        if original_value > orig_min:
-                            range_estimate = original_value - orig_min
-                            dist_inside = (
-                                (value - orig_min) / range_estimate
-                                if range_estimate > 0
-                                else 0.5
-                            )
-                            penalty += max(0, min(1, dist_inside))
-                        else:
-                            penalty += 0.5
-                    elif orig_max is not None:
-                        # Single max bound - penalize being below it (deeper inside = worse)
-                        if original_value < orig_max:
-                            range_estimate = orig_max - original_value
-                            dist_inside = (
-                                (orig_max - value) / range_estimate
-                                if range_estimate > 0
-                                else 0.5
-                            )
-                            penalty += max(0, min(1, dist_inside))
-                        else:
-                            penalty += 0.5
-
-        return penalty

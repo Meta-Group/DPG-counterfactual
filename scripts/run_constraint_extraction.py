@@ -35,7 +35,7 @@ except ImportError:
     DPG_PKG_AVAILABLE = False
     print("Warning: DPG package not available. Install with requirements in DPG/")
 
-from ConstraintParser import ConstraintParser
+from constraint_parser import ConstraintParser
 from constraint_scorer import compute_constraint_score
 from utils.dataset_loader import load_dataset
 from utils.config_manager import load_config

@@ -82,22 +82,22 @@ try:
 except ImportError:
     CF_EVAL_AVAILABLE = False
 
-from CounterFactualModel import CounterFactualModel
-from ConstraintParser import ConstraintParser
-from CounterFactualExplainer import CounterFactualExplainer
+from counterfactual_model import CounterFactualModel
+from constraint_parser import ConstraintParser
+from counterfactual_explainer import CounterFactualExplainer
 
 # Import comprehensive metrics
 try:
-    from CounterFactualMetrics import evaluate_cf_list as evaluate_cf_list_comprehensive
+    from counterfactual_metrics import evaluate_cf_list as evaluate_cf_list_comprehensive
 
     COMPREHENSIVE_METRICS_AVAILABLE = True
 except ImportError:
     COMPREHENSIVE_METRICS_AVAILABLE = False
     print(
-        "Warning: CounterFactualMetrics not available. Install scipy and sklearn for comprehensive metrics."
+        "Warning: counterfactual_metrics not available. Install scipy and sklearn for comprehensive metrics."
     )
-import CounterFactualVisualizer as CounterFactualVisualizer
-from CounterFactualVisualizer import (
+import counterfactual_visualizer as CounterFactualVisualizer
+from counterfactual_visualizer import (
     plot_sample_and_counterfactual_comparison,
     plot_pairwise_with_counterfactual_df,
     plot_pca_with_counterfactuals_clean,
@@ -913,7 +913,7 @@ def run_single_sample(
 
                     if getattr(config.output, "save_visualization_images", False):
                         try:
-                            from visualization_helpers import (
+                            from utils.visualization_helpers import (
                                 create_feature_evolution_pairplot,
                                 create_pca_pairplot,
                             )

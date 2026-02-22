@@ -42,7 +42,7 @@ from sklearn.metrics import (
 
 from utils.dataset_loader import load_dataset
 from utils.config_manager import load_config
-from ConstraintParser import ConstraintParser
+from constraint_parser import ConstraintParser
 from constraint_scorer import compute_constraint_score
 
 # Import DPG visualization if available

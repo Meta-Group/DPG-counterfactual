@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.distance import cdist
 
+from utils.feature_utils import normalize_feature_name, features_match, correct_escape_direction
 from constants import (
     MUTATION_EPSILON,
     SAMPLE_GEN_RANGE_SCALE,
@@ -59,31 +60,6 @@ class SampleGenerator:
         self.verbose = verbose
         self.boundary_analyzer = boundary_analyzer
         self.constraint_validator = constraint_validator
-
-    def _normalize_feature_name(self, feature):
-        """
-        Normalize feature name (delegates to boundary_analyzer if available).
-        """
-        if self.boundary_analyzer:
-            return self.boundary_analyzer._normalize_feature_name(feature)
-        # Fallback implementation
-        import re
-
-        feature = re.sub(r"\s*\([^)]*\)", "", feature)
-        feature = feature.replace("_", " ")
-        feature = re.sub(r"\s+", " ", feature)
-        return feature.strip().lower()
-
-    def _features_match(self, feature1, feature2):
-        """
-        Check if two feature names match (delegates to boundary_analyzer if available).
-        """
-        if self.boundary_analyzer:
-            return self.boundary_analyzer._features_match(feature1, feature2)
-        # Fallback implementation
-        return self._normalize_feature_name(feature1) == self._normalize_feature_name(
-            feature2
-        )
 
     def _validate_sample_prediction(self, adjusted_sample, target_class, sample_keys):
         """
@@ -277,15 +253,7 @@ class SampleGenerator:
             raw_target_max = bounds.get('raw_target_max')
             
             # Override escape direction based on actual sample position
-            if raw_target_min is not None and raw_target_max is not None:
-                if original_value < raw_target_min and escape_dir == "decrease":
-                    escape_dir = "increase"
-                elif original_value > raw_target_max and escape_dir == "increase":
-                    escape_dir = "decrease"
-            elif raw_target_min is not None and original_value < raw_target_min and escape_dir == "decrease":
-                escape_dir = "increase"
-            elif raw_target_max is not None and original_value > raw_target_max and escape_dir == "increase":
-                escape_dir = "decrease"
+            escape_dir = correct_escape_direction(escape_dir, original_value, raw_target_min, raw_target_max)
             
             # Apply actionability constraints
             if self.dict_non_actionable and feature in self.dict_non_actionable:
@@ -458,17 +426,8 @@ class SampleGenerator:
             raw_target_min = bounds.get('raw_target_min')
             raw_target_max = bounds.get('raw_target_max')
             
-            # OVERRIDE escape direction based on actual sample position
-            # (same logic as in get_valid_sample)
-            if raw_target_min is not None and raw_target_max is not None:
-                if original_value < raw_target_min and escape_dir == "decrease":
-                    escape_dir = "increase"
-                elif original_value > raw_target_max and escape_dir == "increase":
-                    escape_dir = "decrease"
-            elif raw_target_min is not None and original_value < raw_target_min and escape_dir == "decrease":
-                escape_dir = "increase"
-            elif raw_target_max is not None and original_value > raw_target_max and escape_dir == "increase":
-                escape_dir = "decrease"
+            # Override escape direction based on actual sample position
+            escape_dir = correct_escape_direction(escape_dir, original_value, raw_target_min, raw_target_max)
             
             # Apply actionability constraints
             if self.dict_non_actionable and feature in self.dict_non_actionable:
@@ -905,7 +864,7 @@ class SampleGenerator:
                 (
                     condition
                     for condition in class_constraints
-                    if self._features_match(condition["feature"], feature)
+                    if features_match(condition["feature"], feature)
                 ),
                 None,
             )
@@ -937,7 +896,7 @@ class SampleGenerator:
                     (
                         c
                         for c in original_constraints
-                        if self._features_match(c.get("feature", ""), feature)
+                        if features_match(c.get("feature", ""), feature)
                     ),
                     None,
                 )
@@ -947,40 +906,13 @@ class SampleGenerator:
 
             # Get escape direction from boundary analysis
             if boundary_analysis:
-                norm_feature = self._normalize_feature_name(feature)
+                norm_feature = normalize_feature_name(feature)
                 escape_dir = boundary_analysis.get("escape_direction", {}).get(
                     norm_feature, "both"
                 )
             
-            # CRITICAL FIX: Override escape direction based on actual sample value position
-            # The boundary-based escape_dir only considers class constraints, not where
-            # the actual sample value is. If the sample is outside target bounds,
-            # the direction must be toward those bounds regardless of class-based escape_dir.
-            if raw_target_min is not None and raw_target_max is not None:
-                if original_value < raw_target_min:
-                    # Sample is BELOW target bounds - must INCREASE to reach target
-                    if escape_dir == "decrease":
-                        if self.verbose:
-                            print(f"[VERBOSE-DPG]     OVERRIDE {feature}: escape=decrease→increase (value {original_value:.2f} < target_min {raw_target_min:.2f})")
-                        escape_dir = "increase"
-                elif original_value > raw_target_max:
-                    # Sample is ABOVE target bounds - must DECREASE to reach target
-                    if escape_dir == "increase":
-                        if self.verbose:
-                            print(f"[VERBOSE-DPG]     OVERRIDE {feature}: escape=increase→decrease (value {original_value:.2f} > target_max {raw_target_max:.2f})")
-                        escape_dir = "decrease"
-            elif raw_target_min is not None and original_value < raw_target_min:
-                # Only min bound exists and sample is below it
-                if escape_dir == "decrease":
-                    if self.verbose:
-                        print(f"[VERBOSE-DPG]     OVERRIDE {feature}: escape=decrease→increase (value {original_value:.2f} < target_min {raw_target_min:.2f})")
-                    escape_dir = "increase"
-            elif raw_target_max is not None and original_value > raw_target_max:
-                # Only max bound exists and sample is above it
-                if escape_dir == "increase":
-                    if self.verbose:
-                        print(f"[VERBOSE-DPG]     OVERRIDE {feature}: escape=increase→decrease (value {original_value:.2f} > target_max {raw_target_max:.2f})")
-                    escape_dir = "decrease"
+            # Override escape direction based on actual sample position
+            escape_dir = correct_escape_direction(escape_dir, original_value, raw_target_min, raw_target_max)
 
             # Incorporate non-actionable constraints
             if self.dict_non_actionable and feature in self.dict_non_actionable:
@@ -1127,7 +1059,7 @@ class SampleGenerator:
             escape_directions = boundary_analysis.get("escape_direction", {})
             
             for feature in sample.keys():
-                norm_feature = self._normalize_feature_name(feature)
+                norm_feature = normalize_feature_name(feature)
                 
                 # Skip no_change features
                 if self.dict_non_actionable and feature in self.dict_non_actionable:

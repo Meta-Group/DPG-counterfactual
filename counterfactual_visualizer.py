@@ -9,6 +9,8 @@ from sklearn.preprocessing import StandardScaler
 import warnings
 # Suppress matplotlib tight_layout warnings which occur with complex multi-panel figures
 warnings.filterwarnings('ignore', message='.*tight_layout.*')
+from matplotlib.lines import Line2D
+from matplotlib.patches import Rectangle
 
 def plot_explainer_summary(explainer, original_sample, counterfactual):
     """
@@ -53,12 +55,25 @@ def plot_explainer_summary(explainer, original_sample, counterfactual):
     return fig
 
 
-# Set larger font sizes globally
-plt.rcParams['font.size'] = 12  # Adjusts the default font size
-plt.rcParams['axes.labelsize'] = 16  # Font size for x and y labels
-plt.rcParams['axes.titlesize'] = 16  # Font size for the plot title
-plt.rcParams['xtick.labelsize'] = 12  # Font size for x-axis tick labels
-plt.rcParams['ytick.labelsize'] = 12  # Font size for y-axis tick labels
+def set_default_style():
+    """Set default matplotlib style for counterfactual visualizations."""
+    plt.rcParams['font.size'] = 12  # Adjusts the default font size
+    plt.rcParams['axes.labelsize'] = 16  # Font size for x and y labels
+    plt.rcParams['axes.titlesize'] = 16  # Font size for the plot title
+    plt.rcParams['xtick.labelsize'] = 12  # Font size for x-axis tick labels
+    plt.rcParams['ytick.labelsize'] = 12  # Font size for y-axis tick labels
+
+
+set_default_style()
+
+
+def _normalize_constraint_dict(class_constraints):
+    """Convert constraint format (list or dict) to {feature: {'min': ..., 'max': ...}} dict."""
+    if isinstance(class_constraints, list):
+        return {c['feature']: {'min': c.get('min'), 'max': c.get('max')} for c in class_constraints}
+    elif isinstance(class_constraints, dict):
+        return {k: {'min': v.get('min'), 'max': v.get('max')} for k, v in class_constraints.items()}
+    return {}
 
 
 def plot_constraints(constraints, overlapping=False, class_colors=None, class_colors_list=None, sample=None, sample_class=None):
@@ -115,12 +130,7 @@ def plot_constraints(constraints, overlapping=False, class_colors=None, class_co
             # Handle both formats:
             # 1. List format: [{'feature': 'Age', 'min': x, 'max': y}, ...]
             # 2. Dict format: {'Age': {'min': x, 'max': y}, ...}
-            if isinstance(class_constraints, list):
-                constraint_dict = {c['feature'].replace('_', ' '): c for c in class_constraints}
-            elif isinstance(class_constraints, dict):
-                constraint_dict = {k.replace('_', ' '): {'min': v.get('min'), 'max': v.get('max')} for k, v in class_constraints.items()}
-            else:
-                constraint_dict = {}
+            constraint_dict = {k.replace('_', ' '): v for k, v in _normalize_constraint_dict(class_constraints).items()}
             
             # Offset each class slightly
             y_offset = (idx - n_classes/2 + 0.5) * bar_height
@@ -204,12 +214,7 @@ def plot_constraints(constraints, overlapping=False, class_colors=None, class_co
             # Handle both formats:
             # 1. List format: [{'feature': 'Age', 'min': x, 'max': y}, ...]
             # 2. Dict format: {'Age': {'min': x, 'max': y}, ...}
-            if isinstance(class_constraints, list):
-                constraint_dict = {c['feature'].replace('_', ' '): c for c in class_constraints}
-            elif isinstance(class_constraints, dict):
-                constraint_dict = {k.replace('_', ' '): {'min': v.get('min'), 'max': v.get('max')} for k, v in class_constraints.items()}
-            else:
-                constraint_dict = {}
+            constraint_dict = {k.replace('_', ' '): v for k, v in _normalize_constraint_dict(class_constraints).items()}
             
             y_positions = np.arange(n_features)
             
@@ -282,7 +287,6 @@ def plot_constraints(constraints, overlapping=False, class_colors=None, class_co
                 sample_color = 'red'
             
             # Create custom legend entry
-            from matplotlib.lines import Line2D
             legend_elements = [Line2D([0], [0], marker='D', color='w', 
                                      markerfacecolor=sample_color, markersize=10, 
                                      markeredgecolor='darkred', markeredgewidth=1.5,
@@ -425,12 +429,6 @@ def plot_fitness(cf_model, figsize=(10, 6), title='Fitness Over Generations'):
 
     best = getattr(cf_model, 'best_fitness_list', []) or []
     avg = getattr(cf_model, 'average_fitness_list', []) or []
-    
-    print(f"DEBUG plot_fitness: best list length = {len(best)}, avg list length = {len(avg)}")
-    if len(best) > 0:
-        print(f"DEBUG plot_fitness: first 3 best values: {best[:3]}")
-    if len(avg) > 0:
-        print(f"DEBUG plot_fitness: first 3 avg values: {avg[:3]}")
 
     # Plot best fitness and average fitness on the same graph
     ax.plot(best, label='Best Fitness', color='blue')
@@ -610,12 +608,7 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
                 # Handle both formats:
                 # 1. List format: [{'feature': 'Age', 'min': x, 'max': y}, ...]
                 # 2. Dict format: {'Age': {'min': x, 'max': y}, ...}
-                if isinstance(class_constraints, list):
-                    constraint_dict = {c['feature']: c for c in class_constraints}
-                elif isinstance(class_constraints, dict):
-                    constraint_dict = {k: {'min': v.get('min'), 'max': v.get('max')} for k, v in class_constraints.items()}
-                else:
-                    constraint_dict = {}
+                constraint_dict = _normalize_constraint_dict(class_constraints)
                 
                 # Determine vertical offset based on class
                 y_offset = -width/2 if class_idx == predicted_class else width/2
@@ -741,12 +734,7 @@ def plot_sample_and_counterfactual_comparison(model, sample, sample_df, counterf
                 # Handle both formats:
                 # 1. List format: [{'feature': 'Age', 'min': x, 'max': y}, ...]
                 # 2. Dict format: {'Age': {'min': x, 'max': y}, ...}
-                if isinstance(class_constraints, list):
-                    constraint_dict = {c['feature']: c for c in class_constraints}
-                elif isinstance(class_constraints, dict):
-                    constraint_dict = {k: {'min': v.get('min'), 'max': v.get('max')} for k, v in class_constraints.items()}
-                else:
-                    constraint_dict = {}
+                constraint_dict = _normalize_constraint_dict(class_constraints)
                 
                 # Determine vertical offset based on class
                 y_offset = -0.15 if class_idx == predicted_class else 0.15
@@ -962,14 +950,7 @@ def plot_sample_and_counterfactual_comparison_simple(model, sample, sample_df, c
                 # Handle both formats:
                 # 1. List format: [{'feature': 'Age', 'min': x, 'max': y}, ...]
                 # 2. Dict format: {'Age': {'min': x, 'max': y}, ...}
-                if isinstance(class_constraints, list):
-                    # List format - convert to dict
-                    constraint_dict = {c['feature']: c for c in class_constraints}
-                elif isinstance(class_constraints, dict):
-                    # Dict format - use directly but normalize structure
-                    constraint_dict = {k: {'min': v.get('min'), 'max': v.get('max')} for k, v in class_constraints.items()}
-                else:
-                    constraint_dict = {}
+                constraint_dict = _normalize_constraint_dict(class_constraints)
                 
                 # Determine vertical offset based on class
                 y_offset = -width/2 if class_idx == predicted_class else width/2
@@ -1195,12 +1176,7 @@ def plot_sample_and_counterfactual_comparison_combined(model, sample, sample_df,
                 class_constraints = constraints[class_name]
                 
                 # Handle both list and dict formats
-                if isinstance(class_constraints, list):
-                    constraint_dict = {c['feature']: c for c in class_constraints}
-                elif isinstance(class_constraints, dict):
-                    constraint_dict = {k: {'min': v.get('min'), 'max': v.get('max')} for k, v in class_constraints.items()}
-                else:
-                    constraint_dict = {}
+                constraint_dict = _normalize_constraint_dict(class_constraints)
                 
                 # Determine vertical offset based on class
                 if class_idx == predicted_class:
@@ -1284,8 +1260,6 @@ def plot_sample_and_counterfactual_comparison_combined(model, sample, sample_df,
                  fontsize=13, fontweight='bold')
     
     # Create custom legend including constraint indicators
-    from matplotlib.lines import Line2D
-    from matplotlib.patches import Rectangle
     
     legend_elements = [
         Rectangle((0, 0), 1, 1, fc=original_color, ec='black', alpha=0.7, linewidth=1.5, label='Original Sample'),
@@ -1549,7 +1523,6 @@ def plot_pca_with_counterfactuals_clean(model, dataset, target, sample, counterf
     plt.ylabel('PCA Component 2')
     plt.title('PCA Plot with Original Sample and Counterfactuals')
     # Create custom legend
-    from matplotlib.lines import Line2D
     legend_elements = [
         Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[original_class % len(colors)], markersize=10, 
                markeredgecolor=colors[original_class % len(colors)], markeredgewidth=1.5, label='Original Sample'),
@@ -1681,7 +1654,6 @@ def plot_pca_with_counterfactuals_comparison(
     plt.title('PCA Scores Projection')
     
     # Create custom legend
-    from matplotlib.lines import Line2D
     legend_elements = [
         Line2D([0], [0], 
                marker='o', 
@@ -1757,11 +1729,6 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
     if not isinstance(counterfactuals_df, pd.DataFrame):
         raise ValueError("counterfactuals_df must be a pandas DataFrame")
 
-    print(f"DEBUG plot_pca: counterfactuals DataFrame shape: {counterfactuals_df.shape}")
-    print(f"DEBUG plot_pca: counterfactuals DataFrame columns: {counterfactuals_df.columns.tolist()}")
-    print(f"DEBUG plot_pca: counterfactuals DataFrame dtypes:\n{counterfactuals_df.dtypes}")
-    print( f"DEBUG plot_pca: counterfactuals DataFrame head:\n{counterfactuals_df.head()}")
-    print( f"DEBUG plot_pca: counterfactuals DataFrame numeric columns:\n{counterfactuals_df.select_dtypes(include=[np.number]).columns.tolist()}")
 
     numeric_cf_df = counterfactuals_df.select_dtypes(include=[np.number])
     numeric_cf_df_scaled = scaler.transform(numeric_cf_df)
@@ -1796,12 +1763,10 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
 
     # Plot evolution histories if provided
     if evolution_histories:
-        print(f"DEBUG plot_pca: Received {len(evolution_histories)} evolution histories")
         for cf_idx, history in enumerate(evolution_histories):
             if not history:
                 continue
             
-            print(f"DEBUG plot_pca: Processing history {cf_idx} with {len(history)} generations")
             
             # Convert evolution history to DataFrame and transform
             history_df = pd.DataFrame(history)
@@ -1956,7 +1921,6 @@ def plot_pca_with_counterfactuals(model, dataset, target, sample, counterfactual
     plt.ylabel('PCA Component 2')
     plt.title('PCA Plot with GA Evolution (opacity: initial→final)')
     # Create custom legend
-    from matplotlib.lines import Line2D
     legend_elements = [
         Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[original_class % len(colors)], markersize=10, 
                markeredgecolor=colors[original_class % len(colors)], markeredgewidth=1.5, label='Original Sample'),
@@ -2055,8 +2019,7 @@ def heatmap_techniques(sample, class_sample, cf_list_1, cf_list_2, technique_nam
             'non_decreasing': '⬆️'
         }
         for i, (feat, restr) in enumerate(restrictions.items()):
-            # print(f"DEBUG: Feature '{feat}' has restriction '{restr}'")
-            if restr in symbol_map:
+            #            if restr in symbol_map:
                 ax.text(i + 0.5, len(full_df) + 0.5, symbol_map[restr],
                        ha='center', va='top', color='black',
                        fontweight='bold', fontsize=14, transform=ax.transData)
@@ -2364,12 +2327,7 @@ def plot_ridge_comparison(
         if class_key and class_key in constraints:
             class_constraints = constraints[class_key]
             # Handle both list and dict formats
-            if isinstance(class_constraints, list):
-                constraint_dict = {c['feature']: c for c in class_constraints}
-            elif isinstance(class_constraints, dict):
-                constraint_dict = {k: {'min': v.get('min'), 'max': v.get('max')} for k, v in class_constraints.items()}
-            else:
-                constraint_dict = {}
+            constraint_dict = _normalize_constraint_dict(class_constraints)
             
             for ax, feat in zip(g.axes.flat, feature_names):
                 if feat in constraint_dict:
@@ -2454,12 +2412,7 @@ def plot_ridge_comparison(
             if original_class_key in constraints:
                 original_class_constraints = constraints[original_class_key]
                 # Handle both list and dict formats
-                if isinstance(original_class_constraints, list):
-                    orig_constraint_dict = {c['feature']: c for c in original_class_constraints}
-                elif isinstance(original_class_constraints, dict):
-                    orig_constraint_dict = {k: {'min': v.get('min'), 'max': v.get('max')} for k, v in original_class_constraints.items()}
-                else:
-                    orig_constraint_dict = {}
+                orig_constraint_dict = _normalize_constraint_dict(original_class_constraints)
                 
                 for ax, feat in zip(g.axes.flat, feature_names):
                     if feat in orig_constraint_dict:
@@ -2512,7 +2465,6 @@ def plot_ridge_comparison(
         ax.text(-0.10, 0.2, clean_name, fontweight="bold", color="black",
                 ha="right", va="center", transform=ax.transAxes, fontsize=10, zorder=25)
     
-    from matplotlib.lines import Line2D
     legend_elements = [
         Line2D([0], [0], marker='o', color='w', markerfacecolor=sample_color, markersize=10, 
                markeredgecolor='white', markeredgewidth=1.5, linestyle='None', 
@@ -2587,7 +2539,6 @@ def plot_ridge_comparison(
                       fontsize=14, fontweight='bold', y=1.02)
     
     # Add background-colored rectangles on both sides to align horizontal bars
-    from matplotlib.patches import Rectangle
     fig_background_color = g.figure.get_facecolor()
     for ax in g.axes.flat:
         # Left alignment rectangle

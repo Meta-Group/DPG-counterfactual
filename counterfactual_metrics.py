@@ -15,6 +15,7 @@ from scipy.stats import median_abs_deviation
 from sklearn.metrics import accuracy_score
 from sklearn.neighbors import KNeighborsClassifier, LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
+from utils.feature_utils import normalize_feature_name
 
 
 def _safe_predict(model, X):
@@ -790,21 +791,14 @@ def boundary_escape_score(x, cf_list, original_constraints, target_constraints, 
             feature_names = list(x.keys())
     
     # Build constraint lookup
-    def _normalize_feature(f):
-        import re
-        f = re.sub(r'\s*\([^)]*\)', '', f)
-        f = f.replace('_', ' ')
-        f = re.sub(r'\s+', ' ', f)
-        return f.strip().lower()
-    
     orig_bounds = {}
     for c in original_constraints:
-        norm_f = _normalize_feature(c.get("feature", ""))
+        norm_f = normalize_feature_name(c.get("feature", ""))
         orig_bounds[norm_f] = {'min': c.get('min'), 'max': c.get('max')}
     
     target_bounds = {}
     for c in target_constraints:
-        norm_f = _normalize_feature(c.get("feature", ""))
+        norm_f = normalize_feature_name(c.get("feature", ""))
         target_bounds[norm_f] = {'min': c.get('min'), 'max': c.get('max')}
     
     # Analyze each counterfactual
@@ -823,7 +817,7 @@ def boundary_escape_score(x, cf_list, original_constraints, target_constraints, 
             cf_dict = cf
         
         for feature, cf_value in cf_dict.items():
-            norm_f = _normalize_feature(feature)
+            norm_f = normalize_feature_name(feature)
             orig_value = x_dict.get(feature, cf_value)
             
             # Check original bounds
