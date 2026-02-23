@@ -1,5 +1,11 @@
 # CounterFactualDPG
 
+> **⚠️ Repository Archived**
+>
+> This repository has been archived with a working example of the counterfactual implementation. Development has moved into the combined original DPG repository at [https://github.com/Meta-Group/DPG](https://github.com/Meta-Group/DPG).
+>
+> Please submit any new issues or pull requests to the [DPG repository](https://github.com/Meta-Group/DPG).
+
 A counterfactual explanation framework built on top of DPG. This project implements counterfactual generation methods for machine learning models, providing tools for explanation generation, evaluation, and visualization across multiple datasets.
 
 ## Project Relations
